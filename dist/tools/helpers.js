@@ -16,7 +16,13 @@ export function registerTool(server, config, def) {
                 content: [
                     {
                         type: 'text',
-                        text: typeof result === 'string' ? result : JSON.stringify(result, null, 2),
+                        // A 204 (delete) has no body, so request() resolves undefined and
+                        // JSON.stringify(undefined) is undefined - not a valid text block.
+                        text: result === undefined
+                            ? 'OK (no content)'
+                            : typeof result === 'string'
+                                ? result
+                                : JSON.stringify(result, null, 2),
                     },
                 ],
             };

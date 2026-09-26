@@ -10,6 +10,7 @@
  * Or register with: claude mcp add clokio -- npx -y clokio-mcp
  * (set CLOKIO_API_KEY, and optionally CLOKIO_BASE_URL, in the MCP env).
  */
+import { createRequire } from 'node:module';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { loadConfig } from './client.js';
@@ -18,12 +19,16 @@ import { registerProjectTools } from './tools/projects.js';
 import { registerEmployeeTools } from './tools/employees.js';
 import { registerAttendanceTools } from './tools/attendance.js';
 
+// The version the MCP handshake announces is package.json's, read at runtime -
+// a literal here went stale on the first patch release (0.1.1 said 0.1.0).
+const { version } = createRequire(import.meta.url)('../package.json') as { version: string };
+
 async function main(): Promise<void> {
   const config = loadConfig();
 
   const server = new McpServer({
     name: 'clokio-mcp',
-    version: '0.1.0',
+    version,
   });
 
   registerTaskTools(server, config);

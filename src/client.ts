@@ -39,7 +39,16 @@ export function loadConfig(): ClokioConfig {
  * but passing them through is harmless.
  */
 export function seg(value: string | number): string {
-  return encodeURIComponent(String(value));
+  const s = String(value);
+  // encodeURIComponent leaves `.` alone, so a bare `.` or `..` would survive
+  // as a real dot-segment and be normalised away by new URL(). The prefix
+  // guard in request() already catches the escape; refusing here keeps the
+  // error at the argument that caused it, and an empty segment would silently
+  // collapse `/a//b` into `/a/b` and hit a neighbouring route.
+  if (s === '' || s === '.' || s === '..') {
+    throw new ClokioApiError(0, `Invalid path argument ${JSON.stringify(s)}.`);
+  }
+  return encodeURIComponent(s);
 }
 
 /** A Clokio API error, carrying the HTTP status and the server's message. */
@@ -115,7 +124,12 @@ export async function request<T = unknown>(
 
   let res: Response;
   try {
-    res = await fetch(url, { method, headers, body: payload });
+    // redirect: 'error' - Node's fetch follows redirects and RESENDS the
+    // request headers, including X-API-Key, to wherever Location points, on
+    // any origin. The API never redirects an /api/v1 call, so a redirect here
+    // means something between us and it is not the API, and the key must not
+    // be handed over. Failing closed costs nothing on the happy path.
+    res = await fetch(url, { method, headers, body: payload, redirect: 'error' });
   } catch (e) {
     throw new ClokioApiError(0, `Network error reaching Clokio: ${(e as Error).message}`);
   }

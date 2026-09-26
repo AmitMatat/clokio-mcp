@@ -62,6 +62,15 @@ check(
   '/api/v1/employees/00080/status'
 );
 
+// Bare dot-segments and the empty string are refused outright - encoding
+// leaves `.` untouched, so `..` would otherwise survive as a real segment.
+console.log('\n=== seg() refuses what encoding cannot neutralise ===');
+for (const bad of ['.', '..', '']) {
+  let threw = false;
+  try { seg(bad); } catch { threw = true; }
+  check(`seg(${JSON.stringify(bad)}) throws`, threw, true);
+}
+
 // The sink guard catches traversal even if a caller forgets seg().
 console.log('\n=== sink guard: /api/v1 prefix invariant ===');
 check('unencoded ../.. escapes /api/v1 (guard must reject)', insideApi(build('/employees/../../x')), false);
