@@ -285,9 +285,26 @@ export async function request<T = unknown>(
     throw new ClokioApiError(res.status, message, parsed);
   }
 
-  // Standard envelope: {status, message, data}. Unwrap `data` when present.
+  // Standard envelope: {status, message, data, meta?}. Unwrap `data`, but
+  // KEEP `meta` when the API sent one.
+  //
+  // Unwrapping both was a real defect: list endpoints return
+  // meta.next_cursor, meta.total and meta.last_page, and this threw all of it
+  // away. The tool descriptions told the model to page with a cursor while
+  // the value it needed had already been discarded - so a caller could not
+  // tell a full first page from the whole result set, and every crawl past
+  // page one was impossible. Reported 2026-09-26.
+  //
+  // `data` is returned bare when there is no meta, so single-object reads
+  // (get_task, whoami) keep the shape they have always had.
   if (parsed && typeof parsed === 'object' && 'data' in parsed) {
-    return (parsed as any).data as T;
+    const envelope = parsed as { data: unknown; meta?: unknown };
+
+    if (envelope.meta !== undefined && envelope.meta !== null) {
+      return { data: envelope.data, meta: envelope.meta } as T;
+    }
+
+    return envelope.data as T;
   }
   return parsed as T;
 }

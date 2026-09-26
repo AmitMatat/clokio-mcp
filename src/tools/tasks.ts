@@ -15,7 +15,9 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
     description:
       'List tasks across projects, with server-side filters so you do not page the whole board and count in ' +
       'your own code. An UNKNOWN query parameter is a 422 naming it, so use exactly these names. Paginate ' +
-      'with page, or crawl with cursor (preferred past one page). Every task carries a task_url.',
+      'with page, or crawl with cursor (preferred past one page). Every task carries a task_url.\n\n' +
+      'The response is {data, meta}. meta carries total, per_page, current_page and next_cursor - read '  +
+      'next_cursor and pass it back as `cursor` for the following page; it is null on the last one.',
     schema: {
       project_id: z.number().int().optional(),
       status: z.string().optional().describe('Status slug, e.g. "in_progress"'),
