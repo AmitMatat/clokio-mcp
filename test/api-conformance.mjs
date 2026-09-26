@@ -67,6 +67,7 @@ const TOOL_CALLS = [
   { tool: 'clokio_list_task_statuses', method: 'get', path: '/task-statuses', query: [] },
   { tool: 'clokio_list_task_labels', method: 'get', path: '/task-labels', query: [] },
   { tool: 'clokio_list_locations', method: 'get', path: '/locations', query: [] },
+  { tool: 'clokio_whoami', method: 'get', path: '/me', query: [] },
 
   // tasks.ts
   {
@@ -86,6 +87,9 @@ const TOOL_CALLS = [
   { tool: 'clokio_set_task_assignees', method: 'patch', path: '/tasks/{id}/assignees', query: [] },
   { tool: 'clokio_list_task_comments', method: 'get', path: '/tasks/{id}/comments', query: [] },
   { tool: 'clokio_add_task_comment', method: 'post', path: '/tasks/{id}/comments', query: [] },
+  { tool: 'clokio_update_task_comment', method: 'patch', path: '/tasks/{id}/comments/{commentId}', query: [] },
+  { tool: 'clokio_list_task_attachments', method: 'get', path: '/tasks/{id}/attachments', query: [] },
+  { tool: 'clokio_download_task_attachment', method: 'get', path: '/tasks/{id}/attachments/{attachmentId}', query: [] },
   { tool: 'clokio_get_task_activity', method: 'get', path: '/tasks/{id}/activity', query: [] },
   { tool: 'clokio_list_task_dependencies', method: 'get', path: '/tasks/{id}/dependencies', query: [] },
   { tool: 'clokio_add_task_dependency', method: 'post', path: '/tasks/{id}/dependencies', query: [] },

@@ -75,4 +75,14 @@ export function registerProjectTools(server, config) {
         schema: {},
         handler: (_args, cfg) => request(cfg, '/locations'),
     });
+    registerTool(server, config, {
+        name: 'clokio_whoami',
+        description: 'Who this API key belongs to: the organisation (with its timezone - every date filter is evaluated in ' +
+            'it), the scopes the key holds, the rate limits that apply, and the person who issued it. ' +
+            'CALL THIS FIRST in a session: `issued_by.employee_code` is the value to pass as ' +
+            'created_by_employee_code / author_employee_code on every write, so the work is attributed to a person ' +
+            'instead of showing up as "External System" on a board the team reads. `issued_by` can be null.',
+        schema: {},
+        handler: (_args, cfg) => request(cfg, '/me'),
+    });
 }

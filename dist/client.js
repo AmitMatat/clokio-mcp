@@ -41,6 +41,57 @@ export function seg(value) {
     }
     return encodeURIComponent(s);
 }
+/**
+ * Fetch an endpoint that returns a FILE rather than the JSON envelope.
+ *
+ * Only the attachment download does this today. Text comes back as text;
+ * anything binary is DESCRIBED rather than returned, because a model that
+ * asks for a 4 MB PNG cannot use the bytes and pouring them into the
+ * conversation as mojibake costs a fortune in tokens and tells it nothing.
+ * The description still answers the question the caller actually had - is
+ * there a file here, what kind, how big.
+ */
+export async function requestRaw(config, path) {
+    const url = new URL(`${config.baseUrl}/api/v1${path.startsWith('/') ? path : `/${path}`}`);
+    const expectedPrefix = new URL(config.baseUrl).pathname.replace(/\/+$/, '') + '/api/v1/';
+    if (!url.pathname.startsWith(expectedPrefix)) {
+        throw new ClokioApiError(0, 'Refusing to send a request outside /api/v1.');
+    }
+    let res;
+    try {
+        res = await fetch(url, {
+            headers: { 'X-API-Key': config.apiKey },
+            redirect: 'error',
+        });
+    }
+    catch (e) {
+        throw new ClokioApiError(0, `Network error reaching Clokio: ${e.message}`);
+    }
+    if (!res.ok) {
+        const text = await res.text();
+        let message = `Clokio API returned HTTP ${res.status}`;
+        try {
+            const parsed = JSON.parse(text);
+            if (parsed && typeof parsed.message === 'string')
+                message = parsed.message;
+        }
+        catch {
+            /* a non-JSON error body is not more informative than the status */
+        }
+        throw new ClokioApiError(res.status, message);
+    }
+    const type = res.headers.get('content-type') ?? 'application/octet-stream';
+    const buffer = Buffer.from(await res.arrayBuffer());
+    const isText = type.startsWith('text/') ||
+        /\b(json|xml|csv|yaml|javascript|markdown)\b/.test(type);
+    if (isText) {
+        return buffer.toString('utf8');
+    }
+    const kb = (buffer.byteLength / 1024).toFixed(1);
+    return (`[binary file: ${type}, ${kb} KB]\n\n` +
+        'The bytes are not included - they would be unreadable here and would cost a great deal of context. ' +
+        'Ask the person to open the attachment in Clokio, or fetch this path yourself if you can handle binary.');
+}
 /** A Clokio API error, carrying the HTTP status and the server's message. */
 export class ClokioApiError extends Error {
     status;

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { request } from '../client.js';
+import { request, requestRaw } from '../client.js';
 import { registerTool } from './helpers.js';
 /** See employees.ts - the same stable-identifier rule applies to task filters. */
 const employeeCode = z
@@ -191,6 +191,44 @@ export function registerTaskTools(server, config) {
                 notify: args.notify,
             },
         }),
+    });
+    registerTool(server, config, {
+        name: 'clokio_update_task_comment',
+        mutates: true,
+        description: 'Correct a comment YOUR integration published - a wrong number, a dead link, a mistaken finding. ' +
+            'Two conditions, both required: the comment was created through this API, and author_employee_code ' +
+            "names its own author. You cannot edit what a person wrote in the web or mobile app (403), and you " +
+            'cannot edit someone else\'s comment (403). There is no delete: correcting leaves an audit entry, ' +
+            'destroying would leave nothing.',
+        schema: {
+            id: z.number().int().describe('The task id'),
+            comment_id: z.number().int(),
+            body: z.string().max(65535),
+            author_employee_code: employeeCode.describe("Required: the comment's own author"),
+        },
+        handler: (args, cfg) => request(cfg, `/tasks/${args.id}/comments/${args.comment_id}`, {
+            method: 'PATCH',
+            body: { body: args.body, author_employee_code: args.author_employee_code },
+        }),
+    });
+    registerTool(server, config, {
+        name: 'clokio_list_task_attachments',
+        description: "A task's attachments: file name, size, mime type, who uploaded it, and the path to fetch the bytes. " +
+            'A task whose real content is a screenshot or a spreadsheet reads as "(no description)" without this - ' +
+            'check here before concluding a task has no detail. Use clokio_download_task_attachment for the file.',
+        schema: { id: z.number().int() },
+        handler: (args, cfg) => request(cfg, `/tasks/${args.id}/attachments`),
+    });
+    registerTool(server, config, {
+        name: 'clokio_download_task_attachment',
+        description: 'Download one attachment. Returns the FILE, not JSON - text files come back as text, and binary ones ' +
+            '(images, PDFs, spreadsheets) are reported with their type and size rather than dumped into the ' +
+            'conversation. Get the attachment id from clokio_list_task_attachments.',
+        schema: {
+            id: z.number().int().describe('The task id'),
+            attachment_id: z.number().int(),
+        },
+        handler: (args, cfg) => requestRaw(cfg, `/tasks/${args.id}/attachments/${args.attachment_id}`),
     });
     registerTool(server, config, {
         name: 'clokio_get_task_activity',
