@@ -1,19 +1,42 @@
 {
   "name": "clokio-mcp",
   "version": "0.1.0",
-  "description": "MCP server for the Clokio Public API — manage tasks, projects, attendance and employees from any MCP client.",
+  "description": "Model Context Protocol (MCP) server for Clokio — manage tasks, projects, clients, employees and attendance from Claude and any MCP client.",
   "type": "module",
   "bin": {
     "clokio-mcp": "dist/index.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
     "start": "node dist/index.js",
     "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "clokio",
+    "claude",
+    "ai",
+    "attendance",
+    "task-management",
+    "project-management",
+    "time-tracking"
+  ],
+  "author": "Matat Technologies LTD",
+  "license": "MIT",
+  "homepage": "https://clokio.io",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AmitMatat/clokio-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/AmitMatat/clokio-mcp/issues"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.4",
@@ -25,10 +48,5 @@
   },
   "engines": {
     "node": ">=18"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/AmitMatat/clokio-mcp.git"
-  },
-  "license": "UNLICENSED"
+  }
 }
