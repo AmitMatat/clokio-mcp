@@ -46,9 +46,11 @@ export function registerTaskTools(server, config) {
             compact: z
                 .boolean()
                 .optional()
-                .describe('STRONGLY PREFERRED when scanning. Returns id, title, status, priority, due_date, project, ' +
-                'assignees, labels and updated_at only - dropping the HTML description, which is most of the ' +
-                'payload. Fetch the one task you actually need in full with clokio_get_task.'),
+                .describe('STRONGLY PREFERRED when scanning. Returns a slim row - id, title, status, priority, ' +
+                'due_date, parent_id, project_id, assignee_codes (employee_code strings), labels (names) ' +
+                'and updated_at - dropping the HTML description and flattening the nested project/assignee ' +
+                'objects to ids. Resolve a project_id with clokio_list_projects, and fetch the one task you ' +
+                'actually need in full with clokio_get_task (its URL is /tasks/{id}/view).'),
             sort: z
                 .enum([
                 'due_date',
