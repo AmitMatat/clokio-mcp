@@ -14,11 +14,12 @@ const employeeCode = z
 export function registerEmployeeTools(server, config) {
     registerTool(server, config, {
         name: 'clokio_list_employees',
-        description: 'List employees, optionally filtered. This is how you resolve a PERSON TO THEIR employee_code - the stable ' +
-            'id every other tool wants for assignees, comment authors and task creators. There is no name search: the ' +
-            'API filters by exact email, by status and by department only, so to find someone by name, list the page ' +
-            'and match the name yourself. email is returned only if the key holds the employees:pii scope.',
+        description: 'Find people. This is how you resolve a PERSON TO THEIR employee_code - the stable id every other tool ' +
+            'wants for assignees, comment authors and task creators. Pass `search` with a name (or part of one) ' +
+            'rather than listing everyone and matching yourself. Combine with status=active to skip people who have ' +
+            'left. email is returned only if the key holds the employees:pii scope.',
         schema: {
+            search: z.string().max(120).optional().describe('Free text over name and employee_code'),
             email: z.string().optional().describe('EXACT email match (not a substring search)'),
             status: z.enum(['active', 'inactive']).optional(),
             department: z.string().optional().describe('Exact department name'),
@@ -26,6 +27,7 @@ export function registerEmployeeTools(server, config) {
         },
         handler: (args, cfg) => request(cfg, '/employees', {
             query: {
+                search: args.search,
                 email: args.email,
                 status: args.status,
                 department: args.department,

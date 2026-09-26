@@ -27,7 +27,12 @@ export function registerTaskTools(server, config) {
                 .optional()
                 .describe('A task id returns only ITS subtasks; null returns only top-level tasks'),
             created_before: z.string().optional().describe('YYYY-MM-DD, organization timezone'),
+            created_after: z.string().optional().describe('YYYY-MM-DD, organization timezone'),
             due_before: z.string().optional().describe('YYYY-MM-DD, organization timezone'),
+            due_after: z
+                .string()
+                .optional()
+                .describe('YYYY-MM-DD. With due_before, asks for one window ("due this week") in a single request'),
             updated_since: z
                 .string()
                 .optional()
@@ -48,7 +53,9 @@ export function registerTaskTools(server, config) {
                 open: args.open === undefined ? undefined : args.open ? 1 : 0,
                 parent_task_id: args.parent_task_id === null ? '' : args.parent_task_id,
                 created_before: args.created_before,
+                created_after: args.created_after,
                 due_before: args.due_before,
+                due_after: args.due_after,
                 updated_since: args.updated_since,
                 include_comments: args.include_comments === undefined ? undefined : args.include_comments ? 1 : 0,
                 per_page: args.per_page,

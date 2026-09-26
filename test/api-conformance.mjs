@@ -51,7 +51,7 @@ const TOOL_CALLS = [
   { tool: 'clokio_get_leave_balances', method: 'get', path: '/leaves/balances', query: ['employee'] },
 
   // employees.ts
-  { tool: 'clokio_list_employees', method: 'get', path: '/employees', query: ['email', 'status', 'department', 'per_page'] },
+  { tool: 'clokio_list_employees', method: 'get', path: '/employees', query: ['search', 'email', 'status', 'department', 'per_page'] },
   { tool: 'clokio_lookup_employee_by_pin', method: 'post', path: '/employees/lookup', query: [] },
   { tool: 'clokio_get_employee_task_stats', method: 'get', path: '/employees/{employeeCode}/task-stats', query: ['stale_days'] },
   { tool: 'clokio_create_employee', method: 'post', path: '/employees', query: [] },
@@ -76,7 +76,7 @@ const TOOL_CALLS = [
     path: '/tasks',
     query: [
       'project_id', 'status', 'priority', 'assignee_employee_code', 'label', 'search',
-      'open', 'parent_task_id', 'created_before', 'due_before', 'updated_since',
+      'open', 'parent_task_id', 'created_before', 'created_after', 'due_before', 'due_after', 'updated_since',
       'include_comments', 'per_page', 'page', 'cursor',
     ],
   },
