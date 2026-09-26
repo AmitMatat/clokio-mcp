@@ -158,6 +158,74 @@ export async function requestRaw(config, path, fileName) {
         'The bytes are not included - they would be unreadable here and would cost a great deal of context. ' +
         'Ask the person to open the attachment in Clokio, or fetch this path yourself if you can handle binary.');
 }
+/**
+ * Upload a LOCAL FILE to a Clokio endpoint as multipart/form-data.
+ *
+ * The one write on this API that is not JSON. The tool gives a file PATH the
+ * model can already reach (it is running in a session with a filesystem), this
+ * reads it and sends it under the `file` field. Extra text fields (e.g.
+ * uploaded_by_employee_code) ride along.
+ *
+ * The same /api/v1 prefix guard and redirect: 'error' as request(), so the
+ * upload path is not a hole in either defence, and the key is sent as a header
+ * exactly as elsewhere - multipart does not change where the credential goes.
+ */
+export async function requestUpload(config, path, filePath, fields = {}) {
+    const { readFile } = await import('node:fs/promises');
+    const { basename } = await import('node:path');
+    const url = new URL(`${config.baseUrl}/api/v1${path.startsWith('/') ? path : `/${path}`}`);
+    const expectedPrefix = new URL(config.baseUrl).pathname.replace(/\/+$/, '') + '/api/v1/';
+    if (!url.pathname.startsWith(expectedPrefix)) {
+        throw new ClokioApiError(0, 'Refusing to send a request outside /api/v1.');
+    }
+    let bytes;
+    try {
+        bytes = await readFile(filePath);
+    }
+    catch (e) {
+        throw new ClokioApiError(0, `Could not read the file at ${filePath}: ${e.message}`);
+    }
+    const form = new FormData();
+    // A fresh Uint8Array view is a valid BlobPart; a Node Buffer is not, under
+    // strict lib types.
+    form.append('file', new Blob([new Uint8Array(bytes)]), basename(filePath));
+    for (const [key, value] of Object.entries(fields)) {
+        if (value !== undefined)
+            form.append(key, value);
+    }
+    let res;
+    try {
+        // Content-Type is set BY fetch from the FormData (with the boundary); do
+        // not set it by hand or the boundary is lost.
+        res = await fetch(url, {
+            method: 'POST',
+            headers: { 'X-API-Key': config.apiKey, Accept: 'application/json' },
+            body: form,
+            redirect: 'error',
+        });
+    }
+    catch (e) {
+        throw new ClokioApiError(0, `Network error reaching Clokio: ${e.message}`);
+    }
+    const text = await res.text();
+    let parsed;
+    try {
+        parsed = text ? JSON.parse(text) : undefined;
+    }
+    catch {
+        parsed = text;
+    }
+    if (!res.ok) {
+        const message = parsed && typeof parsed === 'object' && 'message' in parsed && typeof parsed.message === 'string'
+            ? parsed.message
+            : `Clokio API returned HTTP ${res.status}`;
+        throw new ClokioApiError(res.status, message, parsed);
+    }
+    if (parsed && typeof parsed === 'object' && 'data' in parsed) {
+        return parsed.data;
+    }
+    return parsed;
+}
 /** A Clokio API error, carrying the HTTP status and the server's message. */
 export class ClokioApiError extends Error {
     status;

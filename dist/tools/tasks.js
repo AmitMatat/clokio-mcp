@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { request, requestRaw } from '../client.js';
+import { request, requestRaw, requestUpload } from '../client.js';
 import { registerTool } from './helpers.js';
 /** See employees.ts - the same stable-identifier rule applies to task filters. */
 const employeeCode = z
@@ -295,6 +295,24 @@ export function registerTaskTools(server, config) {
                 .describe('The file_name from clokio_list_task_attachments. Improves text detection'),
         },
         handler: (args, cfg) => requestRaw(cfg, `/tasks/${args.id}/attachments/${args.attachment_id}`, args.file_name),
+    });
+    registerTool(server, config, {
+        name: 'clokio_upload_task_attachment',
+        mutates: true,
+        description: 'Upload a LOCAL FILE to a task as an attachment - a screenshot, a log, a spreadsheet. Give the path to ' +
+            'a file on this machine; it is read and sent. Allowed types include images, PDF, Office docs, txt/csv/' +
+            'md/json, code diffs, zip and video, up to 200 MB. The uploader is the key issuer unless you set ' +
+            'uploaded_by_employee_code.',
+        schema: {
+            id: z.number().int().describe('The task id'),
+            file_path: z.string().describe('Path to a file on THIS machine'),
+            uploaded_by_employee_code: employeeCode
+                .optional()
+                .describe('Credit someone other than the key owner; omit to use the key issuer'),
+        },
+        handler: (args, cfg) => requestUpload(cfg, `/tasks/${args.id}/attachments`, args.file_path, {
+            uploaded_by_employee_code: args.uploaded_by_employee_code ?? cfg.defaultActor,
+        }),
     });
     registerTool(server, config, {
         name: 'clokio_get_task_activity',
