@@ -73,16 +73,25 @@ export function registerEmployeeTools(server, config) {
     });
     registerTool(server, config, {
         name: 'clokio_get_inbox',
-        description: 'What needs one person\'s attention: mentions_waiting (comments that @-mention them and that they have ' +
-            'NOT replied to yet) and newly_assigned (tasks assigned to them in the window). This is how you find ' +
-            'that someone asked a question, without scanning the board. `since` defaults to 14 days (max 90). ' +
-            'To answer for the KEY OWNER, pass their own employee_code (from clokio_whoami).',
+        description: 'What needs one person\'s attention, in three lists: mentions_waiting (comments that @-mention them and ' +
+            'that they have NOT replied to yet; mentions on closed tasks are excluded), newly_assigned (tasks ' +
+            'assigned to them in the window), and status_changes (status moves on tasks they hold or created, made ' +
+            'by SOMEONE ELSE - their own moves and task-creation rows are excluded). This is how you find that ' +
+            'someone asked a question or moved your work, without scanning the board. `since` defaults to 14 days ' +
+            '(max 90). status_changes is capped by `limit` (default 100, max 500); the response sets ' +
+            'status_changes_truncated=true when more exist past the cap. To answer for the KEY OWNER, pass their ' +
+            'own employee_code (from clokio_whoami).',
         schema: {
             employee_code: employeeCode,
             since: z.string().optional().describe('ISO-8601 or YYYY-MM-DD. Only items after this. Default 14 days ago'),
+            limit: z
+                .number()
+                .int()
+                .optional()
+                .describe('Max status_changes to return (default 100, max 500). status_changes_truncated flags overflow'),
         },
         handler: (args, cfg) => request(cfg, `/employees/${seg(args.employee_code)}/inbox`, {
-            query: { since: args.since },
+            query: { since: args.since, limit: args.limit },
         }),
     });
     registerTool(server, config, {

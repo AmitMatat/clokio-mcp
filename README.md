@@ -75,7 +75,7 @@ are marked mutating (deletes are `destructive`).
 | **Tasks** | list (with `compact` / `sort` / `updated_since`), get (with `comments_limit`), create, update, delete, bulk update, set assignees, list/add/edit comments, list/upload/download attachments, activity, list/add/remove dependencies, set custom field |
 | **Projects & clients** | list projects, project statuses, project custom fields, project contacts, get client, add client contact |
 | **Reference** | task statuses, task labels, locations, list webhooks (read-only), whoami |
-| **Employees** | list (name search), lookup by PIN, task-stats, inbox, create, set status |
+| **Employees** | list (name search), lookup by PIN, task-stats, inbox (mentions, new assignments, others' status changes), create, set status |
 | **Attendance** | daily, range, per-employee, monthly summary, clock in/out, break start/end, time entries, leaves, leave balances |
 
 ### Conventions
