@@ -24,7 +24,7 @@ permissions and the audit trail stay per-user.
 ```bash
 claude mcp add clokio \
   --env CLOKIO_API_KEY=clk_your_key_here \
-  -- npx -y clokio-mcp
+  -- npx -y clokio-mcp@latest
 ```
 
 ### Claude Desktop
@@ -36,7 +36,7 @@ Add to `claude_desktop_config.json`:
   "mcpServers": {
     "clokio": {
       "command": "npx",
-      "args": ["-y", "clokio-mcp"],
+      "args": ["-y", "clokio-mcp@latest"],
       "env": { "CLOKIO_API_KEY": "clk_your_key_here" }
     }
   }
@@ -45,7 +45,7 @@ Add to `claude_desktop_config.json`:
 
 ### Cursor / Cline / Zed / any MCP client
 
-Use the same command — `npx -y clokio-mcp` with `CLOKIO_API_KEY` in the env.
+Use the same command — `npx -y clokio-mcp@latest` with `CLOKIO_API_KEY` in the env.
 MCP is an open standard.
 
 Optional: set `CLOKIO_BASE_URL` to point at a different Clokio installation
@@ -59,7 +59,7 @@ acting. An explicit code on a tool call always takes precedence.
 
 Optional: set `CLOKIO_TOOLSETS` to register only the tool groups you need, e.g.
 `CLOKIO_TOOLSETS=tasks`. This cuts the per-session tool-list cost — a
-task-focused session drops from 44 tools to 26. Optional groups are `tasks`,
+task-focused session drops from 48 tools to 26. Optional groups are `tasks`,
 `employees` and `attendance` (which includes leave and time entries); combine
 them with commas. The `projects` group (project/client lookups, task statuses
 and labels, and `whoami`) is always on, because the task tools resolve names
@@ -67,24 +67,26 @@ through it.
 
 ## Tools
 
-36 tools across five areas. Read-only tools carry the MCP `readOnlyHint`; writes
+48 tools across five areas. Read-only tools carry the MCP `readOnlyHint`; writes
 are marked mutating (deletes are `destructive`).
 
 | Area | Tools |
 |------|-------|
-| **Tasks** | list, get, create, update, delete, set assignees, list/add comments, activity, list/add dependencies, set custom field |
+| **Tasks** | list (with `compact` / `sort` / `updated_since`), get (with `comments_limit`), create, update, delete, bulk update, set assignees, list/add/edit comments, list/upload/download attachments, activity, list/add/remove dependencies, set custom field |
 | **Projects & clients** | list projects, project statuses, project custom fields, project contacts, get client, add client contact |
-| **Reference** | task statuses, task labels, locations |
-| **Employees** | list, lookup, task-stats, create, set status |
-| **Attendance** | daily, range, per-employee, monthly summary, clock in/out, break start/end, time entries, balances |
+| **Reference** | task statuses, task labels, locations, list webhooks (read-only), whoami |
+| **Employees** | list (name search), lookup by PIN, task-stats, inbox, create, set status |
+| **Attendance** | daily, range, per-employee, monthly summary, clock in/out, break start/end, time entries, leaves, leave balances |
 
 ### Conventions
 
 - **People are identified by `employee_code`** (e.g. `00080`), not internal ids.
-  Use `clokio_lookup_employee` to resolve a name to a code.
-- **Attribute writes to a person** — pass `creator_employee_code` when creating a
-  task, `author_employee_code` when commenting, or the entry shows as the API key
-  owner ("External System").
+  Use `clokio_list_employees` (with `search`) to resolve a name to a code, or
+  `clokio_lookup_employee_by_pin` for a kiosk PIN.
+- **Attribution is automatic.** An unnamed write is credited to the key's
+  issuer (see `clokio_whoami`), so you rarely set an author. Pass
+  `created_by_employee_code` / `author_employee_code` only to credit someone
+  else, or set `CLOKIO_DEFAULT_ACTOR` for a shared key.
 - **Status slugs** come from `clokio_list_task_statuses` /
   `clokio_get_project_statuses`.
 - An API key sees **public custom fields only**.
