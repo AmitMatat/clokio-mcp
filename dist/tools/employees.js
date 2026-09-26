@@ -14,25 +14,39 @@ const employeeCode = z
 export function registerEmployeeTools(server, config) {
     registerTool(server, config, {
         name: 'clokio_list_employees',
-        description: 'List employees. Returns employee_code (the stable id used everywhere else, e.g. for assignees), name, ' +
-            'and non-PII fields. email is only returned if the key holds the employees:pii scope.',
+        description: 'List employees, optionally filtered. This is how you resolve a PERSON TO THEIR employee_code - the stable ' +
+            'id every other tool wants for assignees, comment authors and task creators. There is no name search: the ' +
+            'API filters by exact email, by status and by department only, so to find someone by name, list the page ' +
+            'and match the name yourself. email is returned only if the key holds the employees:pii scope.',
         schema: {
-            search: z.string().optional().describe('Name filter'),
-            page: z.number().int().optional(),
+            email: z.string().optional().describe('EXACT email match (not a substring search)'),
+            status: z.enum(['active', 'inactive']).optional(),
+            department: z.string().optional().describe('Exact department name'),
+            per_page: z.number().int().min(1).max(100).optional().describe('1-100, default 25'),
         },
-        handler: (args, cfg) => request(cfg, '/employees', { query: { search: args.search, page: args.page } }),
+        handler: (args, cfg) => request(cfg, '/employees', {
+            query: {
+                email: args.email,
+                status: args.status,
+                department: args.department,
+                per_page: args.per_page,
+            },
+        }),
     });
     registerTool(server, config, {
-        name: 'clokio_lookup_employee',
-        description: 'Look up an employee by name or email to resolve their employee_code. Use this before assigning a task ' +
-            'when you only know the person\'s name.',
+        name: 'clokio_lookup_employee_by_pin',
+        description: 'Resolve an employee from their 4-6 digit clock-in PIN. This is for kiosk and terminal flows where a ' +
+            'person identifies themselves by PIN - it is NOT a name or email search. To find someone by name or ' +
+            'email use clokio_list_employees. Answers 404 when no ACTIVE employee holds that PIN.',
         schema: {
-            name: z.string().optional(),
-            email: z.string().optional(),
+            pin: z
+                .string()
+                .regex(/^\d{4,6}$/, 'pin must be 4 to 6 digits')
+                .describe("The employee's clock-in PIN"),
         },
         handler: (args, cfg) => request(cfg, '/employees/lookup', {
             method: 'POST',
-            body: { name: args.name, email: args.email },
+            body: { pin: args.pin },
         }),
     });
     registerTool(server, config, {

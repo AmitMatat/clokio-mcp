@@ -3,26 +3,43 @@ import { z } from 'zod';
 import { ClokioConfig, request } from '../client.js';
 import { registerTool } from './helpers.js';
 
+/** See employees.ts - the same stable-identifier rule applies to task filters. */
+const employeeCode = z
+  .string()
+  .regex(/^[A-Za-z0-9_-]{1,50}$/, 'employee_code must be 1-50 chars of letters, digits, _ or -');
+
 /** Task-management tools: the core of the Clokio API surface. */
 export function registerTaskTools(server: McpServer, config: ClokioConfig): void {
   registerTool(server, config, {
     name: 'clokio_list_tasks',
     description:
-      'List tasks. Supports filters: project_id, status (slug), priority, assignee (employee_code), ' +
-      'label, search, open (1 = only open tasks), created_before / due_before (YYYY-MM-DD, org timezone). ' +
-      'Paginate with page, or crawl with cursor. Each task carries a task_url.',
+      'List tasks across projects, with server-side filters so you do not page the whole board and count in ' +
+      'your own code. An UNKNOWN query parameter is a 422 naming it, so use exactly these names. Paginate ' +
+      'with page, or crawl with cursor (preferred past one page). Every task carries a task_url.',
     schema: {
       project_id: z.number().int().optional(),
       status: z.string().optional().describe('Status slug, e.g. "in_progress"'),
       priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
-      assignee: z.string().optional().describe('employee_code, e.g. "00080"'),
+      assignee_employee_code: employeeCode.optional().describe('employee_code, e.g. "00080"'),
       label: z.string().optional(),
-      search: z.string().optional(),
-      open: z.boolean().optional().describe('true = only tasks whose status is not "done"'),
-      created_before: z.string().optional().describe('YYYY-MM-DD'),
-      due_before: z.string().optional().describe('YYYY-MM-DD'),
+      search: z.string().optional().describe('Free text over title and description'),
+      open: z.boolean().optional().describe('true = only tasks whose status is not a "done" one'),
+      parent_task_id: z
+        .number()
+        .int()
+        .nullable()
+        .optional()
+        .describe('A task id returns only ITS subtasks; null returns only top-level tasks'),
+      created_before: z.string().optional().describe('YYYY-MM-DD, organization timezone'),
+      due_before: z.string().optional().describe('YYYY-MM-DD, organization timezone'),
+      updated_since: z
+        .string()
+        .optional()
+        .describe('ISO-8601. Incremental sync: only tasks changed at or after this instant'),
+      include_comments: z.boolean().optional(),
+      per_page: z.number().int().min(1).max(100).optional(),
       page: z.number().int().optional(),
-      cursor: z.string().optional(),
+      cursor: z.string().optional().describe('meta.next_cursor from a previous page; preferred over page'),
     },
     handler: (args, cfg) =>
       request(cfg, '/tasks', {
@@ -30,12 +47,16 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
           project_id: args.project_id,
           status: args.status,
           priority: args.priority,
-          assignee: args.assignee,
+          assignee_employee_code: args.assignee_employee_code,
           label: args.label,
           search: args.search,
-          open: args.open ? 1 : undefined,
+          open: args.open === undefined ? undefined : args.open ? 1 : 0,
+          parent_task_id: args.parent_task_id === null ? '' : args.parent_task_id,
           created_before: args.created_before,
           due_before: args.due_before,
+          updated_since: args.updated_since,
+          include_comments: args.include_comments === undefined ? undefined : args.include_comments ? 1 : 0,
+          per_page: args.per_page,
           page: args.page,
           cursor: args.cursor,
         },
@@ -53,18 +74,23 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
     name: 'clokio_create_task',
     mutates: true,
     description:
-      'Create a task in a project. assignees/creator use employee_code (e.g. "00080"), not internal ids. ' +
-      'To attribute the task to a person set creator_employee_code, otherwise it shows as the API key owner.',
+      'Create a task in a project. People are named by employee_code (e.g. "00080"), never internal ids. ' +
+      'ALWAYS set created_by_employee_code to attribute the task to a person - without it the task shows as ' +
+      'the API key owner ("External System"). Pass parent_task_id to create it as a SUBTASK of that task ' +
+      '(same project, and the parent must not itself be a subtask - one level deep only).',
     schema: {
       project_id: z.number().int(),
-      title: z.string(),
+      title: z.string().max(255),
       description: z.string().optional().describe('HTML or plain text'),
       priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
-      status: z.string().optional().describe('Status slug'),
+      status: z.string().optional().describe("Status slug valid for THIS project's board"),
       due_date: z.string().optional().describe('YYYY-MM-DD'),
-      assignee_employee_codes: z.array(z.string()).optional(),
-      label_names: z.array(z.string()).optional(),
-      creator_employee_code: z.string().optional(),
+      start_date: z.string().optional().describe('YYYY-MM-DD'),
+      estimated_hours: z.number().min(0).max(9999.99).optional(),
+      parent_task_id: z.number().int().optional().describe('Makes this a subtask of that task'),
+      assignee_employee_codes: z.array(employeeCode).max(50).optional(),
+      label_names: z.array(z.string().max(100)).max(20).optional(),
+      created_by_employee_code: employeeCode.optional().describe('Attribute the task to this person'),
     },
     handler: (args, cfg) =>
       request(cfg, '/tasks', {
@@ -76,9 +102,12 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
           priority: args.priority,
           status: args.status,
           due_date: args.due_date,
-          assignees: args.assignee_employee_codes,
-          labels: args.label_names,
-          created_by_employee_code: args.creator_employee_code,
+          start_date: args.start_date,
+          estimated_hours: args.estimated_hours,
+          parent_task_id: args.parent_task_id,
+          assignee_employee_codes: args.assignee_employee_codes,
+          label_names: args.label_names,
+          created_by_employee_code: args.created_by_employee_code,
         },
       }),
   });
@@ -87,22 +116,39 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
     name: 'clokio_update_task',
     mutates: true,
     description:
-      'Update a task. Only the fields you pass are changed. status/priority/title/description/due_date are supported.',
+      'Update a task. ONLY the fields you pass are changed; omitted fields are left alone. Pass null to ' +
+      'due_date / start_date / estimated_hours / description to CLEAR them. Set actor_employee_code so the ' +
+      'activity log names the person rather than the API key.',
     schema: {
       id: z.number().int(),
-      title: z.string().optional(),
-      description: z.string().optional(),
+      title: z.string().max(255).optional(),
+      description: z.string().nullable().optional(),
       priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
-      status: z.string().optional().describe('Status slug'),
-      due_date: z.string().optional().describe('YYYY-MM-DD, or empty string to clear'),
+      status: z.string().optional().describe("Status slug valid for this task's board"),
+      due_date: z.string().nullable().optional().describe('YYYY-MM-DD, or null to clear'),
+      start_date: z.string().nullable().optional().describe('YYYY-MM-DD, or null to clear'),
+      estimated_hours: z.number().min(0).max(9999.99).nullable().optional(),
+      project_id: z.number().int().optional().describe('Move the task to another project'),
+      actor_employee_code: employeeCode.optional().describe('Who to credit in the activity log'),
     },
     handler: (args, cfg) => {
+      // Only keys the caller actually supplied may go in the body: PATCH
+      // semantics are "change what is named", and sending an untouched field
+      // as null would CLEAR it.
       const body: Record<string, unknown> = {};
-      if (args.title !== undefined) body.title = args.title;
-      if (args.description !== undefined) body.description = args.description;
-      if (args.priority !== undefined) body.priority = args.priority;
-      if (args.status !== undefined) body.status = args.status;
-      if (args.due_date !== undefined) body.due_date = args.due_date;
+      for (const key of [
+        'title',
+        'description',
+        'priority',
+        'status',
+        'due_date',
+        'start_date',
+        'estimated_hours',
+        'project_id',
+        'actor_employee_code',
+      ] as const) {
+        if (args[key] !== undefined) body[key] = args[key];
+      }
       return request(cfg, `/tasks/${args.id}`, { method: 'PATCH', body });
     },
   });
@@ -119,17 +165,17 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
     name: 'clokio_set_task_assignees',
     mutates: true,
     description:
-      'Set a task\'s assignees. mode "add" appends, "replace" overwrites, "remove" removes. ' +
-      'Assignees are employee_codes (e.g. "00080").',
+      "Change a task's assignees. mode is REQUIRED: \"add\" appends, \"replace\" overwrites the whole list, " +
+      '"remove" takes those people off. People are named by employee_code (e.g. "00080").',
     schema: {
       id: z.number().int(),
-      employee_codes: z.array(z.string()),
-      mode: z.enum(['add', 'replace', 'remove']).optional().describe('default: add'),
+      employee_codes: z.array(employeeCode).min(1).max(50),
+      mode: z.enum(['add', 'replace', 'remove']).describe('Required'),
     },
     handler: (args, cfg) =>
       request(cfg, `/tasks/${args.id}/assignees`, {
         method: 'PATCH',
-        body: { assignees: args.employee_codes, mode: args.mode ?? 'add' },
+        body: { employee_codes: args.employee_codes, mode: args.mode },
       }),
   });
 
@@ -145,17 +191,23 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
     mutates: true,
     description:
       'Add a comment to a task. Set author_employee_code to attribute it to a person; otherwise it shows as ' +
-      'the API key owner ("External System"). Use readable formatting (paragraphs, bullet lists); markdown ' +
-      'tables are not rendered.',
+      'the API key owner ("External System"). Use readable formatting (paragraphs, blank lines, bullet ' +
+      'lists); markdown TABLES are not rendered and post as raw text. Write in the language of the person ' +
+      'you are answering. A comment cannot be edited or deleted through this API, so get it right first time.',
     schema: {
       id: z.number().int(),
-      body: z.string(),
-      author_employee_code: z.string().optional(),
+      body: z.string().max(65535),
+      author_employee_code: employeeCode.optional().describe('Attribute the comment to this person'),
+      notify: z.boolean().optional().describe('Send notifications to watchers (default: the API decides)'),
     },
     handler: (args, cfg) =>
       request(cfg, `/tasks/${args.id}/comments`, {
         method: 'POST',
-        body: { body: args.body, author_employee_code: args.author_employee_code },
+        body: {
+          body: args.body,
+          author_employee_code: args.author_employee_code,
+          notify: args.notify,
+        },
       }),
   });
 
@@ -187,6 +239,20 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
         method: 'POST',
         body: { depends_on_task_id: args.depends_on_task_id, type: args.type },
       }),
+  });
+
+  registerTool(server, config, {
+    name: 'clokio_remove_task_dependency',
+    mutates: 'destructive',
+    description:
+      'Remove a dependency from a task. dependency_id is the id of the DEPENDENCY row, as returned by ' +
+      'clokio_list_task_dependencies - not the id of the other task.',
+    schema: {
+      id: z.number().int().describe('The task that holds the dependency'),
+      dependency_id: z.number().int(),
+    },
+    handler: (args, cfg) =>
+      request(cfg, `/tasks/${args.id}/dependencies/${args.dependency_id}`, { method: 'DELETE' }),
   });
 
   registerTool(server, config, {

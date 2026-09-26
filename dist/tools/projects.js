@@ -5,9 +5,16 @@ import { registerTool } from './helpers.js';
 export function registerProjectTools(server, config) {
     registerTool(server, config, {
         name: 'clokio_list_projects',
-        description: 'List projects, optionally filtered by a search term (name / client).',
-        schema: { search: z.string().optional() },
-        handler: (args, cfg) => request(cfg, '/projects', { query: { search: args.search } }),
+        description: 'List projects, optionally filtered by a search term (name / client) or status. Use this to resolve a ' +
+            'project NAME to the project_id every task tool needs.',
+        schema: {
+            search: z.string().max(200).optional(),
+            status: z.enum(['active', 'archived']).optional(),
+            per_page: z.number().int().min(1).max(100).optional(),
+        },
+        handler: (args, cfg) => request(cfg, '/projects', {
+            query: { search: args.search, status: args.status, per_page: args.per_page },
+        }),
     });
     registerTool(server, config, {
         name: 'clokio_get_project_statuses',
@@ -36,17 +43,16 @@ export function registerProjectTools(server, config) {
     registerTool(server, config, {
         name: 'clokio_add_client_contact',
         mutates: true,
-        description: 'Add a contact to a client.',
+        description: 'Add a contact to a client. Every field is optional, but supply at least a name or an email.',
         schema: {
             client_id: z.number().int(),
-            name: z.string(),
-            email: z.string().optional(),
-            phone: z.string().optional(),
-            role: z.string().optional(),
+            name: z.string().max(255).optional(),
+            email: z.string().max(255).optional(),
+            phone: z.string().max(50).optional(),
         },
         handler: (args, cfg) => request(cfg, `/clients/${args.client_id}/contacts`, {
             method: 'POST',
-            body: { name: args.name, email: args.email, phone: args.phone, role: args.role },
+            body: { name: args.name, email: args.email, phone: args.phone },
         }),
     });
     // ── Reference / vocabulary lookups ──
