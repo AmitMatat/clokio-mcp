@@ -13,7 +13,13 @@ export function loadConfig() {
             'CLOKIO_API_KEY environment variable.');
     }
     const baseUrl = (process.env.CLOKIO_BASE_URL?.trim() || 'https://app.clokio.io').replace(/\/+$/, '');
-    return { baseUrl, apiKey };
+    const defaultActor = process.env.CLOKIO_DEFAULT_ACTOR?.trim() || undefined;
+    // Validate the same way the API constrains an employee_code, so a
+    // misconfigured value fails at startup rather than silently on every write.
+    if (defaultActor && !/^[A-Za-z0-9_-]{1,50}$/.test(defaultActor)) {
+        throw new Error('CLOKIO_DEFAULT_ACTOR must be an employee_code (1-50 chars of letters, digits, _ or -).');
+    }
+    return { baseUrl, apiKey, defaultActor };
 }
 /**
  * Encode ONE path segment supplied by a tool argument.

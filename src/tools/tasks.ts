@@ -125,8 +125,9 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
     mutates: true,
     description:
       'Create a task in a project. People are named by employee_code (e.g. "00080"), never internal ids. ' +
-      'ALWAYS set created_by_employee_code to attribute the task to a person - without it the task shows as ' +
-      'the API key owner ("External System"). Pass parent_task_id to create it as a SUBTASK of that task ' +
+      'You do NOT normally need created_by_employee_code: an unnamed task is attributed to the key\'s issuer ' +
+      'automatically (whoami shows who that is). Set it only to credit someone OTHER than the key owner. ' +
+      'Pass parent_task_id to create it as a SUBTASK of that task ' +
       '(same project, and the parent must not itself be a subtask - one level deep only).',
     schema: {
       project_id: z.number().int(),
@@ -144,7 +145,7 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
         .max(20)
         .optional()
         .describe('Label names. A name that does not exist yet is CREATED - check clokio_list_task_labels first'),
-      created_by_employee_code: employeeCode.optional().describe('Attribute the task to this person'),
+      created_by_employee_code: employeeCode.optional().describe('Credit someone OTHER than the key owner; omit to use the key issuer / CLOKIO_DEFAULT_ACTOR'),
     },
     handler: (args, cfg) =>
       request(cfg, '/tasks', {
@@ -161,7 +162,7 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
           parent_task_id: args.parent_task_id,
           assignee_employee_codes: args.assignee_employee_codes,
           label_names: args.label_names,
-          created_by_employee_code: args.created_by_employee_code,
+          created_by_employee_code: args.created_by_employee_code ?? cfg.defaultActor,
         },
       }),
   });
@@ -183,7 +184,7 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
       start_date: z.string().nullable().optional().describe('YYYY-MM-DD, or null to clear'),
       estimated_hours: z.number().min(0).max(9999.99).nullable().optional(),
       project_id: z.number().int().optional().describe('Move the task to another project'),
-      actor_employee_code: employeeCode.optional().describe('Who to credit in the activity log'),
+      actor_employee_code: employeeCode.optional().describe('Who to credit in the activity log; omit to use the key issuer / CLOKIO_DEFAULT_ACTOR'),
     },
     handler: (args, cfg) => {
       // Only keys the caller actually supplied may go in the body: PATCH
@@ -202,6 +203,13 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
         'actor_employee_code',
       ] as const) {
         if (args[key] !== undefined) body[key] = args[key];
+      }
+      // Credit the update to CLOKIO_DEFAULT_ACTOR when the caller named no
+      // actor. The API otherwise falls back to the key's issuer on its own,
+      // so this only overrides for a shared/service key. An explicit
+      // actor_employee_code above already sits in body and is left untouched.
+      if (body.actor_employee_code === undefined && cfg.defaultActor) {
+        body.actor_employee_code = cfg.defaultActor;
       }
       return request(cfg, `/tasks/${args.id}`, { method: 'PATCH', body });
     },
@@ -244,18 +252,19 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
     name: 'clokio_add_task_comment',
     mutates: true,
     description:
-      'Add a comment to a task. Set author_employee_code to attribute it to a person; otherwise it shows as ' +
-      'the API key owner ("External System"). Use readable formatting (paragraphs, blank lines, bullet ' +
-      'lists); markdown TABLES are not rendered and post as raw text. Write in the language of the person ' +
-      'you are answering. ' +
+      'Add a comment to a task. author_employee_code is usually unnecessary: an unnamed comment is attributed ' +
+      'to the key issuer automatically. Set it only to credit someone else. Use readable formatting ' +
+      '(paragraphs, blank lines, bullet lists); markdown TABLES are not rendered and post as raw text. Write ' +
+      'in the language of the person you are answering. ' +
       'TO MENTION SOMEONE, write @ followed by their full name exactly as clokio_list_employees spells it ' +
       '(for example "@Kiran Bahadur") in the body text - no markup needed. It becomes a real mention and ' +
-      'notifies them, but only if the comment has an author_employee_code; an unattributed comment notifies ' +
-      'nobody. A name that matches no one stays as plain text, so check the spelling first.',
+      'notifies them, but only if the comment has an author (its own field, the key issuer, or ' +
+      'CLOKIO_DEFAULT_ACTOR); a truly authorless comment notifies nobody. A name that matches no one stays ' +
+      'as plain text, so check the spelling first.',
     schema: {
       id: z.number().int(),
       body: z.string().max(65535),
-      author_employee_code: employeeCode.optional().describe('Attribute the comment to this person'),
+      author_employee_code: employeeCode.optional().describe('Credit someone OTHER than the key owner; omit to use the key issuer / CLOKIO_DEFAULT_ACTOR'),
       notify: z.boolean().optional().describe('Send notifications to watchers (default: the API decides)'),
     },
     handler: (args, cfg) =>
@@ -263,7 +272,7 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
         method: 'POST',
         body: {
           body: args.body,
-          author_employee_code: args.author_employee_code,
+          author_employee_code: args.author_employee_code ?? cfg.defaultActor,
           notify: args.notify,
         },
       }),
@@ -287,7 +296,7 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
     handler: (args, cfg) =>
       request(cfg, `/tasks/${args.id}/comments/${args.comment_id}`, {
         method: 'PATCH',
-        body: { body: args.body, author_employee_code: args.author_employee_code },
+        body: { body: args.body, author_employee_code: args.author_employee_code ?? cfg.defaultActor },
       }),
   });
 

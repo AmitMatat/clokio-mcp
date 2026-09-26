@@ -51,6 +51,12 @@ MCP is an open standard.
 Optional: set `CLOKIO_BASE_URL` to point at a different Clokio installation
 (defaults to `https://app.clokio.io`).
 
+Optional: set `CLOKIO_DEFAULT_ACTOR` to an `employee_code` (e.g. `00055`) to
+attribute tasks, comments and updates that name no author. You usually do not
+need it — an unnamed write is already credited to the person who issued the API
+key. Use it only for a **shared or service key** whose issuer is not the person
+acting. An explicit code on a tool call always takes precedence.
+
 ## Tools
 
 36 tools across five areas. Read-only tools carry the MCP `readOnlyHint`; writes

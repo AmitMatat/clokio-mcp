@@ -10,6 +10,17 @@
 export interface ClokioConfig {
   baseUrl: string;
   apiKey: string;
+  /**
+   * The employee_code to attribute writes to when a tool does not name one.
+   *
+   * The API already falls back to the KEY'S ISSUER for an unnamed write, so
+   * a person using their own key gets correct attribution with no config at
+   * all. This is only for the case that fallback does not cover: a SHARED or
+   * service key whose issuer is not the person actually acting. Set
+   * CLOKIO_DEFAULT_ACTOR and every unnamed create/comment/update is credited
+   * to that code instead. An explicit code on a tool call always wins.
+   */
+  defaultActor?: string;
 }
 
 export function loadConfig(): ClokioConfig {
@@ -21,7 +32,17 @@ export function loadConfig(): ClokioConfig {
     );
   }
   const baseUrl = (process.env.CLOKIO_BASE_URL?.trim() || 'https://app.clokio.io').replace(/\/+$/, '');
-  return { baseUrl, apiKey };
+
+  const defaultActor = process.env.CLOKIO_DEFAULT_ACTOR?.trim() || undefined;
+  // Validate the same way the API constrains an employee_code, so a
+  // misconfigured value fails at startup rather than silently on every write.
+  if (defaultActor && !/^[A-Za-z0-9_-]{1,50}$/.test(defaultActor)) {
+    throw new Error(
+      'CLOKIO_DEFAULT_ACTOR must be an employee_code (1-50 chars of letters, digits, _ or -).'
+    );
+  }
+
+  return { baseUrl, apiKey, defaultActor };
 }
 
 /**
