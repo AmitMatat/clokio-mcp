@@ -45,6 +45,24 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
       per_page: z.number().int().min(1).max(100).optional(),
       page: z.number().int().optional(),
       cursor: z.string().optional().describe('meta.next_cursor from a previous page; preferred over page'),
+      sort: z
+        .enum([
+          'due_date',
+          'due_date_desc',
+          'created_at',
+          'created_at_desc',
+          'updated_at',
+          'updated_at_desc',
+          'title',
+          'title_desc',
+          'priority',
+          'priority_desc',
+        ])
+        .optional()
+        .describe(
+          'Order the page. `priority` ascends low -> urgent. CANNOT be combined with cursor or ' +
+            'updated_since - that is a 422, because re-ordering a crawl silently skips rows.'
+        ),
     },
     handler: (args, cfg) =>
       request(cfg, '/tasks', {
@@ -66,6 +84,7 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
           per_page: args.per_page,
           page: args.page,
           cursor: args.cursor,
+          sort: args.sort,
         },
       }),
   });
@@ -200,7 +219,11 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
       'Add a comment to a task. Set author_employee_code to attribute it to a person; otherwise it shows as ' +
       'the API key owner ("External System"). Use readable formatting (paragraphs, blank lines, bullet ' +
       'lists); markdown TABLES are not rendered and post as raw text. Write in the language of the person ' +
-      'you are answering. A comment cannot be edited or deleted through this API, so get it right first time.',
+      'you are answering. ' +
+      'TO MENTION SOMEONE, write @ followed by their full name exactly as clokio_list_employees spells it ' +
+      '(for example "@Kiran Bahadur") in the body text - no markup needed. It becomes a real mention and ' +
+      'notifies them, but only if the comment has an author_employee_code; an unattributed comment notifies ' +
+      'nobody. A name that matches no one stays as plain text, so check the spelling first.',
     schema: {
       id: z.number().int(),
       body: z.string().max(65535),

@@ -77,7 +77,7 @@ const TOOL_CALLS = [
     query: [
       'project_id', 'status', 'priority', 'assignee_employee_code', 'label', 'search',
       'open', 'parent_task_id', 'created_before', 'created_after', 'due_before', 'due_after', 'updated_since',
-      'include_comments', 'per_page', 'page', 'cursor',
+      'include_comments', 'per_page', 'page', 'cursor', 'sort',
     ],
   },
   { tool: 'clokio_get_task', method: 'get', path: '/tasks/{id}', query: [] },
