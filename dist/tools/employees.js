@@ -58,9 +58,16 @@ export function registerEmployeeTools(server, config) {
         schema: {
             employee_code: employeeCode,
             stale_days: z.number().int().min(1).max(365).optional(),
+            definitions: z
+                .boolean()
+                .optional()
+                .describe('false drops the definitions block once you know what the numbers mean'),
         },
         handler: (args, cfg) => request(cfg, `/employees/${seg(args.employee_code)}/task-stats`, {
-            query: { stale_days: args.stale_days },
+            query: {
+                stale_days: args.stale_days,
+                definitions: args.definitions === undefined ? undefined : args.definitions ? 1 : 0,
+            },
         }),
     });
     registerTool(server, config, {

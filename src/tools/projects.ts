@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { ClokioConfig, request } from '../client.js';
 import { registerTool } from './helpers.js';
+import { VERSION } from '../version.js';
 
 /** Projects, clients, and the board-configuration + reference lookups. */
 export function registerProjectTools(server: McpServer, config: ClokioConfig): void {
@@ -104,6 +105,18 @@ export function registerProjectTools(server: McpServer, config: ClokioConfig): v
       'created_by_employee_code / author_employee_code on every write, so the work is attributed to a person ' +
       'instead of showing up as "External System" on a board the team reads. `issued_by` can be null.',
     schema: {},
-    handler: (_args, cfg) => request(cfg, '/me'),
+    // mcp_version is added CLIENT-side, from the running package, because the
+    // server cannot know which build is talking to it.
+    //
+    // It exists for one reason: `npx -y clokio-mcp` can serve a CACHED old
+    // build, and a session then reports bugs that were fixed releases ago
+    // against tools it does not actually have. That happened on 2026-09-26 -
+    // a session ran 0.1.2 while 0.5.3 was current, and the mismatch took a
+    // while to spot. Now the first call of a session states the version.
+    handler: async (_args, cfg) => {
+      const me = (await request(cfg, '/me')) as Record<string, unknown>;
+
+      return { ...me, mcp_version: VERSION };
+    },
   });
 }

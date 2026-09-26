@@ -53,7 +53,7 @@ const TOOL_CALLS = [
   // employees.ts
   { tool: 'clokio_list_employees', method: 'get', path: '/employees', query: ['search', 'email', 'status', 'department', 'per_page'] },
   { tool: 'clokio_lookup_employee_by_pin', method: 'post', path: '/employees/lookup', query: [] },
-  { tool: 'clokio_get_employee_task_stats', method: 'get', path: '/employees/{employeeCode}/task-stats', query: ['stale_days'] },
+  { tool: 'clokio_get_employee_task_stats', method: 'get', path: '/employees/{employeeCode}/task-stats', query: ['stale_days', 'definitions'] },
   { tool: 'clokio_create_employee', method: 'post', path: '/employees', query: [] },
   { tool: 'clokio_set_employee_status', method: 'patch', path: '/employees/{employeeCode}/status', query: [] },
 
@@ -77,10 +77,10 @@ const TOOL_CALLS = [
     query: [
       'project_id', 'status', 'priority', 'assignee_employee_code', 'label', 'search',
       'open', 'parent_task_id', 'created_before', 'created_after', 'due_before', 'due_after', 'updated_since',
-      'include_comments', 'per_page', 'page', 'cursor', 'sort',
+      'include_comments', 'per_page', 'page', 'cursor', 'sort', 'compact',
     ],
   },
-  { tool: 'clokio_get_task', method: 'get', path: '/tasks/{id}', query: [] },
+  { tool: 'clokio_get_task', method: 'get', path: '/tasks/{id}', query: ['comments_limit'] },
   { tool: 'clokio_create_task', method: 'post', path: '/tasks', query: [] },
   { tool: 'clokio_update_task', method: 'patch', path: '/tasks/{id}', query: [] },
   { tool: 'clokio_delete_task', method: 'delete', path: '/tasks/{id}', query: [] },

@@ -47,6 +47,14 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
       per_page: z.number().int().min(1).max(100).optional(),
       page: z.number().int().optional(),
       cursor: z.string().optional().describe('meta.next_cursor from a previous page; preferred over page'),
+      compact: z
+        .boolean()
+        .optional()
+        .describe(
+          'STRONGLY PREFERRED when scanning. Returns id, title, status, priority, due_date, project, ' +
+            'assignees, labels and updated_at only - dropping the HTML description, which is most of the ' +
+            'payload. Fetch the one task you actually need in full with clokio_get_task.'
+        ),
       sort: z
         .enum([
           'due_date',
@@ -87,15 +95,29 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
           page: args.page,
           cursor: args.cursor,
           sort: args.sort,
+          compact: args.compact === undefined ? undefined : args.compact ? 1 : 0,
         },
       }),
   });
 
   registerTool(server, config, {
     name: 'clokio_get_task',
-    description: 'Get one task by id, with its full detail (assignees, labels, status, custom fields, task_url).',
-    schema: { id: z.number().int() },
-    handler: (args, cfg) => request(cfg, `/tasks/${args.id}`),
+    description:
+      'Get one task by id, with its full detail (assignees, labels, status, custom fields, task_url) and ' +
+      'its comments. A long-running task can carry dozens of comments: pass comments_limit to keep only the ' +
+      'newest few, or 0 for none. comments_count always reports the real total.',
+    schema: {
+      id: z.number().int(),
+      comments_limit: z
+        .number()
+        .int()
+        .min(0)
+        .max(200)
+        .optional()
+        .describe('Newest N comments only (0 = none). Omitted returns every comment'),
+    },
+    handler: (args, cfg) =>
+      request(cfg, `/tasks/${args.id}`, { query: { comments_limit: args.comments_limit } }),
   });
 
   registerTool(server, config, {
