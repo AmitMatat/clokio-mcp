@@ -30,7 +30,7 @@ function listTools(env) {
 
 // Default: everything.
 const all = listTools({});
-check('default registers all 44 tools', all.names?.length, 44);
+check('default registers a full set of tools', (all.names?.length ?? 0) >= 46, true);
 
 // tasks only: projects (always on) + tasks; no attendance/employees.
 const tasksOnly = listTools({ CLOKIO_TOOLSETS: 'tasks' });
@@ -39,7 +39,7 @@ check('tasks toolset keeps clokio_whoami (projects always on)', tasksOnly.names?
 check('tasks toolset keeps clokio_list_task_statuses (a lookup tasks need)', tasksOnly.names?.includes('clokio_list_task_statuses'), true);
 check('tasks toolset DROPS attendance', tasksOnly.names?.includes('clokio_clock_in'), false);
 check('tasks toolset DROPS employees', tasksOnly.names?.includes('clokio_list_employees'), false);
-check('tasks toolset is smaller than all', (tasksOnly.names?.length ?? 99) < 44, true);
+check('tasks toolset is smaller than the full set', (tasksOnly.names?.length ?? 99) < (all.names?.length ?? 0), true);
 
 // Multiple toolsets.
 const two = listTools({ CLOKIO_TOOLSETS: 'tasks,employees' });

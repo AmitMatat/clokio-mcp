@@ -390,4 +390,30 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
         body: { field_key: args.field_key, value: args.value },
       }),
   });
+
+  registerTool(server, config, {
+    name: 'clokio_bulk_update_tasks',
+    mutates: true,
+    description:
+      'Apply ONE change (any of status, priority, due_date) to up to 200 tasks at once - for cleaning up a ' +
+      'board without a call per task. Partial success is normal: the result is {updated, not_found, ' +
+      'invalid_status}. not_found lists ids that do not exist in your org (skipped, not fatal); ' +
+      'invalid_status lists tasks whose board does not have the given status slug. Give at least one of ' +
+      'status/priority/due_date. Attribution follows the key issuer unless actor_employee_code is set.',
+    schema: {
+      ids: z.array(z.number().int()).min(1).max(200),
+      status: z.string().optional().describe('Status slug - validated per task against its own board'),
+      priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
+      due_date: z.string().nullable().optional().describe('YYYY-MM-DD, or null to clear'),
+      actor_employee_code: employeeCode.optional().describe('Who to credit; omit to use the key issuer'),
+    },
+    handler: (args, cfg) => {
+      const body: Record<string, unknown> = { ids: args.ids };
+      if (args.status !== undefined) body.status = args.status;
+      if (args.priority !== undefined) body.priority = args.priority;
+      if (args.due_date !== undefined) body.due_date = args.due_date;
+      body.actor_employee_code = args.actor_employee_code ?? cfg.defaultActor;
+      return request(cfg, '/tasks/bulk', { method: 'PATCH', body });
+    },
+  });
 }

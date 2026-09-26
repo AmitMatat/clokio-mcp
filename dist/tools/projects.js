@@ -79,6 +79,18 @@ export function registerProjectTools(server, config) {
         handler: (_args, cfg) => request(cfg, '/locations'),
     });
     registerTool(server, config, {
+        name: 'clokio_list_webhooks',
+        description: 'The organisation\'s webhooks with their delivery health (sent / succeeded / failed, last error), for ' +
+            'answering "why did a notification not arrive?". READ ONLY - webhooks are created in the Clokio ' +
+            'dashboard, never through the API. The destination URL is masked (a webhook URL carries a secret token).',
+        schema: {
+            active: z.boolean().optional().describe('Filter to active (true) or inactive (false) webhooks'),
+        },
+        handler: (args, cfg) => request(cfg, '/webhooks', {
+            query: { active: args.active === undefined ? undefined : args.active ? 1 : 0 },
+        }),
+    });
+    registerTool(server, config, {
         name: 'clokio_whoami',
         description: 'Who this API key belongs to: the organisation (with its timezone - every date filter is evaluated in ' +
             'it), the rate limits that apply, and the person who issued it. It does NOT report the key\'s scopes ' +

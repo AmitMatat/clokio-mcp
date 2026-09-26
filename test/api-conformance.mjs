@@ -67,6 +67,7 @@ const TOOL_CALLS = [
   { tool: 'clokio_list_task_statuses', method: 'get', path: '/task-statuses', query: [] },
   { tool: 'clokio_list_task_labels', method: 'get', path: '/task-labels', query: [] },
   { tool: 'clokio_list_locations', method: 'get', path: '/locations', query: [] },
+  { tool: 'clokio_list_webhooks', method: 'get', path: '/webhooks', query: ['active'] },
   { tool: 'clokio_whoami', method: 'get', path: '/me', query: [] },
 
   // tasks.ts
@@ -95,6 +96,7 @@ const TOOL_CALLS = [
   { tool: 'clokio_add_task_dependency', method: 'post', path: '/tasks/{id}/dependencies', query: [] },
   { tool: 'clokio_remove_task_dependency', method: 'delete', path: '/tasks/{id}/dependencies/{depId}', query: [] },
   { tool: 'clokio_set_task_custom_field', method: 'patch', path: '/tasks/{id}/custom-fields', query: [] },
+  { tool: 'clokio_bulk_update_tasks', method: 'patch', path: '/tasks/bulk', query: [] },
 ];
 
 let fails = 0;
