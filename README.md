@@ -57,6 +57,14 @@ need it — an unnamed write is already credited to the person who issued the AP
 key. Use it only for a **shared or service key** whose issuer is not the person
 acting. An explicit code on a tool call always takes precedence.
 
+Optional: set `CLOKIO_TOOLSETS` to register only the tool groups you need, e.g.
+`CLOKIO_TOOLSETS=tasks`. This cuts the per-session tool-list cost — a
+task-focused session drops from 44 tools to 26. Optional groups are `tasks`,
+`employees` and `attendance` (which includes leave and time entries); combine
+them with commas. The `projects` group (project/client lookups, task statuses
+and labels, and `whoami`) is always on, because the task tools resolve names
+through it.
+
 ## Tools
 
 36 tools across five areas. Read-only tools carry the MCP `readOnlyHint`; writes

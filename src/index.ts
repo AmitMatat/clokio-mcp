@@ -20,24 +20,68 @@ import { registerEmployeeTools } from './tools/employees.js';
 import { registerAttendanceTools } from './tools/attendance.js';
 
 
+/**
+ * The optional tool groups a session can turn OFF.
+ *
+ * tools/list is ~8k tokens with everything registered, and a task-focused
+ * session never touches the 13 attendance/leave/time tools or the 5 employee
+ * ones. Setting e.g. CLOKIO_TOOLSETS=tasks drops them, cutting the per-session
+ * cost.
+ *
+ * `projects` is NOT selectable: it holds whoami and the reference lookups
+ * (task statuses, labels, projects, locations) that the task tools depend on
+ * to resolve names to ids, so it is always registered. Naming a toolset that
+ * does not exist is refused at startup rather than silently ignored.
+ */
+const OPTIONAL_TOOLSETS = ['tasks', 'employees', 'attendance'] as const;
+type Toolset = (typeof OPTIONAL_TOOLSETS)[number];
+
+function selectedToolsets(): Set<Toolset> {
+  const raw = process.env.CLOKIO_TOOLSETS?.trim();
+  if (!raw) {
+    // Default: everything.
+    return new Set(OPTIONAL_TOOLSETS);
+  }
+
+  const requested = raw
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+
+  const unknown = requested.filter((s) => !(OPTIONAL_TOOLSETS as readonly string[]).includes(s));
+  if (unknown.length) {
+    throw new Error(
+      `CLOKIO_TOOLSETS names unknown toolset(s): ${unknown.join(', ')}. ` +
+        `Valid values are: ${OPTIONAL_TOOLSETS.join(', ')} (projects is always on).`
+    );
+  }
+
+  return new Set(requested as Toolset[]);
+}
+
 async function main(): Promise<void> {
   const config = loadConfig();
+  const toolsets = selectedToolsets();
 
   const server = new McpServer({
     name: 'clokio-mcp',
     version: VERSION,
   });
 
-  registerTaskTools(server, config);
+  // Always on: whoami plus the reference lookups the task tools resolve
+  // names against.
   registerProjectTools(server, config);
-  registerEmployeeTools(server, config);
-  registerAttendanceTools(server, config);
+
+  if (toolsets.has('tasks')) registerTaskTools(server, config);
+  if (toolsets.has('employees')) registerEmployeeTools(server, config);
+  if (toolsets.has('attendance')) registerAttendanceTools(server, config);
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
 
   // stderr is safe for logs on stdio transport (stdout carries the protocol).
-  process.stderr.write(`clokio-mcp connected (base: ${config.baseUrl})\n`);
+  const active = ['projects', ...OPTIONAL_TOOLSETS.filter((t) => toolsets.has(t))].join(', ');
+  process.stderr.write(`clokio-mcp ${VERSION} connected (base: ${config.baseUrl}, toolsets: ${active})\n`);
 }
 
 main().catch((e) => {
