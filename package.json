@@ -1,0 +1,31 @@
+{
+  "name": "clokio-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for the Clokio Public API — manage tasks, projects, attendance and employees from any MCP client.",
+  "type": "module",
+  "bin": {
+    "clokio-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.4",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "UNLICENSED",
+  "private": true
+}
