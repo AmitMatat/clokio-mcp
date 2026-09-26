@@ -8,33 +8,54 @@ Every request is authenticated with **your own** Clokio API key (`clk_...`),
 sent as `X-API-Key`. The key carries its own scopes, so this server never
 re-implements authorization: a 403 / 422 from the API is surfaced verbatim.
 
-## Setup
+## Install (the easy way — one command, no clone, no build)
 
-```bash
-cd clokio-mcp
-npm install
-npm run build
-```
+You only need a Clokio API key. Create/manage keys in the admin dashboard at
+`/admin/api-keys/`. Each person uses their own key so permissions and the audit
+trail stay per-user.
 
-You need a Clokio API key. Create/manage keys in the admin dashboard at
-`/admin/api-keys/`. Each person should use their own key so permissions and the
-audit trail stay per-user.
-
-## Register with Claude Code
+**Claude Code:**
 
 ```bash
 claude mcp add clokio \
   --env CLOKIO_API_KEY=clk_your_key_here \
-  -- node /absolute/path/to/clokio-mcp/dist/index.js
+  -- npx -y github:AmitMatat/clokio-mcp
 ```
 
-Optional: set `CLOKIO_BASE_URL` (defaults to `https://app.clokio.io`).
+That's it. `npx` fetches this repo, and the server is prebuilt (`dist/` is
+committed), so it runs directly — no `npm install`, no build, and it works even
+when `NODE_ENV=production`.
 
-Once the package is published to npm you can instead use:
+Optional: add `--env CLOKIO_BASE_URL=https://app.clokio.io` to point at a
+different installation (defaults to `https://app.clokio.io`).
+
+**Claude Desktop** — add to `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "clokio": {
+      "command": "npx",
+      "args": ["-y", "github:AmitMatat/clokio-mcp"],
+      "env": { "CLOKIO_API_KEY": "clk_your_key_here" }
+    }
+  }
+}
+```
+
+The same `npx -y github:AmitMatat/clokio-mcp` command works in any MCP client
+(Cursor, Cline, Zed, …) — MCP is an open standard.
+
+## Local development
 
 ```bash
-claude mcp add clokio --env CLOKIO_API_KEY=clk_... -- npx -y clokio-mcp
+cd clokio-mcp
+npm install          # includes devDependencies (typescript)
+npm run build        # rebuilds dist/
 ```
+
+Commit the rebuilt `dist/` alongside any source change — it is what the install
+runs.
 
 ## Register with Claude Desktop
 

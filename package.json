@@ -26,6 +26,9 @@
   "engines": {
     "node": ">=18"
   },
-  "license": "UNLICENSED",
-  "private": true
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AmitMatat/clokio-mcp.git"
+  },
+  "license": "UNLICENSED"
 }

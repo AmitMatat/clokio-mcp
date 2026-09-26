@@ -1,5 +1,10 @@
 node_modules/
-dist/
 *.log
 .DS_Store
 .env
+
+# dist/ is intentionally COMMITTED (not ignored): it is the prebuilt server
+# that `npx github:AmitMatat/clokio-mcp` runs directly, with no build step at
+# install time. This is what makes the install work even when NODE_ENV=production
+# (npm then skips the typescript devDependency, so an install-time build would
+# fail). Rebuild with `npm run build` before committing source changes.
