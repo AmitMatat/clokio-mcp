@@ -94,8 +94,32 @@ export async function requestRaw(
       if (!location) {
         throw new ClokioApiError(0, 'Clokio redirected the download without a destination.');
       }
+
+      // WHERE the redirect may point is constrained, even though the key does
+      // not travel with it.
+      //
+      // new URL() resolution is unrestricted: `file:///etc/passwd`, `data:...`
+      // and `http://169.254.169.254/...` all resolve to themselves rather than
+      // inheriting our origin. Node's fetch refuses most of those schemes on
+      // its own, but `data:` it happily resolves, and an http(s) target is a
+      // blind SSRF - this process would fetch an attacker-named URL and return
+      // up to 100k characters of the response into the model's context.
+      //
+      // Reaching that requires control of the API's own response, at which
+      // point the attacker could have put the same bytes in the attachment
+      // body - so it buys them nothing today. It is refused anyway because the
+      // check is free, and because "the API is trustworthy" is the assumption
+      // most likely to stop being true.
+      const target = new URL(location, url);
+      if (target.protocol !== 'https:' && target.protocol !== 'http:') {
+        throw new ClokioApiError(
+          0,
+          `Refusing to follow a download redirect to a ${target.protocol} URL.`
+        );
+      }
+
       // NO headers: the key must not cross to the storage origin.
-      res = await fetch(new URL(location, url), { redirect: 'error' });
+      res = await fetch(target, { redirect: 'error' });
     }
   } catch (e) {
     if (e instanceof ClokioApiError) throw e;

@@ -92,6 +92,28 @@ check('and says how much is missing', huge.includes('more characters not shown')
 console.log('\n=== small text passes through untouched ===');
 check('a short note is returned verbatim', await requestRaw(config, '/tasks/1/attachments/5'), 'a short note');
 
+console.log('\n=== a redirect to a non-http scheme is refused ===');
+// Node refuses file:/javascript: on its own, but resolves data: happily - and
+// an http(s) target is a blind SSRF. The key does not travel either way, so
+// this is defence in depth, not a live hole.
+const evil = createServer((req, res) => {
+  res.writeHead(302, { location: 'data:text/plain,pwned' });
+  res.end();
+});
+evil.listen(0, '127.0.0.1');
+await once(evil, 'listening');
+const evilConfig = { baseUrl: `http://127.0.0.1:${evil.address().port}`, apiKey: KEY };
+
+let schemeErr = null;
+try {
+  await requestRaw(evilConfig, '/tasks/1/attachments/9');
+} catch (e) {
+  schemeErr = e;
+}
+check('a data: redirect is refused', schemeErr instanceof ClokioApiError, true);
+check('and says why', (schemeErr?.message ?? '').includes('Refusing to follow'), true);
+evil.close();
+
 console.log('\n=== errors still surface the API message ===');
 let err = null;
 try {
