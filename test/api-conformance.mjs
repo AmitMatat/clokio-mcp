@@ -54,6 +54,7 @@ const TOOL_CALLS = [
   { tool: 'clokio_list_employees', method: 'get', path: '/employees', query: ['search', 'email', 'status', 'department', 'per_page'] },
   { tool: 'clokio_lookup_employee_by_pin', method: 'post', path: '/employees/lookup', query: [] },
   { tool: 'clokio_get_employee_task_stats', method: 'get', path: '/employees/{employeeCode}/task-stats', query: ['stale_days', 'definitions'] },
+  { tool: 'clokio_get_inbox', method: 'get', path: '/employees/{employeeCode}/inbox', query: ['since'] },
   { tool: 'clokio_create_employee', method: 'post', path: '/employees', query: [] },
   { tool: 'clokio_set_employee_status', method: 'patch', path: '/employees/{employeeCode}/status', query: [] },
 

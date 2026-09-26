@@ -71,6 +71,20 @@ export function registerEmployeeTools(server, config) {
         }),
     });
     registerTool(server, config, {
+        name: 'clokio_get_inbox',
+        description: 'What needs one person\'s attention: mentions_waiting (comments that @-mention them and that they have ' +
+            'NOT replied to yet) and newly_assigned (tasks assigned to them in the window). This is how you find ' +
+            'that someone asked a question, without scanning the board. `since` defaults to 14 days (max 90). ' +
+            'To answer for the KEY OWNER, pass their own employee_code (from clokio_whoami).',
+        schema: {
+            employee_code: employeeCode,
+            since: z.string().optional().describe('ISO-8601 or YYYY-MM-DD. Only items after this. Default 14 days ago'),
+        },
+        handler: (args, cfg) => request(cfg, `/employees/${seg(args.employee_code)}/inbox`, {
+            query: { since: args.since },
+        }),
+    });
+    registerTool(server, config, {
         name: 'clokio_create_employee',
         mutates: true,
         description: 'Create (or reactivate) an employee. Reactivating an existing inactive employee never resets their ' +
