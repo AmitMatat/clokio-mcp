@@ -15,6 +15,23 @@ export function loadConfig() {
     const baseUrl = (process.env.CLOKIO_BASE_URL?.trim() || 'https://app.clokio.io').replace(/\/+$/, '');
     return { baseUrl, apiKey };
 }
+/**
+ * Encode ONE path segment supplied by a tool argument.
+ *
+ * Interpolating a raw argument into a request path lets it change which
+ * endpoint is called: `?` truncates the path (so a hardcoded `/status` suffix
+ * becomes query noise and the request lands on a different route), `/` adds
+ * segments, and `..` climbs. encodeURIComponent turns all of them into their
+ * percent-encoded forms, which the API then sees as a single literal value -
+ * and its own `[A-Za-z0-9_-]` route constraint rejects it.
+ *
+ * Every tool that puts a STRING into a path must wrap it in this. Numeric
+ * (z.number().int()) arguments cannot carry separators and need no wrapping,
+ * but passing them through is harmless.
+ */
+export function seg(value) {
+    return encodeURIComponent(String(value));
+}
 /** A Clokio API error, carrying the HTTP status and the server's message. */
 export class ClokioApiError extends Error {
     status;
@@ -35,6 +52,18 @@ export class ClokioApiError extends Error {
 export async function request(config, path, options = {}) {
     const { method = 'GET', query, body } = options;
     const url = new URL(`${config.baseUrl}/api/v1${path.startsWith('/') ? path : `/${path}`}`);
+    // A tool argument interpolated into `path` must never be able to change
+    // WHICH endpoint is called. new URL() normalises the assembled string, so a
+    // value containing `?` truncates the path (turning `/employees/X/status`
+    // into `/employees/X/pin?...`) and `../` segments climb out of /api/v1.
+    // That is an endpoint pivot: a caller who approved "set employee status"
+    // would instead reach PATCH /employees/{code}/pin, which resets a person's
+    // clock-in PIN and returns it in the response. Callers validate their own
+    // arguments, but this is the invariant that holds even if one forgets.
+    const expectedPrefix = new URL(config.baseUrl).pathname.replace(/\/+$/, '') + '/api/v1/';
+    if (!url.pathname.startsWith(expectedPrefix)) {
+        throw new ClokioApiError(0, 'Refusing to send a request outside /api/v1 - a path argument tried to change the endpoint.');
+    }
     if (query) {
         for (const [key, value] of Object.entries(query)) {
             if (value === undefined || value === null)

@@ -1,7 +1,17 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { ClokioConfig, request } from '../client.js';
+import { ClokioConfig, request, seg } from '../client.js';
 import { registerTool } from './helpers.js';
+
+/**
+ * An employee_code goes into the request PATH, so it must not be able to carry
+ * a path separator or a query marker - see seg() / the /api/v1 guard in
+ * client.js. This mirrors the constraint the API route itself declares
+ * (`->where('employeeCode', '[A-Za-z0-9_-]{1,50}')`).
+ */
+const employeeCode = z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{1,50}$/, 'employee_code must be 1-50 chars of letters, digits, _ or -');
 
 /** Employee directory + provisioning. */
 export function registerEmployeeTools(server: McpServer, config: ClokioConfig): void {
@@ -39,11 +49,11 @@ export function registerEmployeeTools(server: McpServer, config: ClokioConfig): 
       "One employee's open / delayed_from_open / past_due task counts. stale_days sets the 'delayed' threshold " +
       '(default 7, range 1-365). A task with N assignees counts for each of them.',
     schema: {
-      employee_code: z.string(),
+      employee_code: employeeCode,
       stale_days: z.number().int().min(1).max(365).optional(),
     },
     handler: (args, cfg) =>
-      request(cfg, `/employees/${args.employee_code}/task-stats`, {
+      request(cfg, `/employees/${seg(args.employee_code)}/task-stats`, {
         query: { stale_days: args.stale_days },
       }),
   });
@@ -73,11 +83,11 @@ export function registerEmployeeTools(server: McpServer, config: ClokioConfig): 
     mutates: true,
     description: 'Set an employee\'s status (active / inactive / resign).',
     schema: {
-      employee_code: z.string(),
+      employee_code: employeeCode,
       status: z.enum(['active', 'inactive', 'resign']),
     },
     handler: (args, cfg) =>
-      request(cfg, `/employees/${args.employee_code}/status`, {
+      request(cfg, `/employees/${seg(args.employee_code)}/status`, {
         method: 'PATCH',
         body: { status: args.status },
       }),

@@ -1,6 +1,10 @@
 import { z } from 'zod';
-import { request } from '../client.js';
+import { request, seg } from '../client.js';
 import { registerTool } from './helpers.js';
+/** See employees.ts - an employee_code reaches the request path. */
+const employeeCode = z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{1,50}$/, 'employee_code must be 1-50 chars of letters, digits, _ or -');
 /** Attendance reads + clock/break writes, plus time entries and balances. */
 export function registerAttendanceTools(server, config) {
     registerTool(server, config, {
@@ -22,11 +26,11 @@ export function registerAttendanceTools(server, config) {
         name: 'clokio_attendance_for_employee',
         description: "One employee's attendance. Optionally scope to a date range.",
         schema: {
-            employee_code: z.string(),
+            employee_code: employeeCode,
             start_date: z.string().optional().describe('YYYY-MM-DD'),
             end_date: z.string().optional().describe('YYYY-MM-DD'),
         },
-        handler: (args, cfg) => request(cfg, `/attendance/employee/${args.employee_code}`, {
+        handler: (args, cfg) => request(cfg, `/attendance/employee/${seg(args.employee_code)}`, {
             query: { start_date: args.start_date, end_date: args.end_date },
         }),
     });
