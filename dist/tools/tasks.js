@@ -105,7 +105,11 @@ export function registerTaskTools(server, config) {
             estimated_hours: z.number().min(0).max(9999.99).optional(),
             parent_task_id: z.number().int().optional().describe('Makes this a subtask of that task'),
             assignee_employee_codes: z.array(employeeCode).max(50).optional(),
-            label_names: z.array(z.string().max(100)).max(20).optional(),
+            label_names: z
+                .array(z.string().max(100))
+                .max(20)
+                .optional()
+                .describe('Label names. A name that does not exist yet is CREATED - check clokio_list_task_labels first'),
             created_by_employee_code: employeeCode.optional().describe('Attribute the task to this person'),
         },
         handler: (args, cfg) => request(cfg, '/tasks', {

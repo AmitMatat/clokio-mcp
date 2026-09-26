@@ -65,7 +65,9 @@ export function registerProjectTools(server, config) {
     });
     registerTool(server, config, {
         name: 'clokio_list_task_labels',
-        description: 'List the available task labels (tags), with names and colors.',
+        description: 'List the available task labels (tags), with names and colors. There is no separate "create label" ' +
+            'call and none is needed: naming a label that does not exist yet in clokio_create_task\'s label_names ' +
+            'creates it. Check this list first so you reuse an existing label instead of creating a near-duplicate.',
         schema: {},
         handler: (_args, cfg) => request(cfg, '/task-labels'),
     });
