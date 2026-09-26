@@ -17,7 +17,8 @@ export function registerEmployeeTools(server, config) {
         description: 'Find people. This is how you resolve a PERSON TO THEIR employee_code - the stable id every other tool ' +
             'wants for assignees, comment authors and task creators. Pass `search` with a name (or part of one) ' +
             'rather than listing everyone and matching yourself. Combine with status=active to skip people who have ' +
-            'left. email is returned only if the key holds the employees:pii scope.',
+            'left. email is returned only if the key holds the employees:pii scope. ' +
+            'Paginated: the response is {data, meta}, the people under data.',
         schema: {
             search: z.string().max(120).optional().describe('Free text over name and employee_code'),
             email: z.string().optional().describe('EXACT email match (not a substring search)'),

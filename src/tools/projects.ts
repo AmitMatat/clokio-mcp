@@ -10,7 +10,7 @@ export function registerProjectTools(server: McpServer, config: ClokioConfig): v
     name: 'clokio_list_projects',
     description:
       'List projects, optionally filtered by a search term (name / client) or status. Use this to resolve a ' +
-      'project NAME to the project_id every task tool needs.',
+      'project NAME to the project_id every task tool needs. Paginated: {data, meta}.',
     schema: {
       search: z.string().max(200).optional(),
       status: z.enum(['active', 'archived']).optional(),
