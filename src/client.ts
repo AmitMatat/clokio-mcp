@@ -61,7 +61,11 @@ export function seg(value: string | number): string {
  * The description still answers the question the caller actually had - is
  * there a file here, what kind, how big.
  */
-export async function requestRaw(config: ClokioConfig, path: string): Promise<string> {
+export async function requestRaw(
+  config: ClokioConfig,
+  path: string,
+  fileName?: string
+): Promise<string> {
   const url = new URL(`${config.baseUrl}/api/v1${path.startsWith('/') ? path : `/${path}`}`);
 
   const expectedPrefix = new URL(config.baseUrl).pathname.replace(/\/+$/, '') + '/api/v1/';
@@ -71,11 +75,30 @@ export async function requestRaw(config: ClokioConfig, path: string): Promise<st
 
   let res: Response;
   try {
+    // `manual`, not 'error' and not 'follow'.
+    //
+    // The API streams small and renderable files, but 302s to a short-lived
+    // signed storage URL for anything over 8 MB. 'error' would report every
+    // large attachment as a bogus network failure. 'follow' is worse: Node
+    // re-sends request headers on a redirect, so X-API-Key would be handed
+    // to another origin, which is the leak the redirect: 'error' on the JSON
+    // path exists to prevent. So the redirect is followed HERE, by hand,
+    // with no credential attached - the signed URL needs none.
     res = await fetch(url, {
       headers: { 'X-API-Key': config.apiKey },
-      redirect: 'error',
+      redirect: 'manual',
     });
+
+    if (res.status >= 300 && res.status < 400) {
+      const location = res.headers.get('location');
+      if (!location) {
+        throw new ClokioApiError(0, 'Clokio redirected the download without a destination.');
+      }
+      // NO headers: the key must not cross to the storage origin.
+      res = await fetch(new URL(location, url), { redirect: 'error' });
+    }
   } catch (e) {
+    if (e instanceof ClokioApiError) throw e;
     throw new ClokioApiError(0, `Network error reaching Clokio: ${(e as Error).message}`);
   }
 
@@ -94,15 +117,41 @@ export async function requestRaw(config: ClokioConfig, path: string): Promise<st
   const type = res.headers.get('content-type') ?? 'application/octet-stream';
   const buffer = Buffer.from(await res.arrayBuffer());
 
+  // CONTENT-TYPE IS NOT ENOUGH. The API deliberately re-labels html, json,
+  // js, svg and xml attachments as application/octet-stream so a browser
+  // cannot render them from our origin - an XSS defence. Trusting the header
+  // alone would report a JSON report an agent attached as unreadable binary,
+  // so the file EXTENSION gets a say too.
+  const extension = (fileName ?? '').toLowerCase().match(/\.([a-z0-9]+)$/)?.[1] ?? '';
+  const TEXT_EXTENSIONS = new Set([
+    'txt', 'md', 'markdown', 'csv', 'tsv', 'json', 'xml', 'yaml', 'yml',
+    'html', 'htm', 'log', 'diff', 'patch', 'sql', 'js', 'ts', 'css', 'svg',
+  ]);
+
   const isText =
     type.startsWith('text/') ||
-    /\b(json|xml|csv|yaml|javascript|markdown)\b/.test(type);
-
-  if (isText) {
-    return buffer.toString('utf8');
-  }
+    /\b(json|xml|csv|yaml|javascript|markdown)\b/.test(type) ||
+    TEXT_EXTENSIONS.has(extension);
 
   const kb = (buffer.byteLength / 1024).toFixed(1);
+
+  if (isText) {
+    // A CAP ON TEXT TOO. Attachments go up to 200 MB and .csv/.log are
+    // allowed, so "it is text" does not make it safe to paste: a 40 MB CSV
+    // would be dumped whole into the conversation. Truncate and SAY SO, so
+    // the reader never mistakes a prefix for the entire file.
+    const LIMIT = 100_000;
+    const text = buffer.toString('utf8');
+    if (text.length <= LIMIT) {
+      return text;
+    }
+
+    return (
+      `[truncated: showing the first ${LIMIT.toLocaleString()} characters of ${kb} KB]\n\n` +
+      text.slice(0, LIMIT) +
+      `\n\n[...truncated. ${(text.length - LIMIT).toLocaleString()} more characters not shown.]`
+    );
+  }
 
   return (
     `[binary file: ${type}, ${kb} KB]\n\n` +

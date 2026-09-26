@@ -276,15 +276,20 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
   registerTool(server, config, {
     name: 'clokio_download_task_attachment',
     description:
-      'Download one attachment. Returns the FILE, not JSON - text files come back as text, and binary ones ' +
-      '(images, PDFs, spreadsheets) are reported with their type and size rather than dumped into the ' +
-      'conversation. Get the attachment id from clokio_list_task_attachments.',
+      'Download one attachment. Returns the FILE, not JSON: text comes back as text (truncated if very ' +
+      'large, and it says so), while binary files (images, PDFs, spreadsheets) are reported with their type ' +
+      'and size rather than dumped into the conversation. Get the attachment id - and file_name, which helps ' +
+      'this tool recognise text - from clokio_list_task_attachments.',
     schema: {
       id: z.number().int().describe('The task id'),
       attachment_id: z.number().int(),
+      file_name: z
+        .string()
+        .optional()
+        .describe('The file_name from clokio_list_task_attachments. Improves text detection'),
     },
     handler: (args, cfg) =>
-      requestRaw(cfg, `/tasks/${args.id}/attachments/${args.attachment_id}`),
+      requestRaw(cfg, `/tasks/${args.id}/attachments/${args.attachment_id}`, args.file_name),
   });
 
   registerTool(server, config, {
