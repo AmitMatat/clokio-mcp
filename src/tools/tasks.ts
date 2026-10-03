@@ -2,7 +2,13 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { ClokioConfig, request, requestUpload } from '../client.js';
 import { registerTool } from './helpers.js';
-import { downloadAttachment, stampIsLatest, type SavedFile } from '../attachments.js';
+import {
+  asAttachmentArray,
+  downloadAttachment,
+  safeAttachmentName,
+  stampIsLatest,
+  type SavedFile,
+} from '../attachments.js';
 
 /** See employees.ts - the same stable-identifier rule applies to task filters. */
 const employeeCode = z
@@ -320,8 +326,9 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
         .describe('Return only the newest upload of each file name, dropping superseded duplicates'),
     },
     handler: async (args, cfg) => {
-      const rows = (await request(cfg, `/tasks/${args.id}/attachments`)) as any[];
-      if (!Array.isArray(rows)) return rows;
+      const raw = await request(cfg, `/tasks/${args.id}/attachments`);
+      const rows = asAttachmentArray(raw);
+      if (!rows) return raw; // unexpected shape - hand it back rather than hide it
       const stamped = stampIsLatest(rows);
       return args.latest_only ? stamped.filter((r) => r.is_latest) : stamped;
     },
@@ -381,9 +388,9 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
     },
     handler: async (args, cfg) => {
       const { join } = await import('node:path');
-      const rows = (await request(cfg, `/tasks/${args.id}/attachments`)) as any[];
-      if (!Array.isArray(rows)) {
-        return { error: 'The attachments endpoint did not return a list.', raw: rows };
+      const rows = asAttachmentArray(await request(cfg, `/tasks/${args.id}/attachments`));
+      if (!rows) {
+        return { error: 'The attachments endpoint did not return a list.' };
       }
       const stamped = stampIsLatest(rows);
       const selected = args.latest_only ? stamped.filter((r) => r.is_latest) : stamped;
@@ -393,9 +400,9 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
       const usedNames = new Set<string>();
 
       for (const row of selected) {
-        // Disambiguate repeated names so a second "report.pdf" does not clobber
-        // the first: report.pdf, report (2).pdf, ...
-        const original = (row.file_name as string | undefined) ?? `attachment-${row.id}`;
+        // file_name is API-supplied and UNTRUSTED on the write path;
+        // safeAttachmentName strips any directory part so it stays in save_dir.
+        const original = safeAttachmentName(row.file_name as string | undefined, row.id);
         let name = original;
         let counter = 2;
         while (usedNames.has(name)) {

@@ -60,15 +60,22 @@ async function extractPdfText(buffer) {
     const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
     const data = new Uint8Array(buffer);
     const doc = await pdfjs.getDocument({ data, useSystemFonts: true, isEvalSupported: false }).promise;
-    const parts = [];
-    for (let n = 1; n <= doc.numPages; n++) {
-        const page = await doc.getPage(n);
-        const content = await page.getTextContent();
-        parts.push(content.items.map((i) => (typeof i.str === 'string' ? i.str : '')).join(' '));
+    // destroy() in finally: a throw from getPage/getTextContent on a malformed PDF
+    // is caught by the caller for the user message, but WITHOUT this the pdfjs
+    // document and its worker would leak for the life of the process, and a run of
+    // failing PDFs would pile them up.
+    try {
+        const parts = [];
+        for (let n = 1; n <= doc.numPages; n++) {
+            const page = await doc.getPage(n);
+            const content = await page.getTextContent();
+            parts.push(content.items.map((i) => (typeof i.str === 'string' ? i.str : '')).join(' '));
+        }
+        return { text: parts.join('\n\n'), pages: doc.numPages };
     }
-    const pages = doc.numPages;
-    await doc.destroy();
-    return { text: parts.join('\n\n'), pages };
+    finally {
+        await doc.destroy();
+    }
 }
 function capText(text) {
     if (text.length <= TEXT_INLINE_LIMIT)
@@ -95,7 +102,13 @@ export function listZipEntries(buffer) {
     const EOCD_SIG = 0x06054b50;
     const CEN_SIG = 0x02014b50;
     const ZIP64_EOCD_LOCATOR_SIG = 0x07064b50;
-    // Find EOCD by scanning back from the end. 22 bytes is the minimum EOCD size.
+    // Find EOCD by scanning back from the end for its signature. This is how every
+    // ZIP reader locates it (the record has no fixed position - it may be followed
+    // by up to 64 KB of comment), so a signature embedded in a comment or in stored
+    // data could in principle false-match. We accept that: it is the standard
+    // approach, the listing is advisory (names/sizes, never extraction), and a
+    // misread yields a clear "not a readable ZIP" rather than a wrong file. 22
+    // bytes is the minimum EOCD size.
     let eocd = -1;
     const minEocd = 22;
     const scanStart = Math.max(0, buffer.length - (minEocd + 0xffff));
@@ -271,6 +284,40 @@ export async function downloadAttachment(config, taskId, attachmentId, opts) {
     return (`[binary file: ${contentType}, ${kb} KB]\n\n` +
         'The bytes are not included - they would be unreadable here and would cost a great deal of context. ' +
         'Pass save_path to write the file to disk, or ask the person to open it in Clokio.');
+}
+/**
+ * Coerce whatever the attachments endpoint returned into a plain array of rows,
+ * or null if it is not list-shaped.
+ *
+ * request() returns the bare `data` array for an un-paginated list TODAY, but it
+ * returns `{data, meta}` the moment the API attaches a meta envelope (it does
+ * for every paginated list). A bare `Array.isArray` check would then silently
+ * drop is_latest stamping and make the bulk tool report "no list" over a task
+ * that has attachments. Accept both shapes so the feature survives that change.
+ */
+/**
+ * Turn an API-supplied file_name into a safe basename to write under a chosen
+ * directory. The file_name is UNTRUSTED on the write path (same posture as the
+ * redirect checks in client.ts): strip any directory part so `../`, an absolute
+ * path or a Windows drive letter can only ever land a file INSIDE the target
+ * directory. A name that was nothing but a path (yields '', '.' or '..') falls
+ * back to a per-id name so it is still saved, just not where it asked.
+ */
+export function safeAttachmentName(rawName, id) {
+    // Split on BOTH separators: basename() on POSIX does not strip a Windows
+    // backslash, so "..\\..\\evil" would survive a posix basename().
+    const last = (rawName ?? '').split(/[\\/]/).pop() ?? '';
+    return last && last !== '.' && last !== '..' ? last : `attachment-${id}`;
+}
+export function asAttachmentArray(value) {
+    if (Array.isArray(value))
+        return value;
+    if (value &&
+        typeof value === 'object' &&
+        Array.isArray(value.data)) {
+        return value.data;
+    }
+    return null;
 }
 /**
  * Stamp each attachment with is_latest: whether it is the newest upload bearing

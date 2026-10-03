@@ -14,7 +14,13 @@ import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { writeFileSync, mkdirSync } from 'node:fs';
 
-import { downloadAttachment, listZipEntries, stampIsLatest } from '../dist/attachments.js';
+import {
+  downloadAttachment,
+  listZipEntries,
+  stampIsLatest,
+  safeAttachmentName,
+  asAttachmentArray,
+} from '../dist/attachments.js';
 
 let fails = 0;
 const check = (label, cond, extra = '') => {
@@ -166,6 +172,27 @@ if (pdfBytes) {
     { id: 2, file_name: 'x', created_at: '2026-10-01 10:00:00' },
   ]);
   check('id breaks a timestamp tie (higher id is latest)', tie.find((r) => r.id === 2)?.is_latest === true);
+}
+
+// ---- 8. safeAttachmentName neutralises a hostile API-supplied file_name ----
+{
+  check('plain name passes through', safeAttachmentName('report.pdf', 1) === 'report.pdf');
+  check('posix traversal is stripped to basename', safeAttachmentName('../../../etc/passwd', 1) === 'passwd', safeAttachmentName('../../../etc/passwd', 1));
+  check('windows traversal is stripped', safeAttachmentName('..\\..\\evil.txt', 1) === 'evil.txt', safeAttachmentName('..\\..\\evil.txt', 1));
+  check('absolute path is stripped', safeAttachmentName('/etc/cron.d/x', 1) === 'x');
+  check('a pure path falls back to the id', safeAttachmentName('../', 7) === 'attachment-7', safeAttachmentName('../', 7));
+  check('missing name falls back to the id', safeAttachmentName(undefined, 9) === 'attachment-9');
+  // join(save_dir, safeName) must never escape save_dir.
+  const escaped = join('/safe/dir', safeAttachmentName('../../../../tmp/evil', 1));
+  check('join with the safe name stays under save_dir', escaped.startsWith('/safe/dir/'), escaped);
+}
+
+// ---- 9. asAttachmentArray accepts both the bare array and a {data} envelope ----
+{
+  check('bare array passes through', asAttachmentArray([{ id: 1 }])?.length === 1);
+  check('{data:[...]} is unwrapped', asAttachmentArray({ data: [{ id: 1 }], meta: {} })?.length === 1);
+  check('non-list returns null', asAttachmentArray({ nope: true }) === null);
+  check('string returns null', asAttachmentArray('x') === null);
 }
 
 api.close();
