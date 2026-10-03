@@ -57,6 +57,84 @@ export function seg(value) {
  * The description still answers the question the caller actually had - is
  * there a file here, what kind, how big.
  */
+/**
+ * The raw bytes of a file endpoint, plus the content-type the API reported.
+ *
+ * This is the shared core: it owns the /api/v1 prefix guard, the by-hand
+ * redirect to signed storage with NO credential attached, and the redirect
+ * target scheme check - all the security-load-bearing parts of the download
+ * path. `requestRaw` renders these bytes as text/description for the model;
+ * the save-to-disk and typed-content tools consume the bytes directly.
+ */
+export async function requestRawBytes(config, path) {
+    const url = new URL(`${config.baseUrl}/api/v1${path.startsWith('/') ? path : `/${path}`}`);
+    const expectedPrefix = new URL(config.baseUrl).pathname.replace(/\/+$/, '') + '/api/v1/';
+    if (!url.pathname.startsWith(expectedPrefix)) {
+        throw new ClokioApiError(0, 'Refusing to send a request outside /api/v1.');
+    }
+    let res;
+    try {
+        // `manual`, not 'error' and not 'follow' - see the long note below.
+        res = await fetch(url, {
+            headers: { 'X-API-Key': config.apiKey },
+            redirect: 'manual',
+        });
+        if (res.status >= 300 && res.status < 400) {
+            const location = res.headers.get('location');
+            if (!location) {
+                throw new ClokioApiError(0, 'Clokio redirected the download without a destination.');
+            }
+            const target = new URL(location, url);
+            if (target.protocol !== 'https:' && target.protocol !== 'http:') {
+                throw new ClokioApiError(0, `Refusing to follow a download redirect to a ${target.protocol} URL.`);
+            }
+            // NO headers: the key must not cross to the storage origin.
+            res = await fetch(target, { redirect: 'error' });
+        }
+    }
+    catch (e) {
+        if (e instanceof ClokioApiError)
+            throw e;
+        throw new ClokioApiError(0, `Network error reaching Clokio: ${e.message}`);
+    }
+    if (!res.ok) {
+        const text = await res.text();
+        let message = `Clokio API returned HTTP ${res.status}`;
+        try {
+            const parsed = JSON.parse(text);
+            if (parsed && typeof parsed.message === 'string')
+                message = parsed.message;
+        }
+        catch {
+            /* a non-JSON error body is not more informative than the status */
+        }
+        throw new ClokioApiError(res.status, message);
+    }
+    const contentType = res.headers.get('content-type') ?? 'application/octet-stream';
+    const buffer = Buffer.from(await res.arrayBuffer());
+    return { buffer, contentType };
+}
+/**
+ * Decide whether an attachment is text, from BOTH the content-type and the file
+ * extension. Exported because the download tool needs the same verdict the
+ * renderer uses, to choose between text, PDF, image and binary handling.
+ *
+ * CONTENT-TYPE IS NOT ENOUGH. The API deliberately re-labels html, json, js,
+ * svg and xml attachments as application/octet-stream so a browser cannot
+ * render them from our origin - an XSS defence. Trusting the header alone would
+ * report a JSON report an agent attached as unreadable binary, so the file
+ * EXTENSION gets a say too.
+ */
+export function looksLikeText(contentType, fileName) {
+    const extension = (fileName ?? '').toLowerCase().match(/\.([a-z0-9]+)$/)?.[1] ?? '';
+    const TEXT_EXTENSIONS = new Set([
+        'txt', 'md', 'markdown', 'csv', 'tsv', 'json', 'xml', 'yaml', 'yml',
+        'html', 'htm', 'log', 'diff', 'patch', 'sql', 'js', 'ts', 'css', 'svg',
+    ]);
+    return (contentType.startsWith('text/') ||
+        /\b(json|xml|csv|yaml|javascript|markdown)\b/.test(contentType) ||
+        TEXT_EXTENSIONS.has(extension));
+}
 export async function requestRaw(config, path, fileName) {
     const url = new URL(`${config.baseUrl}/api/v1${path.startsWith('/') ? path : `/${path}`}`);
     const expectedPrefix = new URL(config.baseUrl).pathname.replace(/\/+$/, '') + '/api/v1/';
@@ -126,19 +204,7 @@ export async function requestRaw(config, path, fileName) {
     }
     const type = res.headers.get('content-type') ?? 'application/octet-stream';
     const buffer = Buffer.from(await res.arrayBuffer());
-    // CONTENT-TYPE IS NOT ENOUGH. The API deliberately re-labels html, json,
-    // js, svg and xml attachments as application/octet-stream so a browser
-    // cannot render them from our origin - an XSS defence. Trusting the header
-    // alone would report a JSON report an agent attached as unreadable binary,
-    // so the file EXTENSION gets a say too.
-    const extension = (fileName ?? '').toLowerCase().match(/\.([a-z0-9]+)$/)?.[1] ?? '';
-    const TEXT_EXTENSIONS = new Set([
-        'txt', 'md', 'markdown', 'csv', 'tsv', 'json', 'xml', 'yaml', 'yml',
-        'html', 'htm', 'log', 'diff', 'patch', 'sql', 'js', 'ts', 'css', 'svg',
-    ]);
-    const isText = type.startsWith('text/') ||
-        /\b(json|xml|csv|yaml|javascript|markdown)\b/.test(type) ||
-        TEXT_EXTENSIONS.has(extension);
+    const isText = looksLikeText(type, fileName);
     const kb = (buffer.byteLength / 1024).toFixed(1);
     if (isText) {
         // A CAP ON TEXT TOO. Attachments go up to 200 MB and .csv/.log are

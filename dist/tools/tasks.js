@@ -1,6 +1,7 @@
 import { z } from 'zod';
-import { request, requestRaw, requestUpload } from '../client.js';
+import { request, requestUpload } from '../client.js';
 import { registerTool } from './helpers.js';
+import { downloadAttachment, stampIsLatest } from '../attachments.js';
 /** See employees.ts - the same stable-identifier rule applies to task filters. */
 const employeeCode = z
     .string()
@@ -278,25 +279,117 @@ export function registerTaskTools(server, config) {
         name: 'clokio_list_task_attachments',
         description: "A task's attachments: file name, size, mime type, who uploaded it, and the path to fetch the bytes. " +
             'A task whose real content is a screenshot or a spreadsheet reads as "(no description)" without this - ' +
-            'check here before concluding a task has no detail. Use clokio_download_task_attachment for the file.',
-        schema: { id: z.number().int() },
-        handler: (args, cfg) => request(cfg, `/tasks/${args.id}/attachments`),
+            'check here before concluding a task has no detail. Each row carries is_latest: whether it is the newest ' +
+            'upload with the same file name (the same name can be uploaded more than once; nothing else marks which ' +
+            'is current). Pass latest_only: true to drop superseded duplicates. Use clokio_download_task_attachment ' +
+            'for one file, or clokio_download_task_attachments to save them all at once.',
+        schema: {
+            id: z.number().int(),
+            latest_only: z
+                .boolean()
+                .optional()
+                .describe('Return only the newest upload of each file name, dropping superseded duplicates'),
+        },
+        handler: async (args, cfg) => {
+            const rows = (await request(cfg, `/tasks/${args.id}/attachments`));
+            if (!Array.isArray(rows))
+                return rows;
+            const stamped = stampIsLatest(rows);
+            return args.latest_only ? stamped.filter((r) => r.is_latest) : stamped;
+        },
     });
     registerTool(server, config, {
         name: 'clokio_download_task_attachment',
-        description: 'Download one attachment. Returns the FILE, not JSON: text comes back as text (truncated if very ' +
-            'large, and it says so), while binary files (images, PDFs, spreadsheets) are reported with their type ' +
-            'and size rather than dumped into the conversation. Get the attachment id - and file_name, which helps ' +
-            'this tool recognise text - from clokio_list_task_attachments.',
+        description: 'Download one attachment. With save_path, writes the file to disk (creating missing folders, refusing to ' +
+            'overwrite unless overwrite: true) and returns {saved_to, sha256, mime_type, file_size}. Without ' +
+            'save_path it returns the content in the most usable form: text files as text; a PDF as its extracted ' +
+            'text plus page count; a ZIP as its entry list; an image as an image you can see; anything else as a ' +
+            'type-and-size description. Large text/PDF is truncated with a note (use save_path for the whole file). ' +
+            'Get the attachment id and file_name from clokio_list_task_attachments - file_name drives type detection.',
         schema: {
             id: z.number().int().describe('The task id'),
             attachment_id: z.number().int(),
             file_name: z
                 .string()
                 .optional()
-                .describe('The file_name from clokio_list_task_attachments. Improves text detection'),
+                .describe('The file_name from clokio_list_task_attachments. Drives type detection (text/PDF/zip/image)'),
+            save_path: z
+                .string()
+                .optional()
+                .describe('Write the file here instead of returning its content; parent folders are created'),
+            overwrite: z
+                .boolean()
+                .optional()
+                .describe('Allow save_path to replace an existing file (default false)'),
         },
-        handler: (args, cfg) => requestRaw(cfg, `/tasks/${args.id}/attachments/${args.attachment_id}`, args.file_name),
+        handler: (args, cfg) => downloadAttachment(cfg, args.id, args.attachment_id, {
+            fileName: args.file_name,
+            savePath: args.save_path,
+            overwrite: args.overwrite,
+        }),
+    });
+    registerTool(server, config, {
+        name: 'clokio_download_task_attachments',
+        description: "Save ALL of a task's attachments to a folder in one call. Creates save_dir if missing, writes each file " +
+            'under its own name, and returns the list of saved paths with sizes and sha256. Pass latest_only: true to ' +
+            'skip superseded duplicates (older uploads of a name that was uploaded again). A file name that appears ' +
+            'more than once is disambiguated with a numeric suffix so nothing is clobbered.',
+        schema: {
+            id: z.number().int().describe('The task id'),
+            save_dir: z.string().describe('Directory to write the files into; created if missing'),
+            latest_only: z
+                .boolean()
+                .optional()
+                .describe('Save only the newest upload of each file name'),
+            overwrite: z
+                .boolean()
+                .optional()
+                .describe('Allow replacing existing files in save_dir (default false)'),
+        },
+        handler: async (args, cfg) => {
+            const { join } = await import('node:path');
+            const rows = (await request(cfg, `/tasks/${args.id}/attachments`));
+            if (!Array.isArray(rows)) {
+                return { error: 'The attachments endpoint did not return a list.', raw: rows };
+            }
+            const stamped = stampIsLatest(rows);
+            const selected = args.latest_only ? stamped.filter((r) => r.is_latest) : stamped;
+            const saved = [];
+            const failed = [];
+            const usedNames = new Set();
+            for (const row of selected) {
+                // Disambiguate repeated names so a second "report.pdf" does not clobber
+                // the first: report.pdf, report (2).pdf, ...
+                const original = row.file_name ?? `attachment-${row.id}`;
+                let name = original;
+                let counter = 2;
+                while (usedNames.has(name)) {
+                    const dot = original.lastIndexOf('.');
+                    name =
+                        dot > 0
+                            ? `${original.slice(0, dot)} (${counter})${original.slice(dot)}`
+                            : `${original} (${counter})`;
+                    counter++;
+                }
+                usedNames.add(name);
+                try {
+                    const result = (await downloadAttachment(cfg, args.id, row.id, {
+                        fileName: row.file_name,
+                        savePath: join(args.save_dir, name),
+                        overwrite: args.overwrite,
+                    }));
+                    saved.push(result);
+                }
+                catch (e) {
+                    failed.push({
+                        attachment_id: row.id,
+                        file_name: row.file_name,
+                        error: e.message,
+                    });
+                }
+            }
+            return { saved_count: saved.length, saved, ...(failed.length ? { failed } : {}) };
+        },
     });
     registerTool(server, config, {
         name: 'clokio_upload_task_attachment',

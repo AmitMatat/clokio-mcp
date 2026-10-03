@@ -9,9 +9,13 @@ to your Clokio workspace to read and manage tasks, projects, clients, employees
 and attendance in natural language.
 
 Every request is authenticated with **your own** Clokio API key (`clk_...`),
-sent as `X-API-Key`. The key carries its own scopes, so this server never
-re-implements authorization: it is a thin, stateless client, and a `403` / `422`
-from the API is surfaced verbatim.
+sent in the **`X-API-Key`** header. The key carries its own scopes, so this
+server never re-implements authorization: it is a thin, stateless client, and a
+`403` / `422` from the API is surfaced verbatim.
+
+> **Auth header:** the Clokio Public API accepts the key only in `X-API-Key`.
+> An `Authorization: Bearer <key>` header is **not** recognised and returns
+> `401`. If you call the API directly (not through this server), use `X-API-Key`.
 
 ## Install
 
@@ -72,7 +76,7 @@ are marked mutating (deletes are `destructive`).
 
 | Area | Tools |
 |------|-------|
-| **Tasks** | list (with `compact` / `sort` / `updated_since`), get (with `comments_limit`), create, update, delete, bulk update, set assignees, list/add/edit comments, list/upload/download attachments, activity, list/add/remove dependencies, set custom field |
+| **Tasks** | list (with `compact` / `sort` / `updated_since`), get (with `comments_limit`), create, update, delete, bulk update, set assignees, list/add/edit comments, list attachments (with `is_latest` + `latest_only`), upload, download one (save to disk, or read PDF text / ZIP entries / images / text inline), download all to a folder, activity, list/add/remove dependencies, set custom field |
 | **Projects & clients** | list projects, project statuses, project custom fields, project contacts, get client, add client contact |
 | **Reference** | task statuses, task labels, locations, list webhooks (read-only), whoami |
 | **Employees** | list (name search), lookup by PIN, task-stats, inbox (mentions, new assignments, others' status changes), create, set status |
