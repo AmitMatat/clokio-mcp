@@ -28,5 +28,13 @@ check('underscores in identifiers are left alone', markdownToHtml('tag shipos_re
   '<p>tag shipos_return_exchange on the order</p>');
 check('code protects bold markers', markdownToHtml('run `a**b**c`'), '<p>run <code>a**b**c</code></p>');
 
+// A double quote inside a link URL must not escape the href attribute: with
+// raw quotes, a spaceless payload produced a live onmouseover attribute
+// (browsers recover from `href="x"onmouseover="y"` as two attributes).
+check('a quote in a URL cannot inject an attribute',
+  markdownToHtml('[x](https://e.com/"onmouseover="alert(1))'),
+  '<p><a href="https://e.com/&quot;onmouseover=&quot;alert(1">x</a>)</p>');
+check('quotes in prose are escaped', markdownToHtml('say "hi"'), '<p>say &quot;hi&quot;</p>');
+
 console.log(fails ? `\n${fails} FAILED` : '\nall passed');
 process.exit(fails ? 1 : 0);

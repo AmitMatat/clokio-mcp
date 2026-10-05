@@ -14,8 +14,15 @@
  * stray `<b>` in prose shows as text rather than becoming markup.
  */
 
+// `"` too, not just the tag characters: escaping runs BEFORE the link regex,
+// and the generated <a href="..."> wraps the URL in double quotes - a
+// quote the URL smuggles through would close the attribute and open a new
+// one (`[x](https://e.com/"onmouseover="alert(1))` produced a live
+// onmouseover, reproduced in review). Clokio's server sanitizer strips such
+// attributes anyway, but this package is consumed outside Clokio's web
+// surfaces too, and it must not emit injectable HTML in the first place.
 const escapeHtml = (s: string): string =>
-  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 function inline(text: string): string {
   // Protect inline code first so its contents are never styled or linked.
