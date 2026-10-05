@@ -43,9 +43,31 @@ check('media-proxy image embeds',
   '<p>The design:<br><img src="/tasks/media/tasks/org-1/42/media/a.png" alt="login screen"></p>');
 check('https image embeds', markdownToHtml('![x](https://x.io/a.png)'), '<p><img src="https://x.io/a.png" alt="x"></p>');
 check('non-media relative path stays text', markdownToHtml('![x](/etc/passwd)'), '<p>![x](/etc/passwd)</p>');
+// The REALISTIC bypass, not just /etc/passwd: browsers normalize dot segments
+// before sending, so a /tasks/media/../.. prefix would fire an arbitrary
+// same-origin GET with the reader's session cookie. The path must match the
+// backend's exact answer shape, dot segments included.
+check('dot segments under /tasks/media/ stay text',
+  markdownToHtml('![x](/tasks/media/../../storage/logs/laravel.log)'),
+  '<p>![x](/tasks/media/../../storage/logs/laravel.log)</p>');
+check('a non-canonical /tasks/media/ path stays text',
+  markdownToHtml('![x](/tasks/media/evil.png)'),
+  '<p>![x](/tasks/media/evil.png)</p>');
 check('image before link is not eaten by the link rule',
   markdownToHtml('![a](https://x.io/a.png) and [b](https://x.io/b)'),
   '<p><img src="https://x.io/a.png" alt="a"> and <a href="https://x.io/b">b</a></p>');
+// Videos: the media tool returns mp4/webm/mov too, and an <img> pointing at a
+// video renders as a broken image - it must become a <video> tag.
+check('a video url embeds as <video>, not a broken <img>',
+  markdownToHtml('![demo](/tasks/media/tasks/org-1/42/media/v.mp4)'),
+  '<p><video src="/tasks/media/tasks/org-1/42/media/v.mp4" controls></video></p>');
+check('an html body starting with <video> passes through',
+  markdownToHtml('<video src="/tasks/media/tasks/org-1/42/media/v.mp4" controls></video>'),
+  '<video src="/tasks/media/tasks/org-1/42/media/v.mp4" controls></video>');
+// Asterisks in a URL must not be styled into the src attribute.
+check('a star in a url does not become <em> inside src',
+  markdownToHtml('![x](https://x.io/a/*b*.png)'),
+  '<p><img src="https://x.io/a/*b*.png" alt="x"></p>');
 
 console.log(fails ? `\n${fails} FAILED` : '\nall passed');
 process.exit(fails ? 1 : 0);

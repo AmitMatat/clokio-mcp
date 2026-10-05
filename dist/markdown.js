@@ -21,28 +21,51 @@
 // attributes anyway, but this package is consumed outside Clokio's web
 // surfaces too, and it must not emit injectable HTML in the first place.
 const escapeHtml = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+// The EXACT shape the backend's upload answers with (tasks/org-{n}/{n}/media/
+// {file}) - anchored, no slash or dot-segment room. A bare startsWith
+// allowlist let `/tasks/media/../../anything` through, and the browser
+// normalizes dot segments BEFORE sending, so that <img> fired an arbitrary
+// same-origin GET with the logged-in reader's session cookie (caught in
+// review). Anything under /tasks/media/ that is not this shape stays text.
+const MEDIA_PATH = /^\/tasks\/media\/tasks\/org-\d+\/\d+\/media\/[^/\s)]+$/;
+const VIDEO_EXT = /\.(mp4|webm|mov)$/i;
 function inline(text) {
-    // Protect inline code first so its contents are never styled or linked.
-    const codes = [];
-    let s = text.replace(/`([^`\n]+)`/g, (_m, code) => {
-        codes.push(`<code>${escapeHtml(code)}</code>`);
-        return `\u0000${codes.length - 1}\u0000`;
-    });
+    // The stash protects finished HTML from the LATER rules: inline code first
+    // (so its contents are never styled or linked), then each generated
+    // image/video/anchor tag - without that, the em rule rewrote a `*` inside
+    // a URL into <em> IN THE src ATTRIBUTE and broke the image (caught in
+    // review; alt text likewise stays literal rather than styled).
+    const stashed = [];
+    const stash = (html) => {
+        stashed.push(html);
+        return `\u0000${stashed.length - 1}\u0000`;
+    };
+    let s = text.replace(/`([^`\n]+)`/g, (_m, code) => stash(`<code>${escapeHtml(code)}</code>`));
     s = escapeHtml(s);
     // Images BEFORE links, or the link rule eats the [alt](url) part and leaves
-    // a stray "!". Besides https, /tasks/media/ relative paths are allowed -
-    // that is what clokio_upload_task_media returns, and embedding it is the
-    // whole point of that tool (task #5296). Any other scheme or path stays
-    // escaped text. escapeHtml already ran, so a quote in the URL is &quot; and
-    // cannot close the src attribute.
-    s = s.replace(/!\[([^\]\n]*)\]\(((?:https?:\/\/|\/tasks\/media\/)[^)\s]+)\)/g, '<img src="$2" alt="$1">');
-    s = s.replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2">$1</a>');
+    // a stray "!". Besides https, the /tasks/media/ urls that
+    // clokio_upload_task_media returns are allowed - embedding them is that
+    // tool's whole point (task #5296). A video extension gets a <video> tag:
+    // an <img> pointing at an mp4 renders as a broken image. escapeHtml
+    // already ran, so a quote in the URL is &quot; and cannot close the
+    // attribute.
+    s = s.replace(/!\[([^\]\n]*)\]\(((?:https?:\/\/|\/tasks\/media\/)[^)\s]+)\)/g, (whole, alt, url) => {
+        if (url.startsWith('/tasks/media/') && !MEDIA_PATH.test(url))
+            return whole;
+        return stash(VIDEO_EXT.test(url)
+            ? `<video src="${url}" controls></video>`
+            : `<img src="${url}" alt="${alt}">`);
+    });
+    s = s.replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g, (_m, label, url) => stash(`<a href="${url}">${label}</a>`));
     s = s.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
     s = s.replace(/(^|[^*\w])\*([^*\n]+)\*(?=[^*\w]|$)/g, '$1<em>$2</em>');
-    return s.replace(/\u0000(\d+)\u0000/g, (_m, i) => codes[Number(i)]);
+    return s.replace(/\u0000(\d+)\u0000/g, (_m, i) => stashed[Number(i)]);
 }
 export function looksLikeHtml(text) {
-    return /^\s*<(p|div|ul|ol|li|h[1-6]|strong|em|b|i|u|s|br|pre|code|blockquote|a|img|span|table)\b[^>]*>/i.test(text);
+    // `video` is in the list for the same reason `img` is: the media tool's
+    // HTML advice starts a body with exactly that tag, and leaving it out
+    // escaped the whole body to literal text (caught in review).
+    return /^\s*<(p|div|ul|ol|li|h[1-6]|strong|em|b|i|u|s|br|pre|code|blockquote|a|img|video|span|table)\b[^>]*>/i.test(text);
 }
 export function markdownToHtml(input) {
     if (input == null)
