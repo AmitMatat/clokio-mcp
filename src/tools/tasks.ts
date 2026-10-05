@@ -1,5 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+import { markdownToHtml } from '../markdown.js';
 import { ClokioConfig, request, requestUpload } from '../client.js';
 import { registerTool } from './helpers.js';
 import {
@@ -141,7 +142,7 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
     schema: {
       project_id: z.number().int(),
       title: z.string().max(255),
-      description: z.string().optional().describe('HTML or plain text'),
+      description: z.string().optional().describe('Markdown, HTML or plain text (Markdown is converted to HTML)'),
       priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
       status: z.string().optional().describe("Status slug valid for THIS project's board"),
       due_date: z.string().optional().describe('YYYY-MM-DD'),
@@ -162,7 +163,7 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
         body: {
           project_id: args.project_id,
           title: args.title,
-          description: args.description,
+          description: args.description === undefined ? undefined : markdownToHtml(args.description),
           priority: args.priority,
           status: args.status,
           due_date: args.due_date,
@@ -213,6 +214,7 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
       ] as const) {
         if (args[key] !== undefined) body[key] = args[key];
       }
+      if (typeof body.description === 'string') body.description = markdownToHtml(body.description);
       // Credit the update to CLOKIO_DEFAULT_ACTOR when the caller named no
       // actor. The API otherwise falls back to the key's issuer on its own,
       // so this only overrides for a shared/service key. An explicit
@@ -263,7 +265,7 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
     description:
       'Add a comment to a task. author_employee_code is usually unnecessary: an unnamed comment is attributed ' +
       'to the key issuer automatically. Set it only to credit someone else. Use readable formatting ' +
-      '(paragraphs, blank lines, bullet lists); markdown TABLES are not rendered and post as raw text. Write ' +
+      '(paragraphs, blank lines, bullet lists, **bold**, `code`); Markdown is converted to HTML, but TABLES are not rendered and post as raw text. Write ' +
       'in the language of the person you are answering. ' +
       'TO MENTION SOMEONE, write @ followed by their full name exactly as clokio_list_employees spells it ' +
       '(for example "@Kiran Bahadur") in the body text - no markup needed. It becomes a real mention and ' +
@@ -280,7 +282,7 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
       request(cfg, `/tasks/${args.id}/comments`, {
         method: 'POST',
         body: {
-          body: args.body,
+          body: markdownToHtml(args.body),
           author_employee_code: args.author_employee_code ?? cfg.defaultActor,
           notify: args.notify,
         },
@@ -305,7 +307,7 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
     handler: (args, cfg) =>
       request(cfg, `/tasks/${args.id}/comments/${args.comment_id}`, {
         method: 'PATCH',
-        body: { body: args.body, author_employee_code: args.author_employee_code ?? cfg.defaultActor },
+        body: { body: markdownToHtml(args.body), author_employee_code: args.author_employee_code ?? cfg.defaultActor },
       }),
   });
 
