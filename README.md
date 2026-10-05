@@ -91,6 +91,9 @@ are marked mutating (deletes are `destructive`).
   issuer (see `clokio_whoami`), so you rarely set an author. Pass
   `created_by_employee_code` / `author_employee_code` only to credit someone
   else, or set `CLOKIO_DEFAULT_ACTOR` for a shared key.
+- **Write Markdown.** Descriptions and comment bodies accept Markdown (paragraphs, lists,
+  `**bold**`, `` `code` ``, links, headings, fenced code); the server converts it to the HTML
+  Clokio stores. Text that already starts with an HTML tag is passed through untouched.
 - **Status slugs** come from `clokio_list_task_statuses` /
   `clokio_get_project_statuses`.
 - An API key sees **public custom fields only**.
