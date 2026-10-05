@@ -98,6 +98,7 @@ const TOOL_CALLS = [
   // through the already-covered download path.
   { tool: 'clokio_download_task_attachments', method: 'get', path: '/tasks/{id}/attachments', query: [] },
   { tool: 'clokio_upload_task_attachment', method: 'post', path: '/tasks/{id}/attachments', query: [] },
+  { tool: 'clokio_upload_task_media', method: 'post', path: '/tasks/{id}/media', query: [] },
   { tool: 'clokio_get_task_activity', method: 'get', path: '/tasks/{id}/activity', query: [] },
   { tool: 'clokio_list_task_dependencies', method: 'get', path: '/tasks/{id}/dependencies', query: [] },
   { tool: 'clokio_add_task_dependency', method: 'post', path: '/tasks/{id}/dependencies', query: [] },

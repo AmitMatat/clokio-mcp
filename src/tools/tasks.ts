@@ -441,10 +441,12 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
     name: 'clokio_upload_task_attachment',
     mutates: true,
     description:
-      'Upload a LOCAL FILE to a task as an attachment - a screenshot, a log, a spreadsheet. Give the path to ' +
+      'Upload a LOCAL FILE to a task as an attachment - a log, a spreadsheet, a PDF. Give the path to ' +
       'a file on this machine; it is read and sent. Allowed types include images, PDF, Office docs, txt/csv/' +
       'md/json, code diffs, zip and video, up to 200 MB. The uploader is the key issuer unless you set ' +
-      'uploaded_by_employee_code.',
+      'uploaded_by_employee_code. NOTE: an attachment is a file in the task\'s file list - its download_path ' +
+      'only loads WITH an API key, so it can NOT be shown inline in a comment. For an image or video the ' +
+      'reader should SEE, use clokio_upload_task_media instead.',
     schema: {
       id: z.number().int().describe('The task id'),
       file_path: z.string().describe('Path to a file on THIS machine'),
@@ -456,6 +458,23 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
       requestUpload(cfg, `/tasks/${args.id}/attachments`, args.file_path, {
         uploaded_by_employee_code: args.uploaded_by_employee_code ?? cfg.defaultActor,
       }),
+  });
+
+  registerTool(server, config, {
+    name: 'clokio_upload_task_media',
+    mutates: true,
+    description:
+      'Upload an image or video the reader should SEE INLINE in a comment or the task description ' +
+      '(task #5296). Returns {url} - a /tasks/media/... path served to logged-in users with no API key. ' +
+      'Embed it in the body you then post: Markdown ![description](URL) or HTML <img src="URL">. ' +
+      'Media types only (jpg/png/gif/webp/heic/mp4/webm/mov), 50 MB; HEIC becomes JPEG. This does NOT add ' +
+      'the file to the attachments list - for a downloadable file (zip, PDF, log), use ' +
+      'clokio_upload_task_attachment instead.',
+    schema: {
+      id: z.number().int().describe('The task id'),
+      file_path: z.string().describe('Path to an image/video on THIS machine'),
+    },
+    handler: (args, cfg) => requestUpload(cfg, `/tasks/${args.id}/media`, args.file_path),
   });
 
   registerTool(server, config, {

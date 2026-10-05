@@ -36,5 +36,16 @@ check('a quote in a URL cannot inject an attribute',
   '<p><a href="https://e.com/&quot;onmouseover=&quot;alert(1">x</a>)</p>');
 check('quotes in prose are escaped', markdownToHtml('say "hi"'), '<p>say &quot;hi&quot;</p>');
 
+// Images (task #5296): a /tasks/media/ url from clokio_upload_task_media and
+// https urls embed; any other scheme or path stays escaped text.
+check('media-proxy image embeds',
+  markdownToHtml('The design:\n![login screen](/tasks/media/tasks/org-1/42/media/a.png)'),
+  '<p>The design:<br><img src="/tasks/media/tasks/org-1/42/media/a.png" alt="login screen"></p>');
+check('https image embeds', markdownToHtml('![x](https://x.io/a.png)'), '<p><img src="https://x.io/a.png" alt="x"></p>');
+check('non-media relative path stays text', markdownToHtml('![x](/etc/passwd)'), '<p>![x](/etc/passwd)</p>');
+check('image before link is not eaten by the link rule',
+  markdownToHtml('![a](https://x.io/a.png) and [b](https://x.io/b)'),
+  '<p><img src="https://x.io/a.png" alt="a"> and <a href="https://x.io/b">b</a></p>');
+
 console.log(fails ? `\n${fails} FAILED` : '\nall passed');
 process.exit(fails ? 1 : 0);

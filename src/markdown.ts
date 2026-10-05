@@ -32,6 +32,16 @@ function inline(text: string): string {
     return `\u0000${codes.length - 1}\u0000`;
   });
   s = escapeHtml(s);
+  // Images BEFORE links, or the link rule eats the [alt](url) part and leaves
+  // a stray "!". Besides https, /tasks/media/ relative paths are allowed -
+  // that is what clokio_upload_task_media returns, and embedding it is the
+  // whole point of that tool (task #5296). Any other scheme or path stays
+  // escaped text. escapeHtml already ran, so a quote in the URL is &quot; and
+  // cannot close the src attribute.
+  s = s.replace(
+    /!\[([^\]\n]*)\]\(((?:https?:\/\/|\/tasks\/media\/)[^)\s]+)\)/g,
+    '<img src="$2" alt="$1">'
+  );
   s = s.replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2">$1</a>');
   s = s.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
   s = s.replace(/(^|[^*\w])\*([^*\n]+)\*(?=[^*\w]|$)/g, '$1<em>$2</em>');
