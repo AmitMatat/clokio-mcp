@@ -76,7 +76,7 @@ are marked mutating (deletes are `destructive`).
 
 | Area | Tools |
 |------|-------|
-| **Tasks** | list (with `compact` / `sort` / `updated_since`), get (with `comments_limit`), create, update, delete, bulk update, set assignees, list/add/edit comments, list attachments (with `is_latest` + `latest_only`), upload, download one (save to disk, or read PDF text / ZIP entries / images / text inline), download all to a folder, activity, list/add/remove dependencies, set custom field |
+| **Tasks** | list (with `compact` / `sort` / `updated_since` / `recurring`), get (with `comments_limit`), create, update (incl. recurring series: set a rule, pause/resume, stop), delete, bulk update, set assignees, list/add/edit comments, list attachments (with `is_latest` + `latest_only`), upload, download one (save to disk, or read PDF text / ZIP entries / images / text inline), download all to a folder, activity, list/add/remove dependencies, set custom field |
 | **Projects & clients** | list projects, project statuses, project custom fields, project contacts, get client, add client contact |
 | **Reference** | task statuses, task labels, locations, list webhooks (read-only), whoami |
 | **Employees** | list (name search), lookup by PIN, task-stats, inbox (mentions, new assignments, others' status changes), create, set status |
@@ -96,6 +96,13 @@ are marked mutating (deletes are `destructive`).
   Clokio stores. Text that already starts with an HTML tag is passed through untouched.
 - **Status slugs** come from `clokio_list_task_statuses` /
   `clokio_get_project_statuses`.
+- **Recurring tasks are templates.** Pass `recurrence` on create/update
+  (`{frequency, every?, days_of_week?, day_of_month?, anchor?}`) and the task
+  becomes the series template; **moving it to a done status starts the
+  schedule**. A fresh copy (same content, assignees, labels, estimate) is
+  created early on each matching day, due that day, independent of earlier
+  copies. Pause/resume with `recurrence_active`, stop with `recurrence: null`;
+  `recurrence.armed` on a task says whether the series is live.
 - An API key sees **public custom fields only**.
 
 ## Security

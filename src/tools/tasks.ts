@@ -16,6 +16,93 @@ const employeeCode = z
   .string()
   .regex(/^[A-Za-z0-9_-]{1,50}$/, 'employee_code must be 1-50 chars of letters, digits, _ or -');
 
+/**
+ * Recurrence, as a structured object the agent fills, serialized here into
+ * the rule string the Clokio scheduler executes (`daily`, `weekly:sun,wed`,
+ * `monthly:15`, `quarterly:MM-DD`, `custom:N:unit[:detail]`, ...).
+ *
+ * The server model is a TEMPLATE: the task itself is the series. Once the
+ * template sits in a done status (completing it ARMS the series), the
+ * scheduler creates a fresh copy - same title, description, assignees,
+ * labels, priority, estimate - early on each matching day, due that day,
+ * regardless of whether earlier copies were closed. The template stays done
+ * forever; the copies are the actual work items.
+ */
+const recurrenceInput = z.object({
+  frequency: z.enum(['daily', 'weekly', 'monthly', 'quarterly', 'semiannual', 'yearly']),
+  every: z
+    .number()
+    .int()
+    .min(1)
+    .max(999)
+    .optional()
+    .describe('Every N periods (default 1). "Every 2 weeks" = frequency weekly + every 2.'),
+  days_of_week: z
+    .array(z.enum(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']))
+    .min(1)
+    .optional()
+    .describe('weekly: which weekday(s). REQUIRED for weekly.'),
+  day_of_month: z
+    .number()
+    .int()
+    .min(1)
+    .max(31)
+    .optional()
+    .describe('monthly: which day of the month. REQUIRED for monthly.'),
+  anchor: z
+    .string()
+    .regex(/^\d{2}-\d{2}$/, 'anchor must be MM-DD')
+    .optional()
+    .describe('quarterly / semiannual / yearly: the MM-DD date the cycle starts from. REQUIRED for those.'),
+});
+
+type RecurrenceInput = z.infer<typeof recurrenceInput>;
+
+/** Serialize the structured object into the scheduler's rule grammar. */
+export function recurrenceToRule(r: RecurrenceInput): string {
+  const every = r.every ?? 1;
+
+  switch (r.frequency) {
+    case 'daily':
+      return every === 1 ? 'daily' : `custom:${every}:day`;
+    case 'weekly': {
+      if (!r.days_of_week?.length) {
+        // A day-less weekly is the exact rule shape behind a production
+        // outage - the server refuses it too, but failing here names the fix.
+        throw new Error('weekly recurrence requires days_of_week (e.g. ["sun"]).');
+      }
+      const days = r.days_of_week.join(',');
+      return every === 1 ? `weekly:${days}` : `custom:${every}:week:${days}`;
+    }
+    case 'monthly': {
+      if (!r.day_of_month) {
+        throw new Error('monthly recurrence requires day_of_month (1-31).');
+      }
+      return every === 1 ? `monthly:${r.day_of_month}` : `custom:${every}:month:${r.day_of_month}`;
+    }
+    case 'quarterly':
+    case 'semiannual':
+    case 'yearly': {
+      if (!r.anchor) {
+        throw new Error(`${r.frequency} recurrence requires anchor (MM-DD, the cycle's first date).`);
+      }
+      if (every !== 1) {
+        throw new Error(`${r.frequency} does not take "every" - its cadence is fixed. For other cadences use frequency monthly/weekly with every.`);
+      }
+      return `${r.frequency}:${r.anchor}`;
+    }
+  }
+}
+
+/** The one description of the template model, shared by both task tools. */
+const RECURRENCE_MODEL_NOTE =
+  'RECURRING TASKS: pass `recurrence` to make this task a repeating series. The task becomes the series ' +
+  'TEMPLATE - move it to a done status to START the schedule (an open template is configured but not ' +
+  'spawning; the resource reports this as recurrence.armed). The scheduler then creates a fresh copy of ' +
+  'the template (title, description, assignees, labels, priority, estimate) early on each matching day, ' +
+  'due that day, independent of whether earlier copies were closed. A multi-period cadence ' +
+  '(every: N > 1) counts whole periods from the task\'s DUE DATE, so set one.';
+
 /** Task-management tools: the core of the Clokio API surface. */
 export function registerTaskTools(server: McpServer, config: ClokioConfig): void {
   registerTool(server, config, {
@@ -34,6 +121,13 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
       label: z.string().optional(),
       search: z.string().optional().describe('Free text over title and description'),
       open: z.boolean().optional().describe('true = only tasks whose status is not a "done" one'),
+      recurring: z
+        .boolean()
+        .optional()
+        .describe(
+          'true = only the recurring SERIES TEMPLATES (tasks carrying a recurrence rule); false = only ' +
+            'ordinary tasks, which includes the copies a template spawns. Omit for no filter.'
+        ),
       parent_task_id: z
         .number()
         .int()
@@ -94,6 +188,7 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
           label: args.label,
           search: args.search,
           open: args.open === undefined ? undefined : args.open ? 1 : 0,
+          recurring: args.recurring === undefined ? undefined : args.recurring ? 1 : 0,
           parent_task_id: args.parent_task_id === null ? '' : args.parent_task_id,
           created_before: args.created_before,
           created_after: args.created_after,
@@ -138,7 +233,8 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
       'You do NOT normally need created_by_employee_code: an unnamed task is attributed to the key\'s issuer ' +
       'automatically (whoami shows who that is). Set it only to credit someone OTHER than the key owner. ' +
       'Pass parent_task_id to create it as a SUBTASK of that task ' +
-      '(same project, and the parent must not itself be a subtask - one level deep only).',
+      '(same project, and the parent must not itself be a subtask - one level deep only).\n\n' +
+      RECURRENCE_MODEL_NOTE,
     schema: {
       project_id: z.number().int(),
       title: z.string().max(255),
@@ -156,6 +252,9 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
         .optional()
         .describe('Label names. A name that does not exist yet is CREATED - check clokio_list_task_labels first'),
       created_by_employee_code: employeeCode.optional().describe('Credit someone OTHER than the key owner; omit to use the key issuer / CLOKIO_DEFAULT_ACTOR'),
+      recurrence: recurrenceInput
+        .optional()
+        .describe('Make this task a recurring series (see the tool description for how the template model works)'),
     },
     handler: (args, cfg) =>
       request(cfg, '/tasks', {
@@ -173,6 +272,9 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
           assignee_employee_codes: args.assignee_employee_codes,
           label_names: args.label_names,
           created_by_employee_code: args.created_by_employee_code ?? cfg.defaultActor,
+          ...(args.recurrence
+            ? { is_recurring: true, recurrence_rule: recurrenceToRule(args.recurrence) }
+            : {}),
         },
       }),
   });
@@ -183,7 +285,12 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
     description:
       'Update a task. ONLY the fields you pass are changed; omitted fields are left alone. Pass null to ' +
       'due_date / start_date / estimated_hours / description to CLEAR them. Set actor_employee_code so the ' +
-      'activity log names the person rather than the API key.',
+      'activity log names the person rather than the API key.\n\n' +
+      RECURRENCE_MODEL_NOTE +
+      '\n\nManage an existing series here: `recurrence` (an object) sets or retunes the rule and switches ' +
+      'the series ON; `recurrence: null` STOPS it (future copies stop; already-spawned copies are ordinary ' +
+      'tasks and stay). To PAUSE while keeping the rule stored, pass `recurrence_active: false`, and ' +
+      '`recurrence_active: true` to resume.',
     schema: {
       id: z.number().int(),
       title: z.string().max(255).optional(),
@@ -195,6 +302,14 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
       estimated_hours: z.number().min(0).max(9999.99).nullable().optional(),
       project_id: z.number().int().optional().describe('Move the task to another project'),
       actor_employee_code: employeeCode.optional().describe('Who to credit in the activity log; omit to use the key issuer / CLOKIO_DEFAULT_ACTOR'),
+      recurrence: recurrenceInput
+        .nullable()
+        .optional()
+        .describe('Set/retune the series rule (and switch it on), or null to STOP the series'),
+      recurrence_active: z
+        .boolean()
+        .optional()
+        .describe('Pause (false) / resume (true) the series without touching its stored rule'),
     },
     handler: (args, cfg) => {
       // Only keys the caller actually supplied may go in the body: PATCH
@@ -215,6 +330,22 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
         if (args[key] !== undefined) body[key] = args[key];
       }
       if (typeof body.description === 'string') body.description = markdownToHtml(body.description);
+      // Series management maps onto the API's two columns. `recurrence`
+      // carries the whole intent (rule + on/off), so combining it with the
+      // bare pause/resume switch is ambiguous and refused rather than
+      // silently picking a winner.
+      if (args.recurrence !== undefined && args.recurrence_active !== undefined) {
+        throw new Error('Pass either recurrence or recurrence_active, not both.');
+      }
+      if (args.recurrence === null) {
+        body.is_recurring = false;
+        body.recurrence_rule = null;
+      } else if (args.recurrence !== undefined) {
+        body.is_recurring = true;
+        body.recurrence_rule = recurrenceToRule(args.recurrence);
+      } else if (args.recurrence_active !== undefined) {
+        body.is_recurring = args.recurrence_active;
+      }
       // Credit the update to CLOKIO_DEFAULT_ACTOR when the caller named no
       // actor. The API otherwise falls back to the key's issuer on its own,
       // so this only overrides for a shared/service key. An explicit

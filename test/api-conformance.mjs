@@ -78,7 +78,7 @@ const TOOL_CALLS = [
     path: '/tasks',
     query: [
       'project_id', 'status', 'priority', 'assignee_employee_code', 'label', 'search',
-      'open', 'parent_task_id', 'created_before', 'created_after', 'due_before', 'due_after', 'updated_since',
+      'open', 'recurring', 'parent_task_id', 'created_before', 'created_after', 'due_before', 'due_after', 'updated_since',
       'include_comments', 'per_page', 'page', 'cursor', 'sort', 'compact',
     ],
   },
