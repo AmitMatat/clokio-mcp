@@ -102,7 +102,9 @@ are marked mutating (deletes are `destructive`).
   schedule**. A fresh copy (same content, assignees, labels, estimate) is
   created early on each matching day, due that day, independent of earlier
   copies. Pause/resume with `recurrence_active`, stop with `recurrence: null`;
-  `recurrence.armed` on a task says whether the series is live.
+  `recurrence.armed` on a task says whether the series is live, a copy names
+  its template as `recurrence.spawned_from`, and `series_of` on the list tool
+  returns every occurrence of one series.
 - An API key sees **public custom fields only**.
 
 ## Security

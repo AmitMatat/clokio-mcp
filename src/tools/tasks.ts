@@ -137,6 +137,14 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
           'true = only the recurring SERIES TEMPLATES (tasks carrying a recurrence rule); false = only ' +
             'ordinary tasks, which includes the copies a template spawns. Omit for no filter.'
         ),
+      series_of: z
+        .number()
+        .int()
+        .optional()
+        .describe(
+          'A series template\'s task id: returns every occurrence that template spawned ("did the Sunday ' +
+            'check actually happen every week?"). A copy also names its template as recurrence.spawned_from.'
+        ),
       parent_task_id: z
         .number()
         .int()
@@ -198,6 +206,7 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
           search: args.search,
           open: args.open === undefined ? undefined : args.open ? 1 : 0,
           recurring: args.recurring === undefined ? undefined : args.recurring ? 1 : 0,
+          series_of: args.series_of,
           parent_task_id: args.parent_task_id === null ? '' : args.parent_task_id,
           created_before: args.created_before,
           created_after: args.created_after,
