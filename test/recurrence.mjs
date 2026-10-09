@@ -41,6 +41,9 @@ eq('every 6 months on the 15th', recurrenceToRule({ frequency: 'monthly', every:
 // The dead shapes are refused HERE with the fix named - a day-less weekly is
 // the rule shape behind the 2026-08-05 production outage.
 throws('day-less weekly refused', () => recurrenceToRule({ frequency: 'weekly' }), 'days_of_week');
+// The scheduler spawns ONE occurrence per custom:N cycle - the day list only
+// seeds WHICH day - so this combination would silently drop Thursday.
+throws('every 2 weeks on TWO days refused', () => recurrenceToRule({ frequency: 'weekly', every: 2, days_of_week: ['mon', 'thu'] }), 'earliest day');
 throws('day-less monthly refused', () => recurrenceToRule({ frequency: 'monthly' }), 'day_of_month');
 throws('anchor-less quarterly refused', () => recurrenceToRule({ frequency: 'quarterly' }), 'anchor');
 throws('quarterly with every refused', () => recurrenceToRule({ frequency: 'quarterly', every: 2, anchor: '01-01' }), 'every');

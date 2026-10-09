@@ -59,6 +59,13 @@ export function recurrenceToRule(r) {
                 throw new Error('weekly recurrence requires days_of_week (e.g. ["sun"]).');
             }
             const days = r.days_of_week.join(',');
+            if (every > 1 && r.days_of_week.length > 1) {
+                // The scheduler's custom:N:week rule spawns ONE occurrence per cycle
+                // (the day list only seeds which day), so "every 2 weeks on Mon and
+                // Thu" would silently become "every 2 weeks on Mon". Refuse rather
+                // than surprise - weekly (every: 1) does cover multiple days.
+                throw new Error('every > 1 with multiple days_of_week is not supported by the scheduler (it would spawn only on the earliest day). Use one day, or every: 1 for all of them.');
+            }
             return every === 1 ? `weekly:${days}` : `custom:${every}:week:${days}`;
         }
         case 'monthly': {
