@@ -46,29 +46,51 @@ const recurrenceInput = z.object({
         .optional()
         .describe('quarterly / semiannual / yearly: the MM-DD date the cycle starts from. REQUIRED for those.'),
 });
+/** Canonical weekday order for serialized rules - see recurrenceToRule(). */
+const WEEKDAY_ORDER = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+/**
+ * A field that names a day the chosen frequency does not use is REFUSED, not
+ * ignored: {frequency: 'daily', days_of_week: ['mon']} reads like "every
+ * Monday", and silently dropping the days spawns SEVEN copies a week.
+ */
+function refuseIrrelevant(r, allowed) {
+    for (const field of ['days_of_week', 'day_of_month', 'anchor']) {
+        if (r[field] !== undefined && !allowed.includes(field)) {
+            throw new Error(`${field} does not apply to frequency "${r.frequency}" and would be silently ignored - remove it, or pick the frequency it belongs to.`);
+        }
+    }
+}
 /** Serialize the structured object into the scheduler's rule grammar. */
 export function recurrenceToRule(r) {
     const every = r.every ?? 1;
     switch (r.frequency) {
         case 'daily':
+            refuseIrrelevant(r, []);
             return every === 1 ? 'daily' : `custom:${every}:day`;
         case 'weekly': {
+            refuseIrrelevant(r, ['days_of_week']);
             if (!r.days_of_week?.length) {
                 // A day-less weekly is the exact rule shape behind a production
                 // outage - the server refuses it too, but failing here names the fix.
                 throw new Error('weekly recurrence requires days_of_week (e.g. ["sun"]).');
             }
-            const days = r.days_of_week.join(',');
-            if (every > 1 && r.days_of_week.length > 1) {
+            // Canonical: dedupe + fixed weekday order, so the same intent always
+            // stores the same rule string ("did the rule change?" comparisons and
+            // health reports read these back).
+            const unique = [...new Set(r.days_of_week)];
+            const days = WEEKDAY_ORDER.filter((d) => unique.includes(d)).join(',');
+            if (every > 1 && unique.length > 1) {
                 // The scheduler's custom:N:week rule spawns ONE occurrence per cycle
                 // (the day list only seeds which day), so "every 2 weeks on Mon and
                 // Thu" would silently become "every 2 weeks on Mon". Refuse rather
-                // than surprise - weekly (every: 1) does cover multiple days.
+                // than surprise - weekly (every: 1) does cover multiple days. The
+                // server refuses the same shape (ValidRecurrenceRule).
                 throw new Error('every > 1 with multiple days_of_week is not supported by the scheduler (it would spawn only on the earliest day). Use one day, or every: 1 for all of them.');
             }
             return every === 1 ? `weekly:${days}` : `custom:${every}:week:${days}`;
         }
         case 'monthly': {
+            refuseIrrelevant(r, ['day_of_month']);
             if (!r.day_of_month) {
                 throw new Error('monthly recurrence requires day_of_month (1-31).');
             }
@@ -77,8 +99,15 @@ export function recurrenceToRule(r) {
         case 'quarterly':
         case 'semiannual':
         case 'yearly': {
+            refuseIrrelevant(r, ['anchor']);
             if (!r.anchor) {
                 throw new Error(`${r.frequency} recurrence requires anchor (MM-DD, the cycle's first date).`);
+            }
+            // The MM-DD shape is schema-checked; the RANGE is checked here so
+            // "13-45" fails fast with the field named, not as a generic server 422.
+            const [mo, dy] = r.anchor.split('-').map(Number);
+            if (mo < 1 || mo > 12 || dy < 1 || dy > 31) {
+                throw new Error(`anchor "${r.anchor}" is not a real date - MM must be 01-12 and DD 01-31.`);
             }
             if (every !== 1) {
                 throw new Error(`${r.frequency} does not take "every" - its cadence is fixed. For other cadences use frequency monthly/weekly with every.`);
@@ -241,26 +270,45 @@ export function registerTaskTools(server, config) {
                 .optional()
                 .describe('Make this task a recurring series (see the tool description for how the template model works)'),
         },
-        handler: (args, cfg) => request(cfg, '/tasks', {
-            method: 'POST',
-            body: {
-                project_id: args.project_id,
-                title: args.title,
-                description: args.description === undefined ? undefined : markdownToHtml(args.description),
-                priority: args.priority,
-                status: args.status,
-                due_date: args.due_date,
-                start_date: args.start_date,
-                estimated_hours: args.estimated_hours,
-                parent_task_id: args.parent_task_id,
-                assignee_employee_codes: args.assignee_employee_codes,
-                label_names: args.label_names,
-                created_by_employee_code: args.created_by_employee_code ?? cfg.defaultActor,
-                ...(args.recurrence
-                    ? { is_recurring: true, recurrence_rule: recurrenceToRule(args.recurrence) }
-                    : {}),
-            },
-        }),
+        handler: async (args, cfg) => {
+            const result = (await request(cfg, '/tasks', {
+                method: 'POST',
+                body: {
+                    project_id: args.project_id,
+                    title: args.title,
+                    description: args.description === undefined ? undefined : markdownToHtml(args.description),
+                    priority: args.priority,
+                    status: args.status,
+                    due_date: args.due_date,
+                    start_date: args.start_date,
+                    estimated_hours: args.estimated_hours,
+                    parent_task_id: args.parent_task_id,
+                    assignee_employee_codes: args.assignee_employee_codes,
+                    label_names: args.label_names,
+                    created_by_employee_code: args.created_by_employee_code ?? cfg.defaultActor,
+                    ...(args.recurrence
+                        ? { is_recurring: true, recurrence_rule: recurrenceToRule(args.recurrence) }
+                        : {}),
+                },
+            }));
+            // A Clokio older than the recurrence fields IGNORES unknown body keys
+            // on create (Laravel validate() drops what it has no rule for), so the
+            // task would be born NON-recurring with a 201 - and the agent would
+            // report a weekly series that never spawns. The echoed resource is the
+            // truth: if we asked for recurrence and it is not reflected, say so
+            // loudly instead of letting the silence stand.
+            if (args.recurrence && result && typeof result === 'object') {
+                const data = result.data;
+                const echoed = data?.recurrence;
+                if (echoed?.is_recurring !== true) {
+                    result.warning =
+                        'The task WAS created, but the server IGNORED the recurrence fields - this Clokio version ' +
+                            'predates recurring-series support on the API. The task will NOT repeat. Update the server, ' +
+                            'then set the recurrence again with clokio_update_task.';
+                }
+            }
+            return result;
+        },
     });
     registerTool(server, config, {
         name: 'clokio_update_task',

@@ -38,6 +38,20 @@ eq('every 3 days', recurrenceToRule({ frequency: 'daily', every: 3 }), 'custom:3
 eq('every 2 weeks on Mon', recurrenceToRule({ frequency: 'weekly', every: 2, days_of_week: ['mon'] }), 'custom:2:week:mon');
 eq('every 6 months on the 15th', recurrenceToRule({ frequency: 'monthly', every: 6, day_of_month: 15 }), 'custom:6:month:15');
 
+// Canonicalization: the same intent always stores the same rule string, so
+// "did the rule change?" comparisons work and health reports stay readable.
+eq('days are deduped and ordered', recurrenceToRule({ frequency: 'weekly', days_of_week: ['sun', 'mon', 'mon'] }), 'weekly:mon,sun');
+
+// A field the frequency does not use is refused, never silently ignored -
+// {daily, days_of_week: [mon]} reads "every Monday" and would spawn daily.
+throws('daily with days_of_week refused', () => recurrenceToRule({ frequency: 'daily', days_of_week: ['mon'] }), 'does not apply');
+throws('weekly with day_of_month refused', () => recurrenceToRule({ frequency: 'weekly', days_of_week: ['mon'], day_of_month: 5 }), 'does not apply');
+throws('monthly with anchor refused', () => recurrenceToRule({ frequency: 'monthly', day_of_month: 5, anchor: '01-01' }), 'does not apply');
+throws('yearly with days_of_week refused', () => recurrenceToRule({ frequency: 'yearly', anchor: '08-09', days_of_week: ['mon'] }), 'does not apply');
+
+// An anchor that matches MM-DD but is not a real date fails fast, named.
+throws('impossible anchor refused', () => recurrenceToRule({ frequency: 'yearly', anchor: '13-45' }), 'not a real date');
+
 // The dead shapes are refused HERE with the fix named - a day-less weekly is
 // the rule shape behind the 2026-08-05 production outage.
 throws('day-less weekly refused', () => recurrenceToRule({ frequency: 'weekly' }), 'days_of_week');
