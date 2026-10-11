@@ -108,10 +108,13 @@ const TOOL_CALLS = [
 
   // docs.ts - /api/v1/docs, acting as the key's effective actor. Tools that
   // pick a route by argument (member by code vs by id) list BOTH calls.
+  // `awaits` names query parameters the 0.18.1 backend fixes add; until that
+  // backend is deployed these checks FAIL, labelled "waits on backend". Drop
+  // the `awaits` field once they pass.
   { tool: 'clokio_list_docs', method: 'get', path: '/docs', query: ['project_id', 'parent_id', 'q', 'archived', 'page', 'per_page'] },
   { tool: 'clokio_get_doc_tree', method: 'get', path: '/docs', query: ['tree', 'project_id', 'archived', 'page', 'per_page'] },
   { tool: 'clokio_search_docs', method: 'get', path: '/docs/search', query: ['q', 'project_id', 'limit'] },
-  { tool: 'clokio_get_doc', method: 'get', path: '/docs/{id}', query: ['format'] },
+  { tool: 'clokio_get_doc', method: 'get', path: '/docs/{id}', query: ['format', 'include_title'], awaits: ['include_title'] },
   { tool: 'clokio_create_doc', method: 'post', path: '/docs', query: [] },
   { tool: 'clokio_update_doc_content', method: 'put', path: '/docs/{id}/content', query: [] },
   { tool: 'clokio_update_doc_meta', method: 'patch', path: '/docs/{id}', query: [] },
@@ -121,7 +124,7 @@ const TOOL_CALLS = [
   { tool: 'clokio_delete_doc', method: 'delete', path: '/docs/{id}', query: [] },
   { tool: 'clokio_list_doc_templates', method: 'get', path: '/docs/templates', query: [] },
   { tool: 'clokio_create_doc_from_template', method: 'post', path: '/docs/from-template', query: [] },
-  { tool: 'clokio_list_doc_members', method: 'get', path: '/docs/{id}/members', query: [] },
+  { tool: 'clokio_list_doc_members', method: 'get', path: '/docs/{id}/members', query: ['include_avatars'], awaits: ['include_avatars'] },
   { tool: 'clokio_list_doc_shareable_teams', method: 'get', path: '/docs/{id}/shareable-teams', query: [] },
   { tool: 'clokio_add_doc_member', method: 'post', path: '/docs/{id}/members', query: [] },
   { tool: 'clokio_update_doc_member', method: 'patch', path: '/docs/{id}/members', query: [] },
@@ -138,7 +141,7 @@ const TOOL_CALLS = [
   { tool: 'clokio_resolve_doc_comment', method: 'post', path: '/docs/{id}/comments/{commentId}/resolve', query: [] },
   { tool: 'clokio_reopen_doc_comment', method: 'post', path: '/docs/{id}/comments/{commentId}/reopen', query: [] },
   { tool: 'clokio_list_doc_versions', method: 'get', path: '/docs/{id}/versions', query: [] },
-  { tool: 'clokio_get_doc_version', method: 'get', path: '/docs/{id}/versions/{versionId}', query: ['format'] },
+  { tool: 'clokio_get_doc_version', method: 'get', path: '/docs/{id}/versions/{versionId}', query: ['format', 'include_title'], awaits: ['include_title'] },
   { tool: 'clokio_restore_doc_version', method: 'post', path: '/docs/{id}/versions/{versionId}/restore', query: [] },
   { tool: 'clokio_list_doc_attachments', method: 'get', path: '/docs/{id}/attachments', query: [] },
   { tool: 'clokio_upload_doc_attachment', method: 'post', path: '/docs/{id}/attachments', query: [] },
@@ -189,9 +192,11 @@ for (const call of TOOL_CALLS) {
   const known = new Set((op.parameters ?? []).map((p) => p.name));
   const unknown = call.query.filter((q) => !known.has(q));
   if (unknown.length) {
+    const waiting = unknown.filter((q) => (call.awaits ?? []).includes(q));
     fail(
       `${call.tool}: ${call.method.toUpperCase()} ${call.path} does not accept ` +
-        `${unknown.join(', ')} (it accepts: ${[...known].join(', ') || 'no query parameters'})`
+        `${unknown.join(', ')} (it accepts: ${[...known].join(', ') || 'no query parameters'})` +
+        (waiting.length === unknown.length ? ' [waits on backend 0.18.1 fixes]' : '')
     );
     continue;
   }

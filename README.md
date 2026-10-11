@@ -168,25 +168,33 @@ that employee:
 | `clokio_list_doc_versions` / `clokio_get_doc_version` / `clokio_restore_doc_version` | `GET .../versions`, `GET .../versions/{versionId}`, `POST .../versions/{versionId}/restore` |
 | `clokio_list_doc_attachments` / `clokio_upload_doc_attachment` / `clokio_download_doc_attachment` | `GET` / `POST /docs/{id}/attachments`, `GET .../attachments/download?path=` |
 
-Working with content:
+Working with documents:
 
+- **Every docs tool answers `{data}` or `{data, meta}`**, like the task tools:
+  the record or rows in `data`; paging, counts, your role and permissions in
+  `meta`. `clokio_get_doc` puts the record and its body together in `data`.
+- **Listing covers every scope by default.** `project_id` narrows it: a
+  project id, `"none"` for standalone documents only, or `"all"` (default).
 - **Read as Markdown, write as Markdown.** `clokio_get_doc` returns Markdown by
-  default (`format: "html"` or `"json"` for the others), and the create/update
-  tools take Markdown by default (`content_format: "html"` or `"json"`). HTML
-  read back is not writable as-is; HTML you write must stay inside a strict
-  12-tag grammar (no headings, no attributes except `img[src]` and `a[href]`).
+  default (`format: "html"` or `"json"` for the others) without the title;
+  pass `include_title: true` to start the body with it as a heading. The
+  create/update tools take Markdown by default (`content_format: "html"` or
+  `"json"`); HTML you write must stay within Clokio's restricted grammar (a
+  `422` names any unsupported tag).
 - **Content writes are optimistic.** `clokio_update_doc_content` REPLACES the
   whole body and requires `base_version` - the `content_version` you last read.
   A `409` means someone else edited in between: re-read, reconcile, write
   again with the new version. Never retry with the same `base_version`.
-- **Uploading does not change the text.** `clokio_upload_doc_attachment`
-  returns a `url`; place it in the body yourself (an `image` or
-  `fileAttachment` node in Tiptap JSON).
+- **Public share links expire after 30 days** unless you pass `expires_at` or
+  `never_expires: true`.
+- **Attachments** list `name`, `size`, `mime` and `uploaded_at`; download by
+  `path`. Uploading does not change the text: place the returned `url` in the
+  body yourself (an `image` or `fileAttachment` node in Tiptap JSON).
 - **Members are named by `employee_code`** (e.g. `"00080"`), like everywhere
   else in this server; the internal `employee_id` is accepted as an
   alternative. Teams are named by `team_id`, from
   `clokio_list_doc_shareable_teams`. A member's `email` is shown only when the
-  key has `employees:pii`.
+  key has `employees:pii`; profile pictures only with `include_avatars: true`.
 
 ## Security
 

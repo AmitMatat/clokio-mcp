@@ -36,9 +36,51 @@ const srv = createServer((req, res) => {
       return res.end('file text');
     }
     res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ status: 'success', message: 'ok', data: { ok: true } }));
+    res.end(JSON.stringify({ status: 'success', message: 'ok', data: fixture(req.method, u.pathname) }));
   });
 });
+
+// API-shaped payloads (copied from the backend controllers) for the routes
+// whose response the MCP reshapes; everything else answers {ok: true}.
+const PIC = 'https://cdn.example/pic.jpg';
+function fixture(method, path) {
+  const key = `${method} ${path.replace('/api/v1', '')}`;
+  switch (key) {
+    case 'GET /docs':
+      return { docs: [{ id: 1, title: 'A' }], meta: { page: 1, per_page: 50, total: 1, has_more: false, truncated: false } };
+    case 'GET /docs/412':
+      return {
+        doc: { id: 412, title: 'Runbook', content_version: 3 },
+        breadcrumbs: [],
+        effective_role: 'edit',
+        can_comment: true,
+        can_edit: true,
+        can_manage: false,
+        content_markdown: 'Step one.',
+      };
+    case 'GET /docs/412/members':
+      return {
+        members: [{ id: 9, employee_id: 31, employee_code: '00031', name: 'Dana', profile_pic: PIC, role: 'admin' }],
+        teams: [],
+        inherited: [{ employee_id: 40, employee_code: '00040', name: 'Avi', profile_pic: PIC, role: 'edit' }],
+        visibility: 'private',
+        inherit_permissions: true,
+        share_link: null,
+      };
+    case 'GET /docs/412/comments':
+      return {
+        comments: [{ id: 77, body: '<p>x</p>', employee: { id: 12, name: 'Amit', profile_pic: PIC }, replies: [{ id: 78, employee: { id: 13, name: 'B', profile_pic: PIC } }] }],
+        counts: { unresolved: 1, resolved: 0, total: 1 },
+        filter: 'unresolved',
+      };
+    case 'POST /docs/412/comments':
+      return { comment: { id: 79, body: '<p>hi</p>', employee: { id: 12, name: 'Amit', profile_pic: PIC } } };
+    case 'GET /docs/412/attachments':
+      return { attachments: [{ kind: 'file', name: 'spec.pdf', path: 'docs/org-1/412/files/abc.pdf', url: '/x', size: 48211, mime: 'application/pdf', uploaded_at: '2026-10-11T10:00:00+03:00' }, { kind: 'media', name: 'a.png', path: 'p', url: '/y' }] };
+    default:
+      return { ok: true };
+  }
+}
 srv.listen(0, '127.0.0.1');
 await once(srv, 'listening');
 const base = `http://127.0.0.1:${srv.address().port}`;
@@ -49,10 +91,14 @@ await writeFile(upload, 'pdf bytes');
 
 const calls = [
   ['clokio_list_docs', { project_id: 'all', parent_id: 'root', q: 'run', archived: 'include', page: 2, per_page: 10 }],
+  ['clokio_list_docs', {}],
+  ['clokio_list_docs', { project_id: 'none' }],
   ['clokio_get_doc_tree', { project_id: 7 }],
+  ['clokio_get_doc_tree', {}],
   ['clokio_search_docs', { q: 'zebra', limit: 5 }],
   ['clokio_get_doc', { id: 412 }],
   ['clokio_get_doc', { id: 412, format: 'json' }],
+  ['clokio_get_doc', { id: 412, include_title: true }],
   ['clokio_create_doc', { title: 'T', project_id: 7, content: '# Hi' }],
   ['clokio_create_doc', { title: 'T', content: '<p>x</p>', content_format: 'html' }],
   ['clokio_update_doc_content', { id: 412, content: '{"type":"doc","content":[]}', content_format: 'json', base_version: 3 }],
@@ -65,6 +111,7 @@ const calls = [
   ['clokio_list_doc_templates', {}],
   ['clokio_create_doc_from_template', { template: 'meeting', project_id: 7 }],
   ['clokio_list_doc_members', { id: 412 }],
+  ['clokio_list_doc_members', { id: 412, include_avatars: true }],
   ['clokio_add_doc_member', { id: 412, employee_code: '00080', role: 'edit' }],
   ['clokio_add_doc_member', { id: 412, employee_id: 31, role: 'edit' }],
   ['clokio_update_doc_member', { id: 412, employee_code: '00080', role: 'view' }],
@@ -76,6 +123,7 @@ const calls = [
   ['clokio_update_doc_team', { id: 412, team_id: 2, role: 'edit' }],
   ['clokio_remove_doc_team', { id: 412, team_id: 2 }],
   ['clokio_create_doc_share_link', { id: 412, expires_at: '2030-01-01' }],
+  ['clokio_create_doc_share_link', { id: 412, never_expires: true }],
   ['clokio_revoke_doc_share_link', { id: 412 }],
   ['clokio_list_doc_comments', { id: 412, filter: 'all' }],
   ['clokio_add_doc_comment', { id: 412, body: '**hi**', parent_id: 77 }],
@@ -83,6 +131,7 @@ const calls = [
   ['clokio_reopen_doc_comment', { id: 412, comment_id: 77 }],
   ['clokio_list_doc_versions', { id: 412 }],
   ['clokio_get_doc_version', { id: 412, version_id: 5 }],
+  ['clokio_get_doc_version', { id: 412, version_id: 5, include_title: true }],
   ['clokio_restore_doc_version', { id: 412, version_id: 5 }],
   ['clokio_list_doc_attachments', { id: 412 }],
   ['clokio_upload_doc_attachment', { id: 412, file_path: upload, kind: 'media' }],
@@ -131,10 +180,14 @@ check('every call carried X-API-Key', hits.every((h) => h.key === 'clk_test'), t
 const P = '/api/v1';
 const expect = [
   ['GET', '/docs', { project_id: 'all', parent_id: 'root', q: 'run', archived: 'include', page: '2', per_page: '10' }, null],
+  ['GET', '/docs', { project_id: 'all' }, null],
+  ['GET', '/docs', { project_id: 'none' }, null],
   ['GET', '/docs', { tree: '1', project_id: '7' }, null],
+  ['GET', '/docs', { tree: '1', project_id: 'all' }, null],
   ['GET', '/docs/search', { q: 'zebra', limit: '5' }, null],
   ['GET', '/docs/412', { format: 'markdown' }, null],
   ['GET', '/docs/412', { format: 'json' }, null],
+  ['GET', '/docs/412', { format: 'markdown', include_title: '1' }, null],
   ['POST', '/docs', {}, { title: 'T', project_id: 7, content_markdown: '# Hi' }],
   ['POST', '/docs', {}, { title: 'T', content_html: '<p>x</p>' }],
   ['PUT', '/docs/412/content', {}, { content: { type: 'doc', content: [] }, base_version: 3 }],
@@ -147,6 +200,7 @@ const expect = [
   ['GET', '/docs/templates', {}, null],
   ['POST', '/docs/from-template', {}, { template: 'meeting', project_id: 7 }],
   ['GET', '/docs/412/members', {}, null],
+  ['GET', '/docs/412/members', { include_avatars: '1' }, null],
   ['POST', '/docs/412/members', {}, { employee_code: '00080', role: 'edit' }],
   ['POST', '/docs/412/members', {}, { employee_id: 31, role: 'edit' }],
   ['PATCH', '/docs/412/members', {}, { employee_code: '00080', role: 'view' }],
@@ -158,6 +212,7 @@ const expect = [
   ['PATCH', '/docs/412/teams/2', {}, { role: 'edit' }],
   ['DELETE', '/docs/412/teams/2', {}, null],
   ['POST', '/docs/412/share-link', {}, { expires_at: '2030-01-01' }],
+  ['POST', '/docs/412/share-link', {}, { never_expires: true }],
   ['DELETE', '/docs/412/share-link', {}, null],
   ['GET', '/docs/412/comments', { filter: 'all' }, null],
   ['POST', '/docs/412/comments', {}, { body: '<p><strong>hi</strong></p>', parent_id: 77 }],
@@ -165,6 +220,7 @@ const expect = [
   ['POST', '/docs/412/comments/77/reopen', {}, null],
   ['GET', '/docs/412/versions', {}, null],
   ['GET', '/docs/412/versions/5', { format: 'markdown' }, null],
+  ['GET', '/docs/412/versions/5', { format: 'markdown', include_title: '1' }, null],
   ['POST', '/docs/412/versions/5/restore', {}, null],
   ['GET', '/docs/412/attachments', {}, null],
   ['POST', '/docs/412/attachments', {}, 'multipart'],
@@ -184,6 +240,40 @@ expect.forEach(([method, path, query, body], i) => {
 });
 
 check('download returns the text', results[100 + calls.length - 1]?.result?.content?.[0]?.text, 'file text');
+
+// ---- response shapes: {data, meta} like the task tools, no avatars ----------
+const out = (name, pred = () => true) => {
+  const i = calls.findIndex(([n, a]) => n === name && pred(a));
+  return JSON.parse(results[100 + i]?.result?.content?.[0]?.text ?? 'null');
+};
+const list = out('clokio_list_docs', (a) => Object.keys(a).length === 0);
+check('list: rows in data', list?.data, [{ id: 1, title: 'A' }]);
+check('list: paging in meta', list?.meta?.total, 1);
+check('list: no raw docs key', 'docs' in (list ?? {}), false);
+
+const got = out('clokio_get_doc', (a) => !a.format && !a.include_title);
+check('get: record and body together in data', [got?.data?.id, got?.data?.content_markdown], [412, 'Step one.']);
+check('get: permissions in meta', [got?.meta?.effective_role, got?.meta?.can_edit], ['edit', true]);
+check('get: no raw doc key', 'doc' in (got ?? {}), false);
+
+const members = out('clokio_list_doc_members', (a) => !a.include_avatars);
+check('members: data has members/teams/inherited', Object.keys(members?.data ?? {}), ['members', 'teams', 'inherited']);
+check('members: settings in meta', members?.meta?.visibility, 'private');
+check('members: employee_code kept', members?.data?.members?.[0]?.employee_code, '00031');
+check('members: no profile_pic by default', JSON.stringify(members).includes('profile_pic'), false);
+const withPics = out('clokio_list_doc_members', (a) => a.include_avatars);
+check('members: include_avatars keeps profile_pic', withPics?.data?.members?.[0]?.profile_pic, PIC);
+
+const comments = out('clokio_list_doc_comments');
+check('comments: threads in data', comments?.data?.[0]?.id, 77);
+check('comments: counts in meta', comments?.meta?.counts?.total, 1);
+check('comments: no profile_pic at any depth', JSON.stringify(comments).includes('profile_pic'), false);
+const posted = out('clokio_add_doc_comment');
+check('add comment: the comment is data', posted?.data?.id, 79);
+
+const atts = out('clokio_list_doc_attachments');
+check('attachments: name/size/mime/uploaded_at surfaced', atts?.data?.[0] && [atts.data[0].name, atts.data[0].size, atts.data[0].mime, atts.data[0].uploaded_at], ['spec.pdf', 48211, 'application/pdf', '2026-10-11T10:00:00+03:00']);
+check('attachments: missing fields are null, not absent', [atts?.data?.[1]?.size, atts?.data?.[1]?.mime, atts?.data?.[1]?.uploaded_at], [null, null, null]);
 
 // Exactly one of employee_code / employee_id, refused before any request.
 {
