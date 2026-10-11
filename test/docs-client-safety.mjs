@@ -210,6 +210,25 @@ const all = await runServer({}, [{ name: 'clokio_get_doc', arguments: { id: 1 } 
 const names = all[2]?.result?.tools?.map((t) => t.name) ?? [];
 check('docs tools register by default', names.includes('clokio_get_doc') && names.includes('clokio_list_doc_shareable_teams'), true);
 check('alongside the task tools', names.includes('clokio_create_task'), true);
+
+// Each docs tool names the SECTION permission its route's sectionGate()
+// checks (backend app/Http/Controllers/EmployeeApi/Doc*.php), so a 403
+// "Forbidden: Insufficient permissions" is explainable from the description.
+const SECTION = {
+  'docs.view': ['clokio_list_docs', 'clokio_get_doc_tree', 'clokio_search_docs', 'clokio_get_doc', 'clokio_list_doc_templates', 'clokio_list_doc_members', 'clokio_list_doc_shareable_teams', 'clokio_list_doc_comments', 'clokio_list_doc_versions', 'clokio_get_doc_version', 'clokio_list_doc_attachments', 'clokio_download_doc_attachment'],
+  'docs.create': ['clokio_create_doc', 'clokio_update_doc_content', 'clokio_update_doc_meta', 'clokio_move_doc', 'clokio_archive_doc', 'clokio_restore_doc', 'clokio_create_doc_from_template', 'clokio_add_doc_comment', 'clokio_resolve_doc_comment', 'clokio_reopen_doc_comment', 'clokio_restore_doc_version', 'clokio_upload_doc_attachment'],
+  'docs.manage': ['clokio_delete_doc', 'clokio_add_doc_member', 'clokio_update_doc_member', 'clokio_remove_doc_member', 'clokio_add_doc_team', 'clokio_update_doc_team', 'clokio_remove_doc_team', 'clokio_create_doc_share_link', 'clokio_revoke_doc_share_link'],
+};
+const descOf = Object.fromEntries((all[2]?.result?.tools ?? []).map((t) => [t.name, t.description]));
+const docTools = Object.keys(descOf).filter((n) => /^clokio_.*doc/.test(n));
+const mapped = Object.values(SECTION).flat();
+check('every docs tool has a section mapping', docTools.filter((n) => !mapped.includes(n)).join(', '), '');
+const wrong = [];
+for (const [perm, tools] of Object.entries(SECTION)) {
+  for (const t of tools) if (!(descOf[t] ?? '').includes(`Needs ${perm}`)) wrong.push(`${t} (want ${perm})`);
+}
+check('each docs tool description names its section permission', wrong.join(', '), '');
+check('clokio_list_docs explains the Insufficient permissions 403', (descOf.clokio_list_docs ?? '').includes('Insufficient permissions'), true);
 check('the no-actor 403 reaches the model verbatim', (all[10]?.result?.content?.[0]?.text ?? '').includes(ACTS_AS_MSG), true);
 check('and is an error result', all[10]?.result?.isError, true);
 

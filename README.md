@@ -140,10 +140,14 @@ that employee:
 - A document the employee cannot see answers **`404`**, the same as one that
   does not exist (the API never confirms an id to someone not allowed to know it).
 - A visible document they may not change answers **`403`**.
-- The employee's role gates each call: `docs.view` for reads, `docs.create`
-  for content writes, `docs.manage` for delete and sharing. Per document,
-  roles are `view` < `comment` < `edit` < `admin`; each tool's description
-  names what it needs.
+- Two separate gates, both named in each tool's description:
+  - the employee's **role** must hold the section permission: `docs.view`
+    for reads, `docs.create` for creating, editing, moving, archiving,
+    comments, version restores and uploads, `docs.manage` for delete, members,
+    teams and share links (and for standalone documents). A `403`
+    `Forbidden: Insufficient permissions` means this gate refused;
+  - the **document role**, `view` < `comment` < `edit` < `admin`. A `403`
+    with any other message means that role is too low.
 
 | Tool | Endpoint |
 |------|----------|

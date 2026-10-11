@@ -28,7 +28,16 @@ import { registerTool } from './helpers.js';
  * `meta`. See shape*() below.
  */
 
-const ACCESS = 'Docs access: see clokio_list_docs.';
+/**
+ * Per-tool access tag: the SECTION permission the acting employee's role
+ * must hold (the backend's sectionGate() per route), on top of the doc role
+ * each description names ("needs edit", "needs admin"). The full rule lives
+ * once, on clokio_list_docs. Verified against
+ * app/Http/Controllers/EmployeeApi/Doc*.php (sectionGate calls).
+ */
+const VIEW = 'Needs docs.view; see clokio_list_docs.';
+const CREATE = 'Needs docs.create; see clokio_list_docs.';
+const MANAGE = 'Needs docs.manage; see clokio_list_docs.';
 
 const docId = z.number().int().positive().describe('Document id');
 
@@ -182,7 +191,11 @@ export function registerDocTools(server: McpServer, config: ClokioConfig): void 
       'or, if the key has none, as the key\'s creator - only when the key lists docs:read / docs:write ' +
       'explicitly ("*" is not enough). Otherwise every docs tool returns 403: set an acts-as employee or add ' +
       'the docs scopes in Settings > API keys. Reads need scope docs:read, everything else docs:write. You see ' +
-      'exactly what that employee sees; a doc they cannot see is 404.',
+      'exactly what that employee sees; a doc they cannot see is 404. ' +
+      'Two separate gates: the employee\'s ROLE must hold the section permission each tool names (docs.view ' +
+      'reads; docs.create writes, comments, uploads; docs.manage delete and sharing) - a 403 "Forbidden: ' +
+      'Insufficient permissions" means it does not; and the DOC role (view<comment<edit<admin, "needs edit" ' +
+      'etc.) - a 403 with another message means that is too low. Needs docs.view.',
     schema: {
       project_id: scopeArg,
       parent_id: z
@@ -212,7 +225,7 @@ export function registerDocTools(server: McpServer, config: ClokioConfig): void 
 
   registerTool(server, config, {
     name: 'clokio_get_doc_tree',
-    description: `Documents you can view as a nested tree (children), paged over the top level. ${ACCESS}`,
+    description: `Documents you can view as a nested tree (children), paged over the top level. ${VIEW}`,
     schema: {
       project_id: scopeArg,
       archived: archivedArg,
@@ -236,7 +249,7 @@ export function registerDocTools(server: McpServer, config: ClokioConfig): void 
 
   registerTool(server, config, {
     name: 'clokio_search_docs',
-    description: `Search titles and body text (not archived), newest first; each row has a snippet. ${ACCESS}`,
+    description: `Search titles and body text (not archived), newest first; each row has a snippet. ${VIEW}`,
     schema: {
       q: z.string().min(2).max(120),
       project_id: z.number().int().positive().optional(),
@@ -253,7 +266,7 @@ export function registerDocTools(server: McpServer, config: ClokioConfig): void 
     name: 'clokio_get_doc',
     description:
       'Read a document: data = the record plus its body; meta = your role and breadcrumbs. Keep ' +
-      `data.content_version for clokio_update_doc_content. ${ACCESS}`,
+      `data.content_version for clokio_update_doc_content. ${VIEW}`,
     schema: { id: docId, format: readFormatArg, include_title: includeTitleArg },
     handler: async (args, cfg) =>
       shapeDocRead(
@@ -270,8 +283,8 @@ export function registerDocTools(server: McpServer, config: ClokioConfig): void 
     name: 'clokio_create_doc',
     description:
       'Create a document. parent_id = sub-page (needs edit on the parent); project_id = in that project; ' +
-      'neither = standalone (org admins only). Starts at content_version 0. ' +
-      ACCESS,
+      'neither = standalone (needs docs.manage). Starts at content_version 0. ' +
+      CREATE,
     mutates: true,
     schema: {
       title: z.string().min(1).max(255),
@@ -300,7 +313,7 @@ export function registerDocTools(server: McpServer, config: ClokioConfig): void 
     description:
       'REPLACE the whole body (needs edit). base_version = the content_version you last read. On 409 do not ' +
       'retry the same base_version: re-read, reconcile, write with the new version. Empty content clears. ' +
-      ACCESS,
+      CREATE,
     mutates: true,
     schema: {
       id: docId,
@@ -322,7 +335,7 @@ export function registerDocTools(server: McpServer, config: ClokioConfig): void 
     description:
       'Change metadata; send only what changes. title/icon/full_width/sort_order need edit; visibility, ' +
       'inherit_permissions, is_archived need admin. Use clokio_move_doc for parent/project. ' +
-      ACCESS,
+      CREATE,
     mutates: true,
     schema: {
       id: docId,
@@ -348,7 +361,7 @@ export function registerDocTools(server: McpServer, config: ClokioConfig): void 
     name: 'clokio_move_doc',
     description:
       'Move a document and its sub-pages (needs admin). Send both parent_id and project_id; null = top ' +
-      `level / standalone. With a parent, the parent's project wins. ${ACCESS}`,
+      `level / standalone. With a parent, the parent's project wins. ${CREATE}`,
     mutates: true,
     schema: {
       id: docId,
@@ -368,7 +381,7 @@ export function registerDocTools(server: McpServer, config: ClokioConfig): void 
 
   registerTool(server, config, {
     name: 'clokio_archive_doc',
-    description: `Archive a document (needs admin; reversible with clokio_restore_doc). ${ACCESS}`,
+    description: `Archive a document (needs admin; reversible with clokio_restore_doc). ${CREATE}`,
     mutates: true,
     schema: { id: docId },
     handler: async (args, cfg) =>
@@ -377,7 +390,7 @@ export function registerDocTools(server: McpServer, config: ClokioConfig): void 
 
   registerTool(server, config, {
     name: 'clokio_restore_doc',
-    description: `Un-archive a document (needs admin). ${ACCESS}`,
+    description: `Un-archive a document (needs admin). ${CREATE}`,
     mutates: true,
     schema: { id: docId },
     handler: async (args, cfg) =>
@@ -386,7 +399,7 @@ export function registerDocTools(server: McpServer, config: ClokioConfig): void 
 
   registerTool(server, config, {
     name: 'clokio_delete_doc',
-    description: `DELETE a document (needs admin and docs.manage; not restorable via the API - prefer archive). ${ACCESS}`,
+    description: `DELETE a document (needs admin; not restorable via the API - prefer archive). ${MANAGE}`,
     mutates: 'destructive',
     schema: { id: docId },
     handler: (args, cfg) => request(cfg, `/docs/${seg(args.id)}`, { method: 'DELETE' }),
@@ -396,14 +409,14 @@ export function registerDocTools(server: McpServer, config: ClokioConfig): void 
 
   registerTool(server, config, {
     name: 'clokio_list_doc_templates',
-    description: `List document templates (key, name, description). ${ACCESS}`,
+    description: `List document templates (key, name, description). ${VIEW}`,
     schema: {},
     handler: async (_args, cfg) => liftKey(await request(cfg, '/docs/templates'), 'templates'),
   });
 
   registerTool(server, config, {
     name: 'clokio_create_doc_from_template',
-    description: `Create a top-level document from a template key. No project_id = standalone (admins only). ${ACCESS}`,
+    description: `Create a top-level document from a template key. No project_id = standalone (needs docs.manage). ${CREATE}`,
     mutates: true,
     schema: {
       template: z.string().min(1).max(60),
@@ -426,7 +439,7 @@ export function registerDocTools(server: McpServer, config: ClokioConfig): void 
     name: 'clokio_list_doc_members',
     description:
       'Who a document is shared with (needs admin): data = members, teams, inherited (change those on the ' +
-      `parent); meta = visibility, inherit_permissions, share_link. ${ACCESS}`,
+      `parent); meta = visibility, inherit_permissions, share_link. ${VIEW}`,
     schema: {
       id: docId,
       include_avatars: z.boolean().optional().describe('Include profile pictures (default false)'),
@@ -447,7 +460,7 @@ export function registerDocTools(server: McpServer, config: ClokioConfig): void 
 
   registerTool(server, config, {
     name: 'clokio_list_doc_shareable_teams',
-    description: `Teams this document can be shared with (needs admin); use id as team_id. ${ACCESS}`,
+    description: `Teams this document can be shared with (needs admin); use id as team_id. ${VIEW}`,
     schema: { id: docId },
     handler: async (args, cfg) => liftKey(await request(cfg, `/docs/${seg(args.id)}/shareable-teams`), 'teams'),
   });
@@ -478,7 +491,7 @@ export function registerDocTools(server: McpServer, config: ClokioConfig): void 
 
   registerTool(server, config, {
     name: 'clokio_add_doc_member',
-    description: `Share a document with a person or change their role (needs admin; they are notified once). ${ACCESS}`,
+    description: `Share a document with a person or change their role (needs admin; they are notified once). ${MANAGE}`,
     mutates: true,
     schema: { id: docId, ...personArgs, role: memberRole },
     handler: async (args, cfg) =>
@@ -492,7 +505,7 @@ export function registerDocTools(server: McpServer, config: ClokioConfig): void 
 
   registerTool(server, config, {
     name: 'clokio_update_doc_member',
-    description: `Change a person's direct role (needs admin; demoting the last admin is 422). ${ACCESS}`,
+    description: `Change a person's direct role (needs admin; demoting the last admin is 422). ${MANAGE}`,
     mutates: true,
     schema: { id: docId, ...personArgs, role: memberRole },
     handler: async (args, cfg) => {
@@ -515,7 +528,7 @@ export function registerDocTools(server: McpServer, config: ClokioConfig): void 
 
   registerTool(server, config, {
     name: 'clokio_remove_doc_member',
-    description: `Remove a person's direct grant (needs admin; a code may name someone who has left). ${ACCESS}`,
+    description: `Remove a person's direct grant (needs admin; a code may name someone who has left). ${MANAGE}`,
     mutates: 'destructive',
     schema: { id: docId, ...personArgs },
     handler: (args, cfg) => {
@@ -537,7 +550,7 @@ export function registerDocTools(server: McpServer, config: ClokioConfig): void 
 
   registerTool(server, config, {
     name: 'clokio_add_doc_team',
-    description: `Share a document with a team (needs admin; teams cannot be admins). ${ACCESS}`,
+    description: `Share a document with a team (needs admin; teams cannot be admins). ${MANAGE}`,
     mutates: true,
     schema: { id: docId, team_id: teamId, role: teamRole },
     handler: async (args, cfg) =>
@@ -551,7 +564,7 @@ export function registerDocTools(server: McpServer, config: ClokioConfig): void 
 
   registerTool(server, config, {
     name: 'clokio_update_doc_team',
-    description: `Change a team's role on a document (needs admin). ${ACCESS}`,
+    description: `Change a team's role on a document (needs admin). ${MANAGE}`,
     mutates: true,
     schema: { id: docId, team_id: teamId, role: teamRole },
     handler: async (args, cfg) =>
@@ -565,7 +578,7 @@ export function registerDocTools(server: McpServer, config: ClokioConfig): void 
 
   registerTool(server, config, {
     name: 'clokio_remove_doc_team',
-    description: `Remove a team's grant (needs admin). ${ACCESS}`,
+    description: `Remove a team's grant (needs admin). ${MANAGE}`,
     mutates: 'destructive',
     schema: { id: docId, team_id: teamId },
     handler: (args, cfg) => request(cfg, `/docs/${seg(args.id)}/teams/${seg(args.team_id)}`, { method: 'DELETE' }),
@@ -575,7 +588,7 @@ export function registerDocTools(server: McpServer, config: ClokioConfig): void 
     name: 'clokio_create_doc_share_link',
     description:
       'Create or REPLACE the public read link (needs admin; the old URL stops working). Expires in 30 days ' +
-      `unless expires_at or never_expires is given. ${ACCESS}`,
+      `unless expires_at or never_expires is given. ${MANAGE}`,
     mutates: true,
     schema: {
       id: docId,
@@ -597,7 +610,7 @@ export function registerDocTools(server: McpServer, config: ClokioConfig): void 
 
   registerTool(server, config, {
     name: 'clokio_revoke_doc_share_link',
-    description: `Revoke the public link (needs admin). ${ACCESS}`,
+    description: `Revoke the public link (needs admin). ${MANAGE}`,
     mutates: 'destructive',
     schema: { id: docId },
     handler: (args, cfg) => request(cfg, `/docs/${seg(args.id)}/share-link`, { method: 'DELETE' }),
@@ -607,7 +620,7 @@ export function registerDocTools(server: McpServer, config: ClokioConfig): void 
 
   registerTool(server, config, {
     name: 'clokio_list_doc_comments',
-    description: `Comment threads, newest first, replies nested; meta has counts. ${ACCESS}`,
+    description: `Comment threads, newest first, replies nested; meta has counts. ${VIEW}`,
     schema: {
       id: docId,
       filter: z.enum(['unresolved', 'resolved', 'all']).optional().describe('Default unresolved'),
@@ -626,7 +639,7 @@ export function registerDocTools(server: McpServer, config: ClokioConfig): void 
 
   registerTool(server, config, {
     name: 'clokio_add_doc_comment',
-    description: `Comment, or reply to a thread with parent_id (needs comment). Markdown or HTML; @Full Name notifies. ${ACCESS}`,
+    description: `Comment, or reply to a thread with parent_id (needs comment). Markdown or HTML; @Full Name notifies. ${CREATE}`,
     mutates: true,
     schema: {
       id: docId,
@@ -648,7 +661,7 @@ export function registerDocTools(server: McpServer, config: ClokioConfig): void 
 
   registerTool(server, config, {
     name: 'clokio_resolve_doc_comment',
-    description: `Resolve a comment thread (needs comment). ${ACCESS}`,
+    description: `Resolve a comment thread (needs comment). ${CREATE}`,
     mutates: true,
     schema: { id: docId, comment_id: z.number().int().positive() },
     handler: async (args, cfg) =>
@@ -662,7 +675,7 @@ export function registerDocTools(server: McpServer, config: ClokioConfig): void 
 
   registerTool(server, config, {
     name: 'clokio_reopen_doc_comment',
-    description: `Reopen a resolved comment thread (needs comment). ${ACCESS}`,
+    description: `Reopen a resolved comment thread (needs comment). ${CREATE}`,
     mutates: true,
     schema: { id: docId, comment_id: z.number().int().positive() },
     handler: async (args, cfg) =>
@@ -678,14 +691,14 @@ export function registerDocTools(server: McpServer, config: ClokioConfig): void 
 
   registerTool(server, config, {
     name: 'clokio_list_doc_versions',
-    description: `Version history, newest first. Pass a row's id (not its version number) to the other version tools. ${ACCESS}`,
+    description: `Version history, newest first. Pass a row's id (not its version number) to the other version tools. ${VIEW}`,
     schema: { id: docId },
     handler: async (args, cfg) => liftKey(await request(cfg, `/docs/${seg(args.id)}/versions`), 'versions'),
   });
 
   registerTool(server, config, {
     name: 'clokio_get_doc_version',
-    description: `Read one version snapshot. ${ACCESS}`,
+    description: `Read one version snapshot. ${VIEW}`,
     schema: {
       id: docId,
       version_id: z.number().int().positive(),
@@ -703,7 +716,7 @@ export function registerDocTools(server: McpServer, config: ClokioConfig): void 
 
   registerTool(server, config, {
     name: 'clokio_restore_doc_version',
-    description: `Restore a snapshot over the content (needs edit). content_version moves: use the returned one. ${ACCESS}`,
+    description: `Restore a snapshot over the content (needs edit). content_version moves: use the returned one. ${CREATE}`,
     mutates: true,
     schema: { id: docId, version_id: z.number().int().positive() },
     handler: async (args, cfg) =>
@@ -716,7 +729,7 @@ export function registerDocTools(server: McpServer, config: ClokioConfig): void 
 
   registerTool(server, config, {
     name: 'clokio_list_doc_attachments',
-    description: `Files uploaded to a document: name, size, mime, uploaded_at, path (for download). ${ACCESS}`,
+    description: `Files uploaded to a document: name, size, mime, uploaded_at, path (for download). ${VIEW}`,
     schema: { id: docId },
     handler: async (args, cfg) => shapeAttachments(await request(cfg, `/docs/${seg(args.id)}/attachments`)),
   });
@@ -725,7 +738,7 @@ export function registerDocTools(server: McpServer, config: ClokioConfig): void 
     name: 'clokio_upload_doc_attachment',
     description:
       'Upload a LOCAL file (needs edit). kind file (default, 100 MB) or media (images/video, 50 MB). Does not ' +
-      `change the text: reference the returned url in the body yourself. ${ACCESS}`,
+      `change the text: reference the returned url in the body yourself. ${CREATE}`,
     mutates: true,
     schema: {
       id: docId,
@@ -742,7 +755,7 @@ export function registerDocTools(server: McpServer, config: ClokioConfig): void 
     name: 'clokio_download_doc_attachment',
     description:
       'Download an attachment by its path. save_path writes it to disk; otherwise text, PDF text, ZIP entries ' +
-      `or an image come back inline. ${ACCESS}`,
+      `or an image come back inline. ${VIEW}`,
     schema: {
       id: docId,
       path: z.string().min(1).max(1024).describe('`path` from clokio_list_doc_attachments'),
