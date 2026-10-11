@@ -1,7 +1,7 @@
 {
   "name": "clokio-mcp",
-  "version": "0.17.1",
-  "description": "Model Context Protocol (MCP) server for Clokio — manage tasks, projects, clients, employees and attendance from Claude and any MCP client.",
+  "version": "0.18.0",
+  "description": "Model Context Protocol (MCP) server for Clokio - manage tasks, projects, clients, employees, attendance and documents from Claude and any MCP client.",
   "type": "module",
   "bin": {
     "clokio-mcp": "dist/index.js"
@@ -26,7 +26,8 @@
     "attendance",
     "task-management",
     "project-management",
-    "time-tracking"
+    "time-tracking",
+    "documents"
   ],
   "author": "Matat Technologies LTD",
   "license": "MIT",
