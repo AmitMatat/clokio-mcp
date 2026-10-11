@@ -7,7 +7,7 @@
  * credential and redirect handling. This module never fetches; it only decides
  * what to DO with what it was given.
  */
-import { ClokioApiError, looksLikeText, requestRawBytes } from './client.js';
+import { ClokioApiError, looksLikeText, requestRawBytes, } from './client.js';
 import { mcpContent } from './tools/helpers.js';
 /**
  * How much decoded text (PDF or text file) we return inline before truncating.
@@ -207,6 +207,29 @@ export async function saveBuffer(buffer, savePath, overwrite) {
  */
 export async function downloadAttachment(config, taskId, attachmentId, opts) {
     const { buffer, contentType } = await requestRawBytes(config, `/tasks/${taskId}/attachments/${attachmentId}`);
+    return renderDownload(buffer, contentType, opts);
+}
+/**
+ * Download one Docs attachment
+ * (GET /api/v1/docs/{id}/attachments/download?path=...) and hand it to
+ * the same renderer as a task attachment: save to disk, or PDF text / ZIP
+ * entries / image / text inline. `path` is the storage path the attachment
+ * listing returned; it travels as a QUERY value (URL-encoded by
+ * URLSearchParams), never as path segments, and the API 404s any path that is
+ * not one of this document's own uploads.
+ */
+export async function downloadDocAttachment(config, docId, storagePath, opts) {
+    const { buffer, contentType, fileName } = await requestRawBytes(config, `/docs/${docId}/attachments/download`, { path: storagePath });
+    // The type-detection hint: the caller's name, else what the response
+    // declared, else the last segment of the storage path.
+    const hint = opts.fileName ?? fileName ?? storagePath.split('/').pop();
+    return renderDownload(buffer, contentType, { ...opts, fileName: hint });
+}
+/**
+ * Turn downloaded bytes into the most useful result for their type. Shared by
+ * the task and doc downloads so both behave identically.
+ */
+async function renderDownload(buffer, contentType, opts) {
     const kb = (buffer.byteLength / 1024).toFixed(1);
     if (opts.savePath) {
         const abs = await saveBuffer(buffer, opts.savePath, opts.overwrite ?? false);

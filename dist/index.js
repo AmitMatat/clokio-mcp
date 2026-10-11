@@ -2,9 +2,11 @@
 /**
  * clokio-mcp — an MCP server for the Clokio Public API.
  *
- * Exposes tasks, projects/clients, employees and attendance as MCP tools over
- * stdio. Auth is the per-user CLOKIO_API_KEY (an X-API-Key credential); the key
- * carries its own scopes, so this server never re-implements authorization.
+ * Exposes tasks, projects/clients, employees, attendance and documents as MCP
+ * tools over stdio. Auth is the per-user CLOKIO_API_KEY (an X-API-Key
+ * credential); the key carries its own scopes, so this server never
+ * re-implements authorization. Documents additionally need a key that "acts
+ * as" an employee - the API decides that, not this server.
  *
  * Run: CLOKIO_API_KEY=clk_... node dist/index.js
  * Or register with: claude mcp add clokio -- npx -y clokio-mcp
@@ -18,6 +20,7 @@ import { registerTaskTools } from './tools/tasks.js';
 import { registerProjectTools } from './tools/projects.js';
 import { registerEmployeeTools } from './tools/employees.js';
 import { registerAttendanceTools } from './tools/attendance.js';
+import { registerDocTools } from './tools/docs.js';
 /**
  * The optional tool groups a session can turn OFF.
  *
@@ -31,7 +34,7 @@ import { registerAttendanceTools } from './tools/attendance.js';
  * to resolve names to ids, so it is always registered. Naming a toolset that
  * does not exist is refused at startup rather than silently ignored.
  */
-const OPTIONAL_TOOLSETS = ['tasks', 'employees', 'attendance'];
+const OPTIONAL_TOOLSETS = ['tasks', 'employees', 'attendance', 'docs'];
 function selectedToolsets() {
     const raw = process.env.CLOKIO_TOOLSETS?.trim();
     if (!raw) {
@@ -65,6 +68,8 @@ async function main() {
         registerEmployeeTools(server, config);
     if (toolsets.has('attendance'))
         registerAttendanceTools(server, config);
+    if (toolsets.has('docs'))
+        registerDocTools(server, config);
     const transport = new StdioServerTransport();
     await server.connect(transport);
     // stderr is safe for logs on stdio transport (stdout carries the protocol).

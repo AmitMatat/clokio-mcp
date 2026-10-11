@@ -62,16 +62,18 @@ key. Use it only for a **shared or service key** whose issuer is not the person
 acting. An explicit code on a tool call always takes precedence.
 
 Optional: set `CLOKIO_TOOLSETS` to register only the tool groups you need, e.g.
-`CLOKIO_TOOLSETS=tasks`. This cuts the per-session tool-list cost — a
-task-focused session drops from 50 tools to 31. Optional groups are `tasks`,
-`employees` and `attendance` (which includes leave and time entries); combine
-them with commas. The `projects` group (project/client lookups, task statuses
+`CLOKIO_TOOLSETS=tasks`. This cuts the per-session tool-list cost - a
+task-focused session drops from 83 tools to 31. Optional groups are `tasks`,
+`employees`, `attendance` (which includes leave and time entries) and `docs`;
+combine them with commas. If your key cannot open documents (no acts-as
+employee and no explicit docs scopes), leaving `docs` out saves 33 tools it
+cannot use. The `projects` group (project/client lookups, task statuses
 and labels, and `whoami`) is always on, because the task tools resolve names
 through it.
 
 ## Tools
 
-50 tools across five areas. Read-only tools carry the MCP `readOnlyHint`; writes
+83 tools across six areas. Read-only tools carry the MCP `readOnlyHint`; writes
 are marked mutating (deletes are `destructive`).
 
 | Area | Tools |
@@ -81,6 +83,7 @@ are marked mutating (deletes are `destructive`).
 | **Reference** | task statuses, task labels, locations, list webhooks (read-only), whoami |
 | **Employees** | list (name search), lookup by PIN, task-stats, inbox (mentions, new assignments, others' status changes), create, set status |
 | **Attendance** | daily, range, per-employee, monthly summary, clock in/out, break start/end, time entries, leaves, leave balances |
+| **Documents** (see [Documents](#documents) for who a key acts as) | list, tree, search, get (Markdown / HTML / JSON), create, replace content, update meta, move, archive, restore, delete, templates + create from template, members (by `employee_code`) and teams (list/add/update/remove, shareable teams), public share link, comments (list/add/resolve/reopen), versions (list/get/restore), attachments (list/upload/download) |
 
 ### Conventions
 
@@ -107,10 +110,92 @@ are marked mutating (deletes are `destructive`).
   returns every occurrence of one series.
 - An API key sees **public custom fields only**.
 
+## Documents
+
+The Docs tools call `/api/v1/docs...` with the same `CLOKIO_API_KEY` as
+everything else, but documents are permissioned per **person**, so every
+docs call acts as one employee - the key's **effective actor**:
+
+- **The key's "acts as" employee**, when it has one (set in
+  **Settings > API keys**). Only an admin may make a key act as someone else.
+- **Otherwise, the person who created the key** - but only when the key lists
+  `docs:read` / `docs:write` **explicitly**. The wildcard `*` does not grant
+  docs scopes to a key with no acts-as employee, so an ordinary full-access
+  integration key never opens its creator's private documents.
+
+So, to use the Docs tools, either set an acts-as employee on the key, or add
+`docs:read` and `docs:write` to its scope list (it then acts as you, its
+creator). Otherwise every docs tool answers `403`, the same for every
+document id.
+
+**Scopes:** `docs:read` for the read tools (every `GET`) and `docs:write` for
+everything else. On a key with an acts-as employee the wildcard `*` grants
+both; a key with an explicit scope list must include them (otherwise `403`
+naming `required_scope`).
+
+The key then sees exactly what its acting employee sees and can do on the
+web, never more, and writes (comments, versions, activity) are attributed to
+that employee:
+
+- A document the employee cannot see answers **`404`**, the same as one that
+  does not exist (the API never confirms an id to someone not allowed to know it).
+- A visible document they may not change answers **`403`**.
+- The employee's role gates each call: `docs.view` for reads, `docs.create`
+  for content writes, `docs.manage` for delete and sharing. Per document,
+  roles are `view` < `comment` < `edit` < `admin`; each tool's description
+  names what it needs.
+
+| Tool | Endpoint |
+|------|----------|
+| `clokio_list_docs` | `GET /docs` |
+| `clokio_get_doc_tree` | `GET /docs?tree=1` |
+| `clokio_search_docs` | `GET /docs/search` |
+| `clokio_get_doc` | `GET /docs/{id}` |
+| `clokio_create_doc` | `POST /docs` |
+| `clokio_update_doc_content` | `PUT /docs/{id}/content` |
+| `clokio_update_doc_meta` | `PATCH /docs/{id}` |
+| `clokio_move_doc` | `POST /docs/{id}/move` |
+| `clokio_archive_doc` / `clokio_restore_doc` | `POST /docs/{id}/archive` / `restore` |
+| `clokio_delete_doc` | `DELETE /docs/{id}` |
+| `clokio_list_doc_templates` / `clokio_create_doc_from_template` | `GET /docs/templates` / `POST /docs/from-template` |
+| `clokio_list_doc_members` | `GET /docs/{id}/members` (members, teams, inherited, share link) |
+| `clokio_list_doc_shareable_teams` | `GET /docs/{id}/shareable-teams` |
+| `clokio_add_doc_member` / `clokio_update_doc_member` / `clokio_remove_doc_member` | `POST` / `PATCH` / `DELETE /docs/{id}/members` (by `employee_code`), or `PATCH` / `DELETE .../members/{employeeId}` |
+| `clokio_add_doc_team` / `clokio_update_doc_team` / `clokio_remove_doc_team` | `POST /docs/{id}/teams`, `PATCH` / `DELETE .../teams/{teamId}` |
+| `clokio_create_doc_share_link` / `clokio_revoke_doc_share_link` | `POST` / `DELETE /docs/{id}/share-link` |
+| `clokio_list_doc_comments` / `clokio_add_doc_comment` | `GET` / `POST /docs/{id}/comments` |
+| `clokio_resolve_doc_comment` / `clokio_reopen_doc_comment` | `POST .../comments/{commentId}/resolve` / `reopen` |
+| `clokio_list_doc_versions` / `clokio_get_doc_version` / `clokio_restore_doc_version` | `GET .../versions`, `GET .../versions/{versionId}`, `POST .../versions/{versionId}/restore` |
+| `clokio_list_doc_attachments` / `clokio_upload_doc_attachment` / `clokio_download_doc_attachment` | `GET` / `POST /docs/{id}/attachments`, `GET .../attachments/download?path=` |
+
+Working with content:
+
+- **Read as Markdown, write as Markdown.** `clokio_get_doc` returns Markdown by
+  default (`format: "html"` or `"json"` for the others), and the create/update
+  tools take Markdown by default (`content_format: "html"` or `"json"`). HTML
+  read back is not writable as-is; HTML you write must stay inside a strict
+  12-tag grammar (no headings, no attributes except `img[src]` and `a[href]`).
+- **Content writes are optimistic.** `clokio_update_doc_content` REPLACES the
+  whole body and requires `base_version` - the `content_version` you last read.
+  A `409` means someone else edited in between: re-read, reconcile, write
+  again with the new version. Never retry with the same `base_version`.
+- **Uploading does not change the text.** `clokio_upload_doc_attachment`
+  returns a `url`; place it in the body yourself (an `image` or
+  `fileAttachment` node in Tiptap JSON).
+- **Members are named by `employee_code`** (e.g. `"00080"`), like everywhere
+  else in this server; the internal `employee_id` is accepted as an
+  alternative. Teams are named by `team_id`, from
+  `clokio_list_doc_shareable_teams`. A member's `email` is shown only when the
+  key has `employees:pii`.
+
 ## Security
 
 - The server contains **no secrets**. Your API key lives only in your local
   environment (`CLOKIO_API_KEY`), never in this code or repository.
+- The key is sent **only to `/api/v1`**: a path argument cannot steer a request
+  outside it, and the key is never forwarded on a redirect (attachment
+  downloads that redirect to signed storage are followed with no credential
+  attached).
 - The server **adds no permissions**. What a key can do is decided by the Clokio
   API from that key's scopes — this server only forwards the request. Scope each
   key to what its holder needs.

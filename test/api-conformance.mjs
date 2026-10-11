@@ -105,6 +105,44 @@ const TOOL_CALLS = [
   { tool: 'clokio_remove_task_dependency', method: 'delete', path: '/tasks/{id}/dependencies/{depId}', query: [] },
   { tool: 'clokio_set_task_custom_field', method: 'patch', path: '/tasks/{id}/custom-fields', query: [] },
   { tool: 'clokio_bulk_update_tasks', method: 'patch', path: '/tasks/bulk', query: [] },
+
+  // docs.ts - /api/v1/docs, acting as the key's effective actor. Tools that
+  // pick a route by argument (member by code vs by id) list BOTH calls.
+  { tool: 'clokio_list_docs', method: 'get', path: '/docs', query: ['project_id', 'parent_id', 'q', 'archived', 'page', 'per_page'] },
+  { tool: 'clokio_get_doc_tree', method: 'get', path: '/docs', query: ['tree', 'project_id', 'archived', 'page', 'per_page'] },
+  { tool: 'clokio_search_docs', method: 'get', path: '/docs/search', query: ['q', 'project_id', 'limit'] },
+  { tool: 'clokio_get_doc', method: 'get', path: '/docs/{id}', query: ['format'] },
+  { tool: 'clokio_create_doc', method: 'post', path: '/docs', query: [] },
+  { tool: 'clokio_update_doc_content', method: 'put', path: '/docs/{id}/content', query: [] },
+  { tool: 'clokio_update_doc_meta', method: 'patch', path: '/docs/{id}', query: [] },
+  { tool: 'clokio_move_doc', method: 'post', path: '/docs/{id}/move', query: [] },
+  { tool: 'clokio_archive_doc', method: 'post', path: '/docs/{id}/archive', query: [] },
+  { tool: 'clokio_restore_doc', method: 'post', path: '/docs/{id}/restore', query: [] },
+  { tool: 'clokio_delete_doc', method: 'delete', path: '/docs/{id}', query: [] },
+  { tool: 'clokio_list_doc_templates', method: 'get', path: '/docs/templates', query: [] },
+  { tool: 'clokio_create_doc_from_template', method: 'post', path: '/docs/from-template', query: [] },
+  { tool: 'clokio_list_doc_members', method: 'get', path: '/docs/{id}/members', query: [] },
+  { tool: 'clokio_list_doc_shareable_teams', method: 'get', path: '/docs/{id}/shareable-teams', query: [] },
+  { tool: 'clokio_add_doc_member', method: 'post', path: '/docs/{id}/members', query: [] },
+  { tool: 'clokio_update_doc_member', method: 'patch', path: '/docs/{id}/members', query: [] },
+  { tool: 'clokio_update_doc_member', method: 'patch', path: '/docs/{id}/members/{employeeId}', query: [] },
+  { tool: 'clokio_remove_doc_member', method: 'delete', path: '/docs/{id}/members', query: ['employee_code'] },
+  { tool: 'clokio_remove_doc_member', method: 'delete', path: '/docs/{id}/members/{employeeId}', query: [] },
+  { tool: 'clokio_add_doc_team', method: 'post', path: '/docs/{id}/teams', query: [] },
+  { tool: 'clokio_update_doc_team', method: 'patch', path: '/docs/{id}/teams/{teamId}', query: [] },
+  { tool: 'clokio_remove_doc_team', method: 'delete', path: '/docs/{id}/teams/{teamId}', query: [] },
+  { tool: 'clokio_create_doc_share_link', method: 'post', path: '/docs/{id}/share-link', query: [] },
+  { tool: 'clokio_revoke_doc_share_link', method: 'delete', path: '/docs/{id}/share-link', query: [] },
+  { tool: 'clokio_list_doc_comments', method: 'get', path: '/docs/{id}/comments', query: ['filter', 'block_id'] },
+  { tool: 'clokio_add_doc_comment', method: 'post', path: '/docs/{id}/comments', query: [] },
+  { tool: 'clokio_resolve_doc_comment', method: 'post', path: '/docs/{id}/comments/{commentId}/resolve', query: [] },
+  { tool: 'clokio_reopen_doc_comment', method: 'post', path: '/docs/{id}/comments/{commentId}/reopen', query: [] },
+  { tool: 'clokio_list_doc_versions', method: 'get', path: '/docs/{id}/versions', query: [] },
+  { tool: 'clokio_get_doc_version', method: 'get', path: '/docs/{id}/versions/{versionId}', query: ['format'] },
+  { tool: 'clokio_restore_doc_version', method: 'post', path: '/docs/{id}/versions/{versionId}/restore', query: [] },
+  { tool: 'clokio_list_doc_attachments', method: 'get', path: '/docs/{id}/attachments', query: [] },
+  { tool: 'clokio_upload_doc_attachment', method: 'post', path: '/docs/{id}/attachments', query: [] },
+  { tool: 'clokio_download_doc_attachment', method: 'get', path: '/docs/{id}/attachments/download', query: ['path'] },
 ];
 
 let fails = 0;
@@ -174,7 +212,7 @@ for (const call of TOOL_CALLS) {
 // Every tool the server registers must appear above, or a new tool could ship
 // unchecked - which is exactly how the broken ones got out.
 const registered = new Set();
-for (const file of ['tasks', 'projects', 'employees', 'attendance']) {
+for (const file of ['tasks', 'projects', 'employees', 'attendance', 'docs']) {
   const src = await readFile(new URL(`../src/tools/${file}.ts`, import.meta.url), 'utf8');
   for (const m of src.matchAll(/name:\s*'(clokio_[a-z_]+)'/g)) registered.add(m[1]);
 }
@@ -188,7 +226,7 @@ for (const name of covered) {
 
 console.log(
   fails === 0
-    ? `\nALL PASS (${TOOL_CALLS.length} tools checked against the live spec)`
+    ? `\nALL PASS (${covered.size} tools, ${TOOL_CALLS.length} calls checked against the live spec)`
     : `\n${fails} FAILED`
 );
 process.exit(fails === 0 ? 0 : 1);

@@ -8,7 +8,12 @@
  * what to DO with what it was given.
  */
 
-import { ClokioApiError, ClokioConfig, looksLikeText, requestRawBytes } from './client.js';
+import {
+  ClokioApiError,
+  ClokioConfig,
+  looksLikeText,
+  requestRawBytes,
+} from './client.js';
 import { mcpContent, McpContentResult } from './tools/helpers.js';
 
 /**
@@ -252,6 +257,44 @@ export async function downloadAttachment(
     config,
     `/tasks/${taskId}/attachments/${attachmentId}`
   );
+  return renderDownload(buffer, contentType, opts);
+}
+
+/**
+ * Download one Docs attachment
+ * (GET /api/v1/docs/{id}/attachments/download?path=...) and hand it to
+ * the same renderer as a task attachment: save to disk, or PDF text / ZIP
+ * entries / image / text inline. `path` is the storage path the attachment
+ * listing returned; it travels as a QUERY value (URL-encoded by
+ * URLSearchParams), never as path segments, and the API 404s any path that is
+ * not one of this document's own uploads.
+ */
+export async function downloadDocAttachment(
+  config: ClokioConfig,
+  docId: number,
+  storagePath: string,
+  opts: { fileName?: string; savePath?: string; overwrite?: boolean }
+): Promise<unknown> {
+  const { buffer, contentType, fileName } = await requestRawBytes(
+    config,
+    `/docs/${docId}/attachments/download`,
+    { path: storagePath }
+  );
+  // The type-detection hint: the caller's name, else what the response
+  // declared, else the last segment of the storage path.
+  const hint = opts.fileName ?? fileName ?? storagePath.split('/').pop();
+  return renderDownload(buffer, contentType, { ...opts, fileName: hint });
+}
+
+/**
+ * Turn downloaded bytes into the most useful result for their type. Shared by
+ * the task and doc downloads so both behave identically.
+ */
+async function renderDownload(
+  buffer: Buffer,
+  contentType: string,
+  opts: { fileName?: string; savePath?: string; overwrite?: boolean }
+): Promise<unknown> {
   const kb = (buffer.byteLength / 1024).toFixed(1);
 
   if (opts.savePath) {

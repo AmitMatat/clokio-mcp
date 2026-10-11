@@ -1,10 +1,11 @@
 /**
  * The ONE place that talks to the Clokio Public API.
  *
- * Every tool goes through request(); nothing else builds a fetch. Auth is the
- * per-user `CLOKIO_API_KEY` sent as `X-API-Key`, exactly as the clokio-task CLI
- * does. The key carries its own scopes, so this server never re-implements
- * authorization — a 403/422 from the API is surfaced verbatim.
+ * Every tool goes through this module; nothing else builds a fetch. Auth is
+ * the per-user `CLOKIO_API_KEY` sent as `X-API-Key`, exactly as the
+ * clokio-task CLI does. The key carries its own scopes (and, for documents,
+ * its "acts as" employee), so this server never re-implements authorization -
+ * a 403/404/422 from the API is surfaced verbatim.
  */
 export function loadConfig() {
     const apiKey = process.env.CLOKIO_API_KEY?.trim();
@@ -20,6 +21,46 @@ export function loadConfig() {
         throw new Error('CLOKIO_DEFAULT_ACTOR must be an employee_code (1-50 chars of letters, digits, _ or -).');
     }
     return { baseUrl, apiKey, defaultActor };
+}
+/**
+ * Assemble an /api/v1 request URL and enforce the prefix guard.
+ *
+ * A tool argument interpolated into `path` must never be able to change
+ * WHICH endpoint is called. new URL() normalises the assembled string, so a
+ * value containing `?` truncates the path (turning `/employees/X/status`
+ * into `/employees/X/pin?...`) and `../` segments climb out of /api/v1.
+ * That is an endpoint pivot: a caller who approved "set employee status"
+ * would instead reach PATCH /employees/{code}/pin, which resets a person's
+ * clock-in PIN and returns it in the response. Callers wrap string arguments
+ * in seg(), but this is the invariant that holds even if one forgets.
+ */
+export function buildUrl(config, path) {
+    const url = new URL(`${config.baseUrl}/api/v1${path.startsWith('/') ? path : `/${path}`}`);
+    const expectedPrefix = new URL(config.baseUrl).pathname.replace(/\/+$/, '') + '/api/v1/';
+    if (!url.pathname.startsWith(expectedPrefix)) {
+        throw new ClokioApiError(0, 'Refusing to send a request outside /api/v1 - a path argument tried to change the endpoint.');
+    }
+    return url;
+}
+/**
+ * The file name a download response declares (Content-Disposition), or
+ * undefined. Used only as a type-detection hint and a default display name;
+ * a SAVE never trusts it as a path (see safeAttachmentName in attachments.ts).
+ */
+function dispositionFileName(header) {
+    if (!header)
+        return undefined;
+    const star = header.match(/filename\*\s*=\s*(?:UTF-8|utf-8)''([^;]+)/);
+    if (star) {
+        try {
+            return decodeURIComponent(star[1].trim().replace(/^"|"$/g, ''));
+        }
+        catch {
+            /* fall through to the plain form */
+        }
+    }
+    const plain = header.match(/filename\s*=\s*"?([^";]+)"?/);
+    return plain ? plain[1].trim() : undefined;
 }
 /**
  * Encode ONE path segment supplied by a tool argument.
@@ -66,17 +107,15 @@ export function seg(value) {
  * path. `requestRaw` renders these bytes as text/description for the model;
  * the save-to-disk and typed-content tools consume the bytes directly.
  */
-export async function requestRawBytes(config, path) {
-    const url = new URL(`${config.baseUrl}/api/v1${path.startsWith('/') ? path : `/${path}`}`);
-    const expectedPrefix = new URL(config.baseUrl).pathname.replace(/\/+$/, '') + '/api/v1/';
-    if (!url.pathname.startsWith(expectedPrefix)) {
-        throw new ClokioApiError(0, 'Refusing to send a request outside /api/v1.');
-    }
+export async function requestRawBytes(config, path, query) {
+    const auth = { 'X-API-Key': config.apiKey };
+    const url = buildUrl(config, path);
+    applyQuery(url, query);
     let res;
     try {
-        // `manual`, not 'error' and not 'follow' - see the long note below.
+        // `manual`, not 'error' and not 'follow' - see the long note in requestRaw.
         res = await fetch(url, {
-            headers: { 'X-API-Key': config.apiKey },
+            headers: auth,
             redirect: 'manual',
         });
         if (res.status >= 300 && res.status < 400) {
@@ -111,8 +150,9 @@ export async function requestRawBytes(config, path) {
         throw new ClokioApiError(res.status, message);
     }
     const contentType = res.headers.get('content-type') ?? 'application/octet-stream';
+    const fileName = dispositionFileName(res.headers.get('content-disposition'));
     const buffer = Buffer.from(await res.arrayBuffer());
-    return { buffer, contentType };
+    return { buffer, contentType, fileName };
 }
 /**
  * Decide whether an attachment is text, from BOTH the content-type and the file
@@ -136,11 +176,8 @@ export function looksLikeText(contentType, fileName) {
         TEXT_EXTENSIONS.has(extension));
 }
 export async function requestRaw(config, path, fileName) {
-    const url = new URL(`${config.baseUrl}/api/v1${path.startsWith('/') ? path : `/${path}`}`);
-    const expectedPrefix = new URL(config.baseUrl).pathname.replace(/\/+$/, '') + '/api/v1/';
-    if (!url.pathname.startsWith(expectedPrefix)) {
-        throw new ClokioApiError(0, 'Refusing to send a request outside /api/v1.');
-    }
+    const auth = { 'X-API-Key': config.apiKey };
+    const url = buildUrl(config, path);
     let res;
     try {
         // `manual`, not 'error' and not 'follow'.
@@ -153,7 +190,7 @@ export async function requestRaw(config, path, fileName) {
         // path exists to prevent. So the redirect is followed HERE, by hand,
         // with no credential attached - the signed URL needs none.
         res = await fetch(url, {
-            headers: { 'X-API-Key': config.apiKey },
+            headers: auth,
             redirect: 'manual',
         });
         if (res.status >= 300 && res.status < 400) {
@@ -239,11 +276,8 @@ export async function requestRaw(config, path, fileName) {
 export async function requestUpload(config, path, filePath, fields = {}) {
     const { readFile } = await import('node:fs/promises');
     const { basename } = await import('node:path');
-    const url = new URL(`${config.baseUrl}/api/v1${path.startsWith('/') ? path : `/${path}`}`);
-    const expectedPrefix = new URL(config.baseUrl).pathname.replace(/\/+$/, '') + '/api/v1/';
-    if (!url.pathname.startsWith(expectedPrefix)) {
-        throw new ClokioApiError(0, 'Refusing to send a request outside /api/v1.');
-    }
+    const auth = { 'X-API-Key': config.apiKey };
+    const url = buildUrl(config, path);
     let bytes;
     try {
         bytes = await readFile(filePath);
@@ -265,7 +299,7 @@ export async function requestUpload(config, path, filePath, fields = {}) {
         // not set it by hand or the boundary is lost.
         res = await fetch(url, {
             method: 'POST',
-            headers: { 'X-API-Key': config.apiKey, Accept: 'application/json' },
+            headers: { ...auth, Accept: 'application/json' },
             body: form,
             redirect: 'error',
         });
@@ -273,24 +307,7 @@ export async function requestUpload(config, path, filePath, fields = {}) {
     catch (e) {
         throw new ClokioApiError(0, `Network error reaching Clokio: ${e.message}`);
     }
-    const text = await res.text();
-    let parsed;
-    try {
-        parsed = text ? JSON.parse(text) : undefined;
-    }
-    catch {
-        parsed = text;
-    }
-    if (!res.ok) {
-        const message = parsed && typeof parsed === 'object' && 'message' in parsed && typeof parsed.message === 'string'
-            ? parsed.message
-            : `Clokio API returned HTTP ${res.status}`;
-        throw new ClokioApiError(res.status, message, parsed);
-    }
-    if (parsed && typeof parsed === 'object' && 'data' in parsed) {
-        return parsed.data;
-    }
-    return parsed;
+    return parseEnvelope(res);
 }
 /** A Clokio API error, carrying the HTTP status and the server's message. */
 export class ClokioApiError extends Error {
@@ -311,32 +328,8 @@ export class ClokioApiError extends Error {
  */
 export async function request(config, path, options = {}) {
     const { method = 'GET', query, body } = options;
-    const url = new URL(`${config.baseUrl}/api/v1${path.startsWith('/') ? path : `/${path}`}`);
-    // A tool argument interpolated into `path` must never be able to change
-    // WHICH endpoint is called. new URL() normalises the assembled string, so a
-    // value containing `?` truncates the path (turning `/employees/X/status`
-    // into `/employees/X/pin?...`) and `../` segments climb out of /api/v1.
-    // That is an endpoint pivot: a caller who approved "set employee status"
-    // would instead reach PATCH /employees/{code}/pin, which resets a person's
-    // clock-in PIN and returns it in the response. Callers validate their own
-    // arguments, but this is the invariant that holds even if one forgets.
-    const expectedPrefix = new URL(config.baseUrl).pathname.replace(/\/+$/, '') + '/api/v1/';
-    if (!url.pathname.startsWith(expectedPrefix)) {
-        throw new ClokioApiError(0, 'Refusing to send a request outside /api/v1 - a path argument tried to change the endpoint.');
-    }
-    if (query) {
-        for (const [key, value] of Object.entries(query)) {
-            if (value === undefined || value === null)
-                continue;
-            if (Array.isArray(value)) {
-                for (const v of value)
-                    url.searchParams.append(`${key}[]`, String(v));
-            }
-            else {
-                url.searchParams.set(key, String(value));
-            }
-        }
-    }
+    const url = buildUrl(config, path);
+    applyQuery(url, query);
     const headers = {
         'X-API-Key': config.apiKey,
         Accept: 'application/json',
@@ -350,14 +343,32 @@ export async function request(config, path, options = {}) {
     try {
         // redirect: 'error' - Node's fetch follows redirects and RESENDS the
         // request headers, including X-API-Key, to wherever Location points, on
-        // any origin. The API never redirects an /api/v1 call, so a redirect here
-        // means something between us and it is not the API, and the key must not
-        // be handed over. Failing closed costs nothing on the happy path.
+        // any origin. The API never redirects a JSON /api/v1 call, so a redirect
+        // here means something between us and it is not the API, and the key
+        // must not be handed over. Failing closed costs nothing on the happy path.
         res = await fetch(url, { method, headers, body: payload, redirect: 'error' });
     }
     catch (e) {
         throw new ClokioApiError(0, `Network error reaching Clokio: ${e.message}`);
     }
+    return parseEnvelope(res);
+}
+function applyQuery(url, query) {
+    if (!query)
+        return;
+    for (const [key, value] of Object.entries(query)) {
+        if (value === undefined || value === null)
+            continue;
+        if (Array.isArray(value)) {
+            for (const v of value)
+                url.searchParams.append(`${key}[]`, String(v));
+        }
+        else {
+            url.searchParams.set(key, String(value));
+        }
+    }
+}
+async function parseEnvelope(res) {
     const text = await res.text();
     let parsed = undefined;
     if (text) {
