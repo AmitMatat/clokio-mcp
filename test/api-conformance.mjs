@@ -146,6 +146,22 @@ const TOOL_CALLS = [
   { tool: 'clokio_list_doc_attachments', method: 'get', path: '/docs/{id}/attachments', query: [] },
   { tool: 'clokio_upload_doc_attachment', method: 'post', path: '/docs/{id}/attachments', query: [] },
   { tool: 'clokio_download_doc_attachment', method: 'get', path: '/docs/{id}/attachments/download', query: ['path'] },
+  // tickets.ts
+  { tool: 'clokio_list_tickets', method: 'get', path: '/tickets', query: ['state', 'inbox_id', 'assignee', 'label_id', 'contact_id', 'updated_since', 'q', 'per_page', 'cursor'] },
+  { tool: 'clokio_get_ticket', method: 'get', path: '/tickets/{id}', query: [] },
+  { tool: 'clokio_get_ticket', method: 'get', path: '/tickets/{id}/messages', query: ['per_page'] },
+  { tool: 'clokio_list_ticket_messages', method: 'get', path: '/tickets/{id}/messages', query: ['cursor', 'per_page'] },
+  { tool: 'clokio_reply_ticket', method: 'post', path: '/tickets/{id}/replies', query: [] },
+  { tool: 'clokio_add_ticket_note', method: 'post', path: '/tickets/{id}/notes', query: [] },
+  { tool: 'clokio_update_ticket', method: 'patch', path: '/tickets/{id}', query: [] },
+  { tool: 'clokio_add_ticket_label', method: 'post', path: '/tickets/{id}/labels', query: [] },
+  { tool: 'clokio_remove_ticket_label', method: 'delete', path: '/tickets/{id}/labels/{labelId}', query: [] },
+  { tool: 'clokio_list_contacts', method: 'get', path: '/contacts', query: ['q', 'page'] },
+  { tool: 'clokio_get_contact', method: 'get', path: '/contacts/{id}', query: [] },
+  { tool: 'clokio_update_contact', method: 'patch', path: '/contacts/{id}', query: [] },
+  { tool: 'clokio_list_inboxes', method: 'get', path: '/inboxes', query: [] },
+  { tool: 'clokio_list_ticket_labels', method: 'get', path: '/ticket-labels', query: [] },
+  { tool: 'clokio_list_saved_replies', method: 'get', path: '/saved-replies', query: ['inbox_id'] },
 ];
 
 let fails = 0;
@@ -217,7 +233,7 @@ for (const call of TOOL_CALLS) {
 // Every tool the server registers must appear above, or a new tool could ship
 // unchecked - which is exactly how the broken ones got out.
 const registered = new Set();
-for (const file of ['tasks', 'projects', 'employees', 'attendance', 'docs']) {
+for (const file of ['tasks', 'projects', 'employees', 'attendance', 'docs', 'tickets']) {
   const src = await readFile(new URL(`../src/tools/${file}.ts`, import.meta.url), 'utf8');
   for (const m of src.matchAll(/name:\s*'(clokio_[a-z_]+)'/g)) registered.add(m[1]);
 }

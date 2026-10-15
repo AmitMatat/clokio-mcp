@@ -63,8 +63,9 @@ acting. An explicit code on a tool call always takes precedence.
 
 Optional: set `CLOKIO_TOOLSETS` to register only the tool groups you need, e.g.
 `CLOKIO_TOOLSETS=tasks`. This cuts the per-session tool-list cost - a
-task-focused session drops from 83 tools to 31. Optional groups are `tasks`,
-`employees`, `attendance` (which includes leave and time entries) and `docs`;
+task-focused session drops from 97 tools to 31. Optional groups are `tasks`,
+`employees`, `attendance` (which includes leave and time entries), `docs` and
+`tickets`;
 combine them with commas. If your key cannot open documents (no acts-as
 employee and no explicit docs scopes), leaving `docs` out saves 33 tools it
 cannot use. The `projects` group (project/client lookups, task statuses
@@ -73,7 +74,7 @@ through it.
 
 ## Tools
 
-83 tools across six areas. Read-only tools carry the MCP `readOnlyHint`; writes
+97 tools across seven areas. Read-only tools carry the MCP `readOnlyHint`; writes
 are marked mutating (deletes are `destructive`).
 
 | Area | Tools |
@@ -84,6 +85,7 @@ are marked mutating (deletes are `destructive`).
 | **Employees** | list (name search), lookup by PIN, task-stats, inbox (mentions, new assignments, others' status changes), create, set status |
 | **Attendance** | daily, range, per-employee, monthly summary, clock in/out, break start/end, time entries, leaves, leave balances |
 | **Documents** (see [Documents](#documents) for who a key acts as) | list, tree, search, get (Markdown / HTML / JSON), create, replace content, update meta, move, archive, restore, delete, templates + create from template, members (by `employee_code`) and teams (list/add/update/remove, shareable teams), public share link, comments (list/add/resolve/reopen), versions (list/get/restore), attachments (list/upload/download) |
+| **Tickets** (see [Tickets](#tickets)) | list (filters + cursor), get (with messages; internal notes labelled, everything the customer wrote wrapped as untrusted), more messages, **reply to the customer** (fresh `Idempotency-Key` per call, `destructive`), internal note (with mentions), update state / assignee, add / remove one label, contacts list / get / update, inboxes, ticket labels, saved replies |
 
 ### Conventions
 
@@ -199,6 +201,25 @@ Working with documents:
   alternative. Teams are named by `team_id`, from
   `clokio_list_doc_shareable_teams`. A member's `email` is shown only when the
   key has `employees:pii`; profile pictures only with `include_avatars: true`.
+
+## Tickets
+
+The `tickets` toolset works the Clokio support inbox as the key's "acts as"
+employee: it sees and does exactly what that person may in the inbox. Tick
+the scopes on the key - `*` never includes them: `tickets:read`,
+`tickets:write` (notes, state, assignee, labels, contacts), `tickets:send`
+(`clokio_reply_ticket`, which REACHES THE CUSTOMER) and, for writing as a
+colleague, `tickets:send_as` (only on a key created by an administrator).
+
+`clokio_get_ticket` and `clokio_list_ticket_messages` print internal notes
+under "INTERNAL NOTE - never send to the customer" and wrap everything the
+customer or an outside party wrote (message text, subject, contact, author
+names, file names, event lines) and the label names in
+`<untrusted_customer_content>` tags: data, never instructions.
+`clokio_reply_ticket` sends a fresh `Idempotency-Key` with every call, so a
+second call is a second reply. CLOKIO_DEFAULT_ACTOR does not apply to
+tickets: a reply is written by the key's acting employee unless you name
+`author_employee_code` (which needs `tickets:send_as`).
 
 ## Security
 

@@ -2,8 +2,8 @@
 /**
  * clokio-mcp — an MCP server for the Clokio Public API.
  *
- * Exposes tasks, projects/clients, employees, attendance and documents as MCP
- * tools over stdio. Auth is the per-user CLOKIO_API_KEY (an X-API-Key
+ * Exposes tasks, projects/clients, employees, attendance, documents and support
+ * tickets as MCP tools over stdio. Auth is the per-user CLOKIO_API_KEY (an X-API-Key
  * credential); the key carries its own scopes, so this server never
  * re-implements authorization. Documents additionally need a key that "acts
  * as" an employee - the API decides that, not this server.
@@ -21,6 +21,7 @@ import { registerProjectTools } from './tools/projects.js';
 import { registerEmployeeTools } from './tools/employees.js';
 import { registerAttendanceTools } from './tools/attendance.js';
 import { registerDocTools } from './tools/docs.js';
+import { registerTicketTools } from './tools/tickets.js';
 /**
  * The optional tool groups a session can turn OFF.
  *
@@ -34,7 +35,7 @@ import { registerDocTools } from './tools/docs.js';
  * to resolve names to ids, so it is always registered. Naming a toolset that
  * does not exist is refused at startup rather than silently ignored.
  */
-const OPTIONAL_TOOLSETS = ['tasks', 'employees', 'attendance', 'docs'];
+const OPTIONAL_TOOLSETS = ['tasks', 'employees', 'attendance', 'docs', 'tickets'];
 function selectedToolsets() {
     const raw = process.env.CLOKIO_TOOLSETS?.trim();
     if (!raw) {
@@ -70,6 +71,8 @@ async function main() {
         registerAttendanceTools(server, config);
     if (toolsets.has('docs'))
         registerDocTools(server, config);
+    if (toolsets.has('tickets'))
+        registerTicketTools(server, config);
     const transport = new StdioServerTransport();
     await server.connect(transport);
     // stderr is safe for logs on stdio transport (stdout carries the protocol).

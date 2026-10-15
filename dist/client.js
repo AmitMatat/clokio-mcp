@@ -327,10 +327,11 @@ export class ClokioApiError extends Error {
  * the server's own message.
  */
 export async function request(config, path, options = {}) {
-    const { method = 'GET', query, body } = options;
+    const { method = 'GET', query, body, headers: extra } = options;
     const url = buildUrl(config, path);
     applyQuery(url, query);
     const headers = {
+        ...(extra ?? {}),
         'X-API-Key': config.apiKey,
         Accept: 'application/json',
     };

@@ -392,6 +392,11 @@ export interface RequestOptions {
   query?: Record<string, string | number | boolean | Array<string | number> | undefined | null>;
   /** JSON body for write methods. */
   body?: unknown;
+  /**
+   * Extra request headers (today only Idempotency-Key on a ticket reply).
+   * They can never replace X-API-Key or Accept: those are set after them.
+   */
+  headers?: Record<string, string>;
 }
 
 /**
@@ -405,12 +410,13 @@ export async function request<T = unknown>(
   path: string,
   options: RequestOptions = {}
 ): Promise<T> {
-  const { method = 'GET', query, body } = options;
+  const { method = 'GET', query, body, headers: extra } = options;
 
   const url = buildUrl(config, path);
   applyQuery(url, query);
 
   const headers: Record<string, string> = {
+    ...(extra ?? {}),
     'X-API-Key': config.apiKey,
     Accept: 'application/json',
   };

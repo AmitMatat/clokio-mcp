@@ -51,5 +51,10 @@ const bad = listTools({ CLOKIO_TOOLSETS: 'nonsense' });
 check('an unknown toolset refuses to start', bad.code !== 0, true);
 check('and says which value was unknown', bad.stderr.includes('nonsense'), true);
 
+const ticketsOnly = listTools({ CLOKIO_TOOLSETS: 'tickets' });
+check('tickets toolset keeps clokio_reply_ticket', ticketsOnly.names?.includes('clokio_reply_ticket'), true);
+check('tickets toolset keeps clokio_whoami (projects always on)', ticketsOnly.names?.includes('clokio_whoami'), true);
+check('tasks toolset DROPS tickets', tasksOnly.names?.includes('clokio_list_tickets'), false);
+
 console.log(fails === 0 ? '\nALL PASS' : `\n${fails} FAILED`);
 process.exit(fails ? 1 : 0);
