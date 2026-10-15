@@ -85,7 +85,7 @@ are marked mutating (deletes are `destructive`).
 | **Employees** | list (name search), lookup by PIN, task-stats, inbox (mentions, new assignments, others' status changes), create, set status |
 | **Attendance** | daily, range, per-employee, monthly summary, clock in/out, break start/end, time entries, leaves, leave balances |
 | **Documents** (see [Documents](#documents) for who a key acts as) | list, tree, search, get (Markdown / HTML / JSON), create, replace content, update meta, move, archive, restore, delete, templates + create from template, members (by `employee_code`) and teams (list/add/update/remove, shareable teams), public share link, comments (list/add/resolve/reopen), versions (list/get/restore), attachments (list/upload/download) |
-| **Tickets** (see [Tickets](#tickets)) | list (filters + cursor), get (with messages; internal notes labelled, everything the customer wrote wrapped as untrusted), more messages, **reply to the customer** (fresh `Idempotency-Key` per call, `destructive`), internal note (with mentions), update state / assignee, add / remove one label, contacts list / get / update, inboxes, ticket labels, saved replies |
+| **Tickets** (see [Tickets](#tickets)) | list (filters + cursor), get (with its newest messages; internal notes labelled, everything the customer wrote wrapped as untrusted), more messages, **reply to the customer** (fresh `Idempotency-Key` per call, `destructive`), internal note (with mentions), update state / assignee, add / remove one label, contacts list / get / update, inboxes, ticket labels, saved replies |
 
 ### Conventions
 
@@ -216,6 +216,10 @@ under "INTERNAL NOTE - never send to the customer" and wrap everything the
 customer or an outside party wrote (message text, subject, contact, author
 names, file names, event lines) and the label names in
 `<untrusted_customer_content>` tags: data, never instructions.
+`clokio_get_ticket` shows the NEWEST messages (default 100, `messages_limit`
+for fewer), oldest first so the latest is last; it pages through the thread
+to reach them and says how many earlier messages it left out and how to read
+them with `clokio_list_ticket_messages` (which pages from the oldest).
 `clokio_reply_ticket` sends a fresh `Idempotency-Key` with every call, so a
 second call is a second reply. CLOKIO_DEFAULT_ACTOR does not apply to
 tickets: a reply is written by the key's acting employee unless you name
