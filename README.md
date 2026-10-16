@@ -63,7 +63,7 @@ acting. An explicit code on a tool call always takes precedence.
 
 Optional: set `CLOKIO_TOOLSETS` to register only the tool groups you need, e.g.
 `CLOKIO_TOOLSETS=tasks`. This cuts the per-session tool-list cost - a
-task-focused session drops from 97 tools to 31. Optional groups are `tasks`,
+task-focused session drops from 98 tools to 32. Optional groups are `tasks`,
 `employees`, `attendance` (which includes leave and time entries), `docs` and
 `tickets`;
 combine them with commas. If your key cannot open documents (no acts-as
@@ -74,12 +74,12 @@ through it.
 
 ## Tools
 
-97 tools across seven areas. Read-only tools carry the MCP `readOnlyHint`; writes
+98 tools across seven areas. Read-only tools carry the MCP `readOnlyHint`; writes
 are marked mutating (deletes are `destructive`).
 
 | Area | Tools |
 |------|-------|
-| **Tasks** | list (with `compact` / `sort` / `updated_since` / `recurring`), get (with `comments_limit`), create, update (incl. recurring series: set a rule, pause/resume, stop), delete, bulk update, set assignees, list/add/edit comments, list attachments (with `is_latest` + `latest_only`), upload, download one (save to disk, or read PDF text / ZIP entries / images / text inline), download all to a folder, activity, list/add/remove dependencies, set custom field |
+| **Tasks** | list (with `compact` / `sort` / `updated_since` / `recurring`), get (with `comments_limit`), create, update (incl. recurring series: set a rule, pause/resume, stop), delete, bulk update, set assignees (a shared board's client people as `{employee_code, organization_id}`), list a board's people, list/add/edit comments, list attachments (with `is_latest` + `latest_only`), upload, download one (save to disk, or read PDF text / ZIP entries / images / text inline), download all to a folder, activity, list/add/remove dependencies, set custom field |
 | **Projects & clients** | list projects, project statuses, project custom fields, project contacts, get client, add client contact |
 | **Reference** | task statuses, task labels, locations, list webhooks (read-only), whoami |
 | **Employees** | list (name search), lookup by PIN, task-stats, inbox (mentions, new assignments, others' status changes), create, set status |
@@ -92,6 +92,11 @@ are marked mutating (deletes are `destructive`).
 - **People are identified by `employee_code`** (e.g. `00080`), not internal ids.
   Use `clokio_list_employees` (with `search`) to resolve a name to a code, or
   `clokio_lookup_employee_by_pin` for a kiosk PIN.
+- **Shared boards.** On a project shared with a client organisation, its
+  people appear on your tasks with `external: true` and `organization {id,
+  name}`. List them with `clokio_list_project_people` and assign them as
+  `{employee_code, organization_id}`: an employee code is unique only within
+  one organisation, so a bare code always means yours.
 - **Attribution is automatic.** An unnamed write is credited to the key's
   issuer (see `clokio_whoami`), so you rarely set an author. Pass
   `created_by_employee_code` / `author_employee_code` only to credit someone

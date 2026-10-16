@@ -37,6 +37,7 @@ const tasksOnly = listTools({ CLOKIO_TOOLSETS: 'tasks' });
 check('tasks toolset keeps clokio_create_task', tasksOnly.names?.includes('clokio_create_task'), true);
 check('tasks toolset keeps clokio_whoami (projects always on)', tasksOnly.names?.includes('clokio_whoami'), true);
 check('tasks toolset keeps clokio_list_task_statuses (a lookup tasks need)', tasksOnly.names?.includes('clokio_list_task_statuses'), true);
+check('tasks toolset keeps clokio_list_project_people', tasksOnly.names?.includes('clokio_list_project_people'), true);
 check('tasks toolset DROPS attendance', tasksOnly.names?.includes('clokio_clock_in'), false);
 check('tasks toolset DROPS employees', tasksOnly.names?.includes('clokio_list_employees'), false);
 check('tasks toolset is smaller than the full set', (tasksOnly.names?.length ?? 99) < (all.names?.length ?? 0), true);

@@ -87,6 +87,7 @@ const TOOL_CALLS = [
   { tool: 'clokio_update_task', method: 'patch', path: '/tasks/{id}', query: [] },
   { tool: 'clokio_delete_task', method: 'delete', path: '/tasks/{id}', query: [] },
   { tool: 'clokio_set_task_assignees', method: 'patch', path: '/tasks/{id}/assignees', query: [] },
+  { tool: 'clokio_list_project_people', method: 'get', path: '/projects/{projectId}/people', query: [] },
   { tool: 'clokio_list_task_comments', method: 'get', path: '/tasks/{id}/comments', query: [] },
   { tool: 'clokio_add_task_comment', method: 'post', path: '/tasks/{id}/comments', query: [] },
   { tool: 'clokio_update_task_comment', method: 'patch', path: '/tasks/{id}/comments/{commentId}', query: [] },

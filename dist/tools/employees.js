@@ -18,6 +18,8 @@ export function registerEmployeeTools(server, config) {
             'wants for assignees, comment authors and task creators. Pass `search` with a name (or part of one) ' +
             'rather than listing everyone and matching yourself. Combine with status=active to skip people who have ' +
             'left. email is returned only if the key holds the employees:pii scope. ' +
+            "It lists the key's OWN organisation only: people of a client organisation on a shared board are not " +
+            'here - get them, with their organization.id, from clokio_list_project_people. ' +
             'Paginated: the response is {data, meta}, the people under data.',
         schema: {
             search: z.string().max(120).optional().describe('Free text over name and employee_code'),

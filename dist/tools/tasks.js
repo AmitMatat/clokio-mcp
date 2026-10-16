@@ -8,6 +8,29 @@ const employeeCode = z
     .string()
     .regex(/^[A-Za-z0-9_-]{1,50}$/, 'employee_code must be 1-50 chars of letters, digits, _ or -');
 /**
+ * One assignee (Clokio Public API, spec 2026-10-16). A STRING is an
+ * employee_code of the key's OWN organisation. On a board shared with a
+ * client organisation, a person of THAT organisation is
+ * {employee_code, organization_id}: codes are unique per organisation only,
+ * so a bare code can never name them and may collide with one of yours.
+ * organization_id is the numeric organization.id clokio_list_project_people
+ * reports, never an organisation login code. .strict(): an extra key is a
+ * mistake the server would refuse, so it is refused here first.
+ */
+export const assigneeReference = z.union([
+    employeeCode,
+    z
+        .object({
+        employee_code: employeeCode,
+        organization_id: z.number().int().positive(),
+    })
+        .strict(),
+]);
+const SHARED_BOARD_NOTE = 'On a project SHARED with a client organisation, call clokio_list_project_people first: a person whose ' +
+    '`external` is true is assigned as {employee_code, organization_id} (organization.id from that tool), never ' +
+    'by a bare code - a bare code always means YOUR organisation and can collide with theirs. Bare string codes ' +
+    'for your own staff work exactly as before, and the two forms can be mixed in one list.';
+/**
  * Recurrence, as a structured object the agent fills, serialized here into
  * the rule string the Clokio scheduler executes (`daily`, `weekly:sun,wed`,
  * `monthly:15`, `quarterly:MM-DD`, `custom:N:unit[:detail]`, ...).
@@ -176,7 +199,9 @@ export function registerTaskTools(server, config) {
                 .boolean()
                 .optional()
                 .describe('STRONGLY PREFERRED when scanning. Returns a slim row - id, title, status, priority, ' +
-                'due_date, parent_id, project_id, assignee_codes (employee_code strings), labels (names) ' +
+                'due_date, parent_id, project_id, assignee_codes (employee_code strings of YOUR organisation), ' +
+                'external_assignees ([{employee_code, organization_id}] for a client organisation\'s people on a ' +
+                'shared board, [] when none; organization_id null when that organisation is hidden), labels (names) ' +
                 'and updated_at - dropping the HTML description and flattening the nested project/assignee ' +
                 'objects to ids. Resolve a project_id with clokio_list_projects, and fetch the one task you ' +
                 'actually need in full with clokio_get_task (its URL is /tasks/{id}/view).'),
@@ -227,7 +252,10 @@ export function registerTaskTools(server, config) {
         name: 'clokio_get_task',
         description: 'Get one task by id, with its full detail (assignees, labels, status, custom fields, task_url) and ' +
             'its comments. A long-running task can carry dozens of comments: pass comments_limit to keep only the ' +
-            'newest few, or 0 for none. comments_count always reports the real total.',
+            'newest few, or 0 for none. comments_count always reports the real total. Every person in it ' +
+            '(created_by, assignees, comment authors, uploaders) carries organization {id, name} and external: ' +
+            'an employee_code is unique only within one organisation, so pair it with organization.id when ' +
+            'external is true (organization is null when that organisation is hidden from you).',
         schema: {
             id: z.number().int(),
             comments_limit: z
@@ -248,7 +276,9 @@ export function registerTaskTools(server, config) {
             'automatically (whoami shows who that is). Set it only to credit someone OTHER than the key owner. ' +
             'Pass parent_task_id to create it as a SUBTASK of that task ' +
             '(same project, and the parent must not itself be a subtask - one level deep only).\n\n' +
-            RECURRENCE_MODEL_NOTE,
+            RECURRENCE_MODEL_NOTE +
+            '\n\n' +
+            SHARED_BOARD_NOTE,
         schema: {
             project_id: z.number().int(),
             title: z.string().max(255),
@@ -259,7 +289,11 @@ export function registerTaskTools(server, config) {
             start_date: z.string().optional().describe('YYYY-MM-DD'),
             estimated_hours: z.number().min(0).max(9999.99).optional(),
             parent_task_id: z.number().int().optional().describe('Makes this a subtask of that task'),
-            assignee_employee_codes: z.array(employeeCode).max(50).optional(),
+            assignee_employee_codes: z
+                .array(assigneeReference)
+                .max(50)
+                .optional()
+                .describe('Each a code of your organisation, or {employee_code, organization_id} for a client\'s person on a shared board'),
             label_names: z
                 .array(z.string().max(100))
                 .max(20)
@@ -401,16 +435,34 @@ export function registerTaskTools(server, config) {
         name: 'clokio_set_task_assignees',
         mutates: true,
         description: "Change a task's assignees. mode is REQUIRED: \"add\" appends, \"replace\" overwrites the whole list, " +
-            '"remove" takes those people off. People are named by employee_code (e.g. "00080").',
+            '"remove" takes those people off. People are named by employee_code (e.g. "00080"). Adding someone ' +
+            'already assigned changes nothing. Assigning through the API sends the assignee no notification.\n\n' +
+            SHARED_BOARD_NOTE,
         schema: {
             id: z.number().int(),
-            employee_codes: z.array(employeeCode).min(1).max(50),
+            employee_codes: z
+                .array(assigneeReference)
+                .min(1)
+                .max(50)
+                .describe('Each a code of your organisation, or {employee_code, organization_id} for a client\'s person on a shared board'),
             mode: z.enum(['add', 'replace', 'remove']).describe('Required'),
         },
         handler: (args, cfg) => request(cfg, `/tasks/${args.id}/assignees`, {
             method: 'PATCH',
             body: { employee_codes: args.employee_codes, mode: args.mode },
         }),
+    });
+    registerTool(server, config, {
+        name: 'clokio_list_project_people',
+        description: "Who is on a project's board: its members and, on a board shared with a client organisation, the client's " +
+            'nominated people and admins (active people only; coding agents are left out). Each row: employee_code, ' +
+            'name, organization {id, name}, external. Your organisation comes first. Call this BEFORE assigning on a ' +
+            'shared board: an external person is assigned as {employee_code, organization_id} (organization.id from ' +
+            'here). Your own staff who are not board members are still assignable by bare employee_code ' +
+            '(clokio_list_employees). email appears on your own rows only, and only with the employees:pii scope. ' +
+            'Needs the employees:read scope.',
+        schema: { project_id: z.number().int() },
+        handler: (args, cfg) => request(cfg, `/projects/${args.project_id}/people`),
     });
     registerTool(server, config, {
         name: 'clokio_list_task_comments',
