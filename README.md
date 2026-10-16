@@ -126,8 +126,8 @@ are marked mutating (deletes are `destructive`).
 employee and the server refuses one.
 
 - **Scopes:** `time_entries:write` for the three writes, `time_entries:read`
-  for the running timer. `time_entries:write` must be ticked on the key
-  explicitly: full access (`*`) never grants it.
+  for the running timer. `time_entries:write` is part of Full access;
+  a key with chosen permissions must tick it.
 - `clokio_log_time` takes `task_id` and EITHER `date` + `start` + `end`,
   `date` + `start` + `duration_minutes`, or `duration_minutes` alone (the
   entry then ends now). Times are local to that person. At most 12 hours per
@@ -147,9 +147,9 @@ docs call acts as one employee - the key's **effective actor**:
 
 - **The key's "acts as" employee**, when it has one (set in
   **Settings > API keys**). Only an admin may make a key act as someone else.
-- **Otherwise, the person who created the key** - but only when the key lists
-  `docs:read` / `docs:write` **explicitly**. The wildcard `*` does not grant
-  docs scopes to a key with no acts-as employee, so an ordinary full-access
+- **Otherwise, the person who created the key** - when the key has Full
+  access or lists `docs:read` / `docs:write`. Keys converted from the old
+  wildcard `*` with no acts-as employee do not hold them, so such an
   integration key never opens its creator's private documents.
 
 So, to use the Docs tools, either set an acts-as employee on the key, or add
@@ -158,9 +158,8 @@ creator). Otherwise every docs tool answers `403`, the same for every
 document id.
 
 **Scopes:** `docs:read` for the read tools (every `GET`) and `docs:write` for
-everything else. On a key with an acts-as employee the wildcard `*` grants
-both; a key with an explicit scope list must include them (otherwise `403`
-naming `required_scope`).
+everything else. Full access includes both; a key with chosen permissions
+must include them (otherwise `403` naming `required_scope`).
 
 The key then sees exactly what its acting employee sees and can do on the
 web, never more, and writes (comments, versions, activity) are attributed to
@@ -232,11 +231,12 @@ Working with documents:
 ## Tickets
 
 The `tickets` toolset works the Clokio support inbox as the key's "acts as"
-employee: it sees and does exactly what that person may in the inbox. Tick
-the scopes on the key - `*` never includes them: `tickets:read`,
-`tickets:write` (notes, state, assignee, labels, contacts), `tickets:send`
-(`clokio_reply_ticket`, which REACHES THE CUSTOMER) and, for writing as a
-colleague, `tickets:send_as` (only on a key created by an administrator).
+employee: it sees and does exactly what that person may in the inbox.
+Full access includes `tickets:read`, `tickets:write` (notes, state, assignee,
+labels, contacts) and `tickets:send` (`clokio_reply_ticket`, which REACHES THE
+CUSTOMER); a key with chosen permissions must tick them. Writing as a
+colleague needs `tickets:send_as`, which is never part of Full access: it is
+ticked separately, only on a key created by an administrator.
 
 `clokio_get_ticket` and `clokio_list_ticket_messages` print internal notes
 under "INTERNAL NOTE - never send to the customer" and wrap everything the

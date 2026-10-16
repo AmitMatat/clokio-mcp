@@ -185,11 +185,11 @@ export function registerAttendanceTools(server, config) {
     });
     // Logging time (backend task #5775). The time is ALWAYS the key's acting
     // person's: none of these tools takes an employee, and the server refuses
-    // one in the body. Scope time_entries:write is explicit-only ("*" never
-    // grants it).
+    // one in the body. Scope time_entries:write: Full access, or ticked on a
+    // key with chosen permissions.
     const actingPerson = "The time is ALWAYS recorded for the API key's ACTING person (its \"acts as\" employee, else the person who issued it), " +
         'never for anyone else; there is no way to log time for another employee. ' +
-        'Needs the time_entries:write scope, ticked explicitly on the key: full access ("*") does NOT grant it.';
+        'Needs the time_entries:write scope: Full access includes it; a key with chosen permissions must list it.';
     const taskRule = 'The task must be one that person can view in your organisation, on an active project; a board another organisation ' +
         'shared with you is refused (404).';
     registerTool(server, config, {
@@ -255,7 +255,7 @@ export function registerAttendanceTools(server, config) {
     registerTool(server, config, {
         name: 'clokio_stop_timer',
         description: "Stop the running timer of the API key's ACTING person (never anyone else's) and return the entry with its hours. " +
-            'Refused (409) when nothing is running. Needs time_entries:write (not granted by "*").',
+            'Refused (409) when nothing is running. Needs time_entries:write (Full access, or listed on the key).',
         schema: {},
         mutates: true,
         handler: (_args, cfg) => request(cfg, '/timer/stop', { method: 'POST' }),

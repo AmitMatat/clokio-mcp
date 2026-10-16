@@ -11,8 +11,8 @@ import { registerTool } from './helpers.js';
  * 2026-10-15-tickets-public-api-mcp-design).
  *
  * Every route acts as the key's "acts as" employee and sees exactly what
- * that person sees in the inbox; the four tickets:* scopes are never part of
- * "*", so a key must list them. This server adds no authorization.
+ * that person sees in the inbox; Full access includes tickets:read, write and
+ * send, never tickets:send_as, which a key must list. This server adds no authorization.
  *
  * Two safety rules live here because they are about how a MODEL reads the
  * thread:

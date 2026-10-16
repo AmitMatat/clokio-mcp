@@ -11,8 +11,8 @@ import { registerTool } from './helpers.js';
  * Documents are permissioned per PERSON, so every docs request acts as one
  * employee - the key's EFFECTIVE actor (backend ActsAsAuthority): its
  * "acts as" employee, else the key's creator, the latter only when the key
- * lists docs:read / docs:write EXPLICITLY ("*" is not enough for a key with
- * no actor). The API decides everything else: an invisible document is 404,
+ * has Full access or lists docs:read / docs:write. The API decides
+ * everything else: an invisible document is 404,
  * a visible one the actor may not change is 403.
  *
  * TOKEN BUDGET. tools/list is paid by every session, so the access rules are
@@ -188,8 +188,8 @@ export function registerDocTools(server: McpServer, config: ClokioConfig): void 
       'List documents you can view (all scopes by default; project_id narrows). Rows include effective_role ' +
       '(view/comment/edit/admin): edit or admin means you may write content. ' +
       'DOCS ACCESS (applies to every clokio_*doc* tool): each call acts as the API key\'s "acts as" employee, ' +
-      'or, if the key has none, as the key\'s creator - only when the key lists docs:read / docs:write ' +
-      'explicitly ("*" is not enough). Otherwise every docs tool returns 403: set an acts-as employee or add ' +
+      'or, if the key has none, as the key\'s creator - only when the key has Full access or lists docs:read / ' +
+      'docs:write. Otherwise every docs tool returns 403: set an acts-as employee or add ' +
       'the docs scopes in Settings > API keys. Reads need scope docs:read, everything else docs:write. You see ' +
       'exactly what that employee sees; a doc they cannot see is 404. ' +
       'Two separate gates: the employee\'s ROLE must hold the section permission each tool names (docs.view ' +

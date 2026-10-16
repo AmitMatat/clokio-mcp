@@ -2,8 +2,8 @@
 // backend serves with the body it expects, and NEVER send an employee: the
 // time is always the key's acting person's. Shape errors the server would
 // 422 (end AND duration, start without date) are refused locally, with no
-// HTTP call. Also pins the descriptions' promises: acting person, the scope
-// "*" does not grant, overlap refused, 12 hours at most.
+// HTTP call. Also pins the descriptions' promises: acting person,
+// how the scope is granted, overlap refused, 12 hours at most.
 //
 // Run by hand:  npm run build && node test/time-tools.mjs
 import { createServer } from 'node:http';
@@ -105,7 +105,7 @@ for (const name of ['clokio_log_time', 'clokio_start_timer', 'clokio_stop_timer'
   check(`${name} names the acting person`, /ACTING person/.test(tools[name]?.description ?? ''), true);
 }
 const logDesc = tools.clokio_log_time?.description ?? '';
-check('log_time names the scope and that "*" does not grant it', /time_entries:write/.test(logDesc) && /does NOT grant/.test(logDesc), true);
+check('log_time names the scope and how it is granted', /time_entries:write/.test(logDesc) && /Full access includes it/.test(logDesc), true);
 check('log_time says overlap is refused', /overlapping .* refused/.test(logDesc), true);
 check('log_time says 12 hours at most', /12 hours/.test(logDesc), true);
 check('the writes are marked mutating', ['clokio_log_time', 'clokio_start_timer', 'clokio_stop_timer'].map((n) => tools[n]?.annotations?.readOnlyHint), [false, false, false]);
