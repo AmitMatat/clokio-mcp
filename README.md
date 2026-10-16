@@ -132,7 +132,8 @@ employee and the server refuses one.
   `date` + `start` + `duration_minutes`, or `duration_minutes` alone (the
   entry then ends now). Times are local to that person. At most 12 hours per
   entry; nothing may start or end more than 10 minutes in the future; an
-  overlap with another entry of the same person is refused.
+  overlap with another time entry of the same person (their running timer and
+  an overnight entry from the day before included) is refused.
 - `clokio_start_timer` is refused while a timer runs; `force: true` stops it
   and starts the new one. `clokio_stop_timer` is refused when nothing runs.
 - The task must be visible to that person, on an active project of your

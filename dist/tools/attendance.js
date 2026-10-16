@@ -199,7 +199,8 @@ export function registerAttendanceTools(server, config) {
             '(an end at or before start runs past midnight), OR date + start + duration_minutes, OR duration_minutes alone ' +
             '(the entry then ENDS NOW and started that many minutes ago; date must be today or omitted). ' +
             'At most 12 hours (720 minutes) per entry; nothing may start or end more than 10 minutes in the future; ' +
-            'an entry overlapping another entry of the same person is refused. ' + taskRule + ' ' +
+            'an entry overlapping another time entry of the same person (including their running timer, and an overnight entry from the day before) is refused. ' +
+            'A duration counts real minutes across a DST change. ' + taskRule + ' ' +
             "The project's billable flag is inherited and the description defaults to the task title.",
         schema: {
             task_id: z.number().int().positive(),
