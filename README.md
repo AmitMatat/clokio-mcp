@@ -3,8 +3,10 @@
 [![npm version](https://img.shields.io/npm/v/clokio-mcp.svg)](https://www.npmjs.com/package/clokio-mcp)
 [![MCP](https://img.shields.io/badge/MCP-compatible-blue)](https://modelcontextprotocol.io)
 
+Changes per release: [CHANGELOG.md](CHANGELOG.md). After an update, start a new session and check `clokio_whoami`'s `mcp_version`.
+
 A [Model Context Protocol](https://modelcontextprotocol.io) server for the
-**[Clokio](https://clokio.io) Public API**. Connect Claude — or any MCP client —
+**[Clokio](https://clokio.io) Public API**. Connect Claude - or any MCP client -
 to your Clokio workspace to read and manage tasks, projects, clients, employees
 and attendance in natural language.
 
@@ -49,7 +51,7 @@ Add to `claude_desktop_config.json`:
 
 ### Cursor / Cline / Zed / any MCP client
 
-Use the same command — `npx -y clokio-mcp@latest` with `CLOKIO_API_KEY` in the env.
+Use the same command - `npx -y clokio-mcp@latest` with `CLOKIO_API_KEY` in the env.
 MCP is an open standard.
 
 Optional: set `CLOKIO_BASE_URL` to point at a different Clokio installation
@@ -57,7 +59,7 @@ Optional: set `CLOKIO_BASE_URL` to point at a different Clokio installation
 
 Optional: set `CLOKIO_DEFAULT_ACTOR` to an `employee_code` (e.g. `00055`) to
 attribute tasks, comments and updates that name no author. You usually do not
-need it — an unnamed write is already credited to the person who issued the API
+need it - an unnamed write is already credited to the person who issued the API
 key. Use it only for a **shared or service key** whose issuer is not the person
 acting. An explicit code on a tool call always takes precedence.
 
@@ -74,18 +76,18 @@ through it.
 
 ## Tools
 
-102 tools across seven areas. Read-only tools carry the MCP `readOnlyHint`; writes
+107 tools across seven areas. Read-only tools carry the MCP `readOnlyHint`; writes
 are marked mutating (deletes are `destructive`).
 
 | Area | Tools |
 |------|-------|
-| **Tasks** | list (with `compact` / `sort` / `updated_since` / `recurring`), get (with `comments_limit`), create, update (incl. recurring series: set a rule, pause/resume, stop), delete, bulk update, set assignees (a shared board's client people as `{employee_code, organization_id}`), list a board's people, list/add/edit comments, list attachments (with `is_latest` + `latest_only`), upload, download one (save to disk, or read PDF text / ZIP entries / images / text inline), download all to a folder, activity, list/add/remove dependencies, set custom field |
+| **Tasks** | list (with `compact` / `sort` / `updated_since` / `recurring`), get (with `comments_limit`), create, update (incl. recurring series: set a rule, pause/resume, stop), delete, bulk update, set assignees (a shared board's client people as `{employee_code, organization_id}`), list a board's people, list/add/edit comments, list attachments (with `is_latest` + `latest_only`), upload, download one (save to disk, or read PDF text / ZIP entries / images / text inline), download all to a folder, read images pasted into descriptions and comments, activity (with organisations, paged), list/add/remove dependencies, set custom field |
 | **Projects & clients** | list projects, project statuses, project custom fields, project contacts, get client, add client contact |
 | **Reference** | task statuses, task labels, locations, list webhooks (read-only), whoami |
 | **Employees** | list (name search), lookup by PIN, task-stats, inbox (mentions, new assignments, others' status changes), create, set status |
-| **Attendance** | daily, range, per-employee, monthly summary, clock in/out, break start/end, time entries, leaves, leave balances, **log time on a task**, start / stop / read the timer (see [Logging time](#logging-time)) |
+| **Attendance** | daily, range, per-employee, monthly summary, clock in/out, break start/end, time entries (edit / delete your own), leaves, leave balances, **log time on a task**, start / stop / read the timer (see [Logging time](#logging-time)) |
 | **Documents** (see [Documents](#documents) for who a key acts as) | list, tree, search, get (Markdown / HTML / JSON), create, replace content, update meta, move, archive, restore, delete, templates + create from template, members (by `employee_code`) and teams (list/add/update/remove, shareable teams), public share link, comments (list/add/resolve/reopen), versions (list/get/restore), attachments (list/upload/download) |
-| **Tickets** (see [Tickets](#tickets)) | list (filters + cursor), get (with its newest messages; internal notes labelled, everything the customer wrote wrapped as untrusted), more messages, **reply to the customer** (fresh `Idempotency-Key` per call, `destructive`), internal note (with mentions), update state / assignee, add / remove one label, contacts list / get / update, inboxes, ticket labels, saved replies |
+| **Tickets** (see [Tickets](#tickets)) | list (filters + cursor), get (with its newest messages; internal notes labelled, everything the customer wrote wrapped as untrusted), more messages, **reply to the customer** (fresh `Idempotency-Key` per call, `destructive`), internal note (with mentions), update state / assignee, add / remove one label, contacts list / get / update, inboxes, ticket labels, saved replies, download a file a customer sent, save a reply draft |
 
 ### Conventions
 
@@ -134,6 +136,7 @@ employee and the server refuses one.
   entry; nothing may start or end more than 10 minutes in the future; an
   overlap with another time entry of the same person (their running timer and
   an overnight entry from the day before included) is refused.
+- `clokio_update_time_entry` and `clokio_delete_time_entry` (0.22.0) change or remove one of the acting person's own entries (ids from `clokio_list_time_entries`, which prints times in UTC); edits take local times and get the same checks; a running entry must be stopped before its times change or it is deleted.
 - `clokio_start_timer` is refused while a timer runs; `force: true` stops it
   and starts the new one. `clokio_stop_timer` is refused when nothing runs.
 - The task must be visible to that person, on an active project of your
@@ -252,6 +255,8 @@ second call is a second reply. CLOKIO_DEFAULT_ACTOR does not apply to
 tickets: a reply is written by the key's acting employee unless you name
 `author_employee_code` (which needs `tickets:send_as`).
 
+Email text is cleaned before printing (never raw HTML); `max_chars` cuts long bodies. Files carry ids (`clokio_download_ticket_attachment`). `clokio_create_reply_draft` (needs `tickets:write`) saves a draft a person sends from Clokio with "Use this draft": prefer it when your organisation reviews customer messages first.
+
 ## Security
 
 - The server contains **no secrets**. Your API key lives only in your local
@@ -261,7 +266,7 @@ tickets: a reply is written by the key's acting employee unless you name
   downloads that redirect to signed storage are followed with no credential
   attached).
 - The server **adds no permissions**. What a key can do is decided by the Clokio
-  API from that key's scopes — this server only forwards the request. Scope each
+  API from that key's scopes - this server only forwards the request. Scope each
   key to what its holder needs.
 - All authorization, tenancy (`organization_id` scoping) and rate limiting are
   enforced server-side by the Clokio API, exactly as for any other API consumer.

@@ -58,6 +58,9 @@ check('and says which value was unknown', bad.stderr.includes('nonsense'), true)
 
 const ticketsOnly = listTools({ CLOKIO_TOOLSETS: 'tickets' });
 check('tickets toolset keeps clokio_reply_ticket', ticketsOnly.names?.includes('clokio_reply_ticket'), true);
+check('attendance toolset carries the edit and delete tools', ['clokio_update_time_entry', 'clokio_delete_time_entry'].every((n) => attendanceOnly.names?.includes(n)), true);
+check('tickets toolset carries the download and draft tools', ['clokio_download_ticket_attachment', 'clokio_create_reply_draft'].every((n) => ticketsOnly.names?.includes(n)), true);
+check('tasks toolset carries the inline media tool', tasksOnly.names?.includes('clokio_download_task_media'), true);
 check('tickets toolset keeps clokio_whoami (projects always on)', ticketsOnly.names?.includes('clokio_whoami'), true);
 check('tasks toolset DROPS tickets', tasksOnly.names?.includes('clokio_list_tickets'), false);
 

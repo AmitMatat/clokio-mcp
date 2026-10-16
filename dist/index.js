@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * clokio-mcp — an MCP server for the Clokio Public API.
+ * clokio-mcp - an MCP server for the Clokio Public API.
  *
  * Exposes tasks, projects/clients, employees, attendance, documents and support
  * tickets as MCP tools over stdio. Auth is the per-user CLOKIO_API_KEY (an X-API-Key
