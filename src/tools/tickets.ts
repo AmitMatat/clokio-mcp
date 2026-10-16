@@ -867,14 +867,14 @@ export function registerTicketTools(server: McpServer, config: ClokioConfig): vo
     name: 'clokio_update_contact',
     mutates: true,
     description:
-      'Edit a support contact: name, email, phone, and defined fields as {field_key: value} (empty clears). ' +
+      'Edit a support contact: name, email, phone, and defined fields as {field_key: value} (empty clears; a multi-select field takes an array of option values). ' +
       'Needs tickets:write and the employee\'s tickets.manage.',
     schema: {
       id: z.number().int().positive(),
       name: z.string().max(150).nullable().optional(),
       email: z.string().max(190).nullable().optional(),
       phone: z.string().max(40).nullable().optional(),
-      fields: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
+      fields: z.record(z.union([z.string(), z.number(), z.boolean(), z.null(), z.array(z.string())])).optional(),
     },
     handler: async (args, cfg) => {
       const { id, ...body } = args;
