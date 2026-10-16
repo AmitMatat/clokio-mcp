@@ -172,6 +172,43 @@ const RECURRENCE_MODEL_NOTE =
   '(every: N > 1) counts whole periods from the task\'s DUE DATE, so set one.';
 
 /** Task-management tools: the core of the Clokio API surface. */
+/** #5: what clokio_set_task_assignees answers - the id, the link and the people, never the whole task. */
+export function compactAssignees(taskId: number, t: any) {
+  const assignees: any[] = Array.isArray(t?.assignees) ? t.assignees : [];
+  return {
+    id: t?.id ?? taskId,
+    task_url: t?.task_url ?? `https://app.clokio.io/tasks/${taskId}/view`,
+    assignees,
+    external_assignees: Array.isArray(t?.external_assignees)
+      ? t.external_assignees
+      : assignees
+          .filter((a) => a?.external === true)
+          .map((a) => ({ employee_code: a.employee_code, organization_id: a.organization?.id ?? null })),
+  };
+}
+
+/** #4: `name (code, Org name[, external])`, the person shape clokio_get_task prints. */
+export function activityActor(e: any): string {
+  if (!e) return 'system';
+  const parts = [String(e.employee_code ?? '?')];
+  if (e.organization?.name) parts.push(String(e.organization.name));
+  if (e.external === true) parts.push('external');
+  return `${e.name ?? 'unknown'} (${parts.join(', ')})`;
+}
+
+export function renderActivity(res: any): string {
+  const rows: any[] = Array.isArray(res) ? res : (res?.data ?? []);
+  const meta = res?.meta ?? {};
+  const value = (v: unknown) => (v === null || v === undefined || v === '' ? '-' : String(v));
+  const line = (a: any) =>
+    `[${a.created_at}] ${activityActor(a.employee)}: ${a.action}${a.field ? ` ${a.field}` : ''}` +
+    (a.old_value != null || a.new_value != null ? ` (${value(a.old_value)} -> ${value(a.new_value)})` : '');
+  return [
+    ...(rows.length ? rows.map(line) : ['No activity.']),
+    `Page ${meta.current_page ?? '-'} of ${meta.last_page ?? '-'} (total ${meta.total ?? '-'}); pass page to continue.`,
+  ].join('\n');
+}
+
 export function registerTaskTools(server: McpServer, config: ClokioConfig): void {
   registerTool(server, config, {
     name: 'clokio_list_tasks',
@@ -480,6 +517,7 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
       "Change a task's assignees. mode is REQUIRED: \"add\" appends, \"replace\" overwrites the whole list, " +
       '"remove" takes those people off. People are named by employee_code (e.g. "00080"). Adding someone ' +
       'already assigned leaves the assignee list and the activity log unchanged. Assigning through the API sends the assignee no notification.\n\n' +
+      'Answers only the task id, its link and the assignees (with external_assignees for a client\'s people), not the whole task.\n\n' +
       SHARED_BOARD_NOTE,
     schema: {
       id: z.number().int(),
@@ -490,11 +528,14 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
         .describe('Each a code of your organisation, or {employee_code, organization_id} for a client\'s person on a shared board'),
       mode: z.enum(['add', 'replace', 'remove']).describe('Required'),
     },
-    handler: (args, cfg) =>
-      request(cfg, `/tasks/${args.id}/assignees`, {
-        method: 'PATCH',
-        body: { employee_codes: args.employee_codes, mode: args.mode },
-      }),
+    handler: async (args, cfg) =>
+      compactAssignees(
+        args.id,
+        await request<any>(cfg, `/tasks/${args.id}/assignees`, {
+          method: 'PATCH',
+          body: { employee_codes: args.employee_codes, mode: args.mode },
+        }),
+      ),
   });
 
   registerTool(server, config, {
@@ -738,9 +779,22 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
 
   registerTool(server, config, {
     name: 'clokio_get_task_activity',
-    description: 'Get the activity log (audit trail) for a task.',
-    schema: { id: z.number().int() },
-    handler: (args, cfg) => request(cfg, `/tasks/${args.id}/activity`),
+    description:
+      'The activity log (audit trail) of a task, newest first, one line per change: who acted as name (code, organisation[, external]) ' +
+      'like clokio_get_task, then what changed. from / to (YYYY-MM-DD; to is exclusive) narrow it; per_page (1-100, default 25) and page page through it.',
+    schema: {
+      id: z.number().int(),
+      from: z.string().regex(/^\d{4}-\d{2}-\d{2}/, 'from must start YYYY-MM-DD').optional(),
+      to: z.string().regex(/^\d{4}-\d{2}-\d{2}/, 'to must start YYYY-MM-DD').optional(),
+      per_page: z.number().int().min(1).max(100).optional(),
+      page: z.number().int().min(1).optional(),
+    },
+    handler: async (args, cfg) =>
+      renderActivity(
+        await request<any>(cfg, `/tasks/${args.id}/activity`, {
+          query: { from: args.from, to: args.to, per_page: args.per_page, page: args.page },
+        }),
+      ),
   });
 
   registerTool(server, config, {
