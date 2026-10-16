@@ -183,6 +183,88 @@ export function registerAttendanceTools(server, config) {
             },
         }),
     });
+    // Logging time (backend task #5775). The time is ALWAYS the key's acting
+    // person's: none of these tools takes an employee, and the server refuses
+    // one in the body. Scope time_entries:write is explicit-only ("*" never
+    // grants it).
+    const actingPerson = "The time is ALWAYS recorded for the API key's ACTING person (its \"acts as\" employee, else the person who issued it), " +
+        'never for anyone else; there is no way to log time for another employee. ' +
+        'Needs the time_entries:write scope, ticked explicitly on the key: full access ("*") does NOT grant it.';
+    const taskRule = 'The task must be one that person can view in your organisation, on an active project; a board another organisation ' +
+        'shared with you is refused (404).';
+    registerTool(server, config, {
+        name: 'clokio_log_time',
+        description: 'Log a finished time entry on a task. ' + actingPerson + ' ' +
+            'Times are local to that person (their location timezone, else UTC). Give EITHER date + start + end ' +
+            '(an end at or before start runs past midnight), OR date + start + duration_minutes, OR duration_minutes alone ' +
+            '(the entry then ENDS NOW and started that many minutes ago; date must be today or omitted). ' +
+            'At most 12 hours (720 minutes) per entry; nothing may start or end more than 10 minutes in the future; ' +
+            'an entry overlapping another entry of the same person is refused. ' + taskRule + ' ' +
+            "The project's billable flag is inherited and the description defaults to the task title.",
+        schema: {
+            task_id: z.number().int().positive(),
+            date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be YYYY-MM-DD').optional()
+                .describe('YYYY-MM-DD, the day the entry STARTS. Required with start'),
+            start: z.string().regex(/^\d{2}:\d{2}$/, 'start must be HH:MM').optional().describe('HH:MM, local time'),
+            end: z.string().regex(/^\d{2}:\d{2}$/, 'end must be HH:MM').optional()
+                .describe('HH:MM, local time. Give end OR duration_minutes, not both'),
+            duration_minutes: z.number().int().min(1).max(720).optional(),
+            description: z.string().max(255).optional(),
+        },
+        mutates: true,
+        handler: (args, cfg) => {
+            if ((args.end === undefined) === (args.duration_minutes === undefined)) {
+                throw new Error('Give exactly one of end or duration_minutes.');
+            }
+            if (args.start !== undefined && args.date === undefined) {
+                throw new Error('date is required with start.');
+            }
+            if (args.end !== undefined && args.start === undefined) {
+                throw new Error('start is required with end.');
+            }
+            return request(cfg, '/time-entries', {
+                method: 'POST',
+                body: {
+                    task_id: args.task_id,
+                    date: args.date,
+                    start: args.start,
+                    end: args.end,
+                    duration_minutes: args.duration_minutes,
+                    description: args.description,
+                },
+            });
+        },
+    });
+    registerTool(server, config, {
+        name: 'clokio_start_timer',
+        description: "Start a running timer on a task. " + actingPerson + ' ' + taskRule + ' ' +
+            'If a timer is already running the call is refused (409) and the running entry is returned; ' +
+            'pass force: true to stop that timer and start this one. The description defaults to the task title.',
+        schema: {
+            task_id: z.number().int().positive(),
+            description: z.string().max(255).optional(),
+            force: z.boolean().optional().describe('Stop a running timer first instead of being refused'),
+        },
+        mutates: true,
+        handler: (args, cfg) => request(cfg, '/timer/start', {
+            method: 'POST',
+            body: { task_id: args.task_id, description: args.description, force: args.force },
+        }),
+    });
+    registerTool(server, config, {
+        name: 'clokio_stop_timer',
+        description: "Stop the running timer of the API key's ACTING person (never anyone else's) and return the entry with its hours. " +
+            'Refused (409) when nothing is running. Needs time_entries:write (not granted by "*").',
+        schema: {},
+        mutates: true,
+        handler: (_args, cfg) => request(cfg, '/timer/stop', { method: 'POST' }),
+    });
+    registerTool(server, config, {
+        name: 'clokio_get_active_timer',
+        description: "The running timer of the API key's ACTING person, or entry: null when none runs. Needs time_entries:read.",
+        schema: {},
+        handler: (_args, cfg) => request(cfg, '/timer/active'),
+    });
     registerTool(server, config, {
         name: 'clokio_list_leaves',
         description: 'Leave requests in a date range. from and to are both REQUIRED (YYYY-MM-DD, to >= from). ' +

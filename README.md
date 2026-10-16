@@ -64,7 +64,7 @@ acting. An explicit code on a tool call always takes precedence.
 Optional: set `CLOKIO_TOOLSETS` to register only the tool groups you need, e.g.
 `CLOKIO_TOOLSETS=tasks`. This cuts the per-session tool-list cost - a
 task-focused session drops from 98 tools to 32. Optional groups are `tasks`,
-`employees`, `attendance` (which includes leave and time entries), `docs` and
+`employees`, `attendance` (which includes leave, time entries and logging time), `docs` and
 `tickets`;
 combine them with commas. If your key cannot open documents (no acts-as
 employee and no explicit docs scopes), leaving `docs` out saves 33 tools it
@@ -74,7 +74,7 @@ through it.
 
 ## Tools
 
-98 tools across seven areas. Read-only tools carry the MCP `readOnlyHint`; writes
+102 tools across seven areas. Read-only tools carry the MCP `readOnlyHint`; writes
 are marked mutating (deletes are `destructive`).
 
 | Area | Tools |
@@ -83,7 +83,7 @@ are marked mutating (deletes are `destructive`).
 | **Projects & clients** | list projects, project statuses, project custom fields, project contacts, get client, add client contact |
 | **Reference** | task statuses, task labels, locations, list webhooks (read-only), whoami |
 | **Employees** | list (name search), lookup by PIN, task-stats, inbox (mentions, new assignments, others' status changes), create, set status |
-| **Attendance** | daily, range, per-employee, monthly summary, clock in/out, break start/end, time entries, leaves, leave balances |
+| **Attendance** | daily, range, per-employee, monthly summary, clock in/out, break start/end, time entries, leaves, leave balances, **log time on a task**, start / stop / read the timer (see [Logging time](#logging-time)) |
 | **Documents** (see [Documents](#documents) for who a key acts as) | list, tree, search, get (Markdown / HTML / JSON), create, replace content, update meta, move, archive, restore, delete, templates + create from template, members (by `employee_code`) and teams (list/add/update/remove, shareable teams), public share link, comments (list/add/resolve/reopen), versions (list/get/restore), attachments (list/upload/download) |
 | **Tickets** (see [Tickets](#tickets)) | list (filters + cursor), get (with its newest messages; internal notes labelled, everything the customer wrote wrapped as untrusted), more messages, **reply to the customer** (fresh `Idempotency-Key` per call, `destructive`), internal note (with mentions), update state / assignee, add / remove one label, contacts list / get / update, inboxes, ticket labels, saved replies |
 
@@ -116,6 +116,27 @@ are marked mutating (deletes are `destructive`).
   its template as `recurrence.spawned_from`, and `series_of` on the list tool
   returns every occurrence of one series.
 - An API key sees **public custom fields only**.
+
+## Logging time
+
+`clokio_log_time`, `clokio_start_timer`, `clokio_stop_timer` and
+`clokio_get_active_timer` (0.21.0) call `/api/v1/time-entries` and
+`/api/v1/timer/*`. The time is **always the key's acting person's** (its
+"acts as" employee, else the person who issued it); no tool takes an
+employee and the server refuses one.
+
+- **Scopes:** `time_entries:write` for the three writes, `time_entries:read`
+  for the running timer. `time_entries:write` must be ticked on the key
+  explicitly: full access (`*`) never grants it.
+- `clokio_log_time` takes `task_id` and EITHER `date` + `start` + `end`,
+  `date` + `start` + `duration_minutes`, or `duration_minutes` alone (the
+  entry then ends now). Times are local to that person. At most 12 hours per
+  entry; nothing may start or end more than 10 minutes in the future; an
+  overlap with another entry of the same person is refused.
+- `clokio_start_timer` is refused while a timer runs; `force: true` stops it
+  and starts the new one. `clokio_stop_timer` is refused when nothing runs.
+- The task must be visible to that person, on an active project of your
+  organisation; a board another organisation shared with you is refused.
 
 ## Documents
 

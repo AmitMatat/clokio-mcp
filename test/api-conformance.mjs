@@ -47,6 +47,12 @@ const TOOL_CALLS = [
   { tool: 'clokio_break_start', method: 'post', path: '/attendance/break-start', query: [] },
   { tool: 'clokio_break_end', method: 'post', path: '/attendance/break-end', query: [] },
   { tool: 'clokio_list_time_entries', method: 'get', path: '/time-entries', query: ['from', 'to', 'employee', 'project_id', 'per_page'] },
+  // Logging time (backend #5775). `body` lists every body key the tool can
+  // send; it is checked against the spec's curated requestBody when one exists.
+  { tool: 'clokio_log_time', method: 'post', path: '/time-entries', query: [], body: ['task_id', 'date', 'start', 'end', 'duration_minutes', 'description'] },
+  { tool: 'clokio_start_timer', method: 'post', path: '/timer/start', query: [], body: ['task_id', 'description', 'force'] },
+  { tool: 'clokio_stop_timer', method: 'post', path: '/timer/stop', query: [], body: [] },
+  { tool: 'clokio_get_active_timer', method: 'get', path: '/timer/active', query: [] },
   { tool: 'clokio_list_leaves', method: 'get', path: '/leaves', query: ['from', 'to', 'employee', 'status', 'per_page'] },
   { tool: 'clokio_get_leave_balances', method: 'get', path: '/leaves/balances', query: ['employee'] },
 
@@ -226,6 +232,17 @@ for (const call of TOOL_CALLS) {
   if (missingRequired.length) {
     fail(`${call.tool}: cannot send REQUIRED parameter(s) ${missingRequired.join(', ')}`);
     continue;
+  }
+
+  // A body key the endpoint does not list is refused (422) by routes that
+  // allow-list their bodies; check it against the curated schema.
+  const props = op.requestBody?.content?.['application/json']?.schema?.properties;
+  if (call.body && props) {
+    const extra = call.body.filter((k) => !(k in props));
+    if (extra.length) {
+      fail(`${call.tool}: sends body field(s) ${extra.join(', ')} that ${call.path} does not accept`);
+      continue;
+    }
   }
 
   console.log(`PASS ${call.tool} -> ${call.method.toUpperCase()} ${call.path}`);
