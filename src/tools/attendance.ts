@@ -45,6 +45,17 @@ export function renderTimeEntries(res: any): string {
   ].join('\n');
 }
 
+/**
+ * clokio_stop_timer's answer: always the API's object (like start_timer,
+ * log_time and get_active_timer), plus a `warning` field when the stopped
+ * entry lasted under a minute. Never a string, so a caller reads one shape.
+ */
+export function withShortEntryWarning(res: any): any {
+  const warning = shortEntryWarning(res?.entry);
+  if (!warning || res === null || typeof res !== 'object' || Array.isArray(res)) return res;
+  return { ...res, warning };
+}
+
 /** #3: the line clokio_stop_timer adds when the stopped entry lasted under a minute, else null. */
 export function shortEntryWarning(entry: any): string | null {
   const a = Date.parse(entry?.check_in ?? '');
@@ -335,13 +346,12 @@ export function registerAttendanceTools(server: McpServer, config: ClokioConfig)
     description:
       "Stop the running timer of the API key's ACTING person (never anyone else's) and return the entry with its hours. " +
       'Refused (409) when nothing is running. Needs time_entries:write (Full access, or listed on the key). ' +
-      'Short entries are kept (as on the web and mobile); one under a minute gets a line naming clokio_delete_time_entry.',
+      'Short entries are kept (as on the web and mobile); one under a minute gets a warning field naming clokio_delete_time_entry.',
     schema: {},
     mutates: true,
     handler: async (_args, cfg) => {
       const res = await request<any>(cfg, '/timer/stop', { method: 'POST' });
-      const warning = shortEntryWarning(res?.entry);
-      return warning ? `${JSON.stringify(res, null, 2)}\n\n${warning}` : res;
+      return withShortEntryWarning(res);
     },
   });
 
@@ -358,7 +368,7 @@ export function registerAttendanceTools(server: McpServer, config: ClokioConfig)
     description:
       "Correct one of the time entries of the API key's ACTING person (another person's entry is \"Not found\"). " +
       "Send only what changes: task_id (the entry moves to that task's project), description (null or empty resets it to the task title), " +
-      'and/or the time: date (YYYY-MM-DD), start, end (HH:MM, LOCAL to that person) or duration_minutes (alone it keeps the start and sets the length). ' +
+      'and/or the time: date (YYYY-MM-DD), start, end (HH:MM, LOCAL to that person) or duration_minutes (alone it keeps the start and sets the length; start alone moves the entry and keeps its length). ' +
       'Parts you leave out keep their current values. The same checks as clokio_log_time: at most 12 hours, nothing in the future, ' +
       'no overlap with another entry of that person (their running timer included); an entry on an inactive project cannot change its time. ' +
       'A RUNNING entry takes only task_id and description: stop it before changing its times. Entry ids come from clokio_list_time_entries. ' +

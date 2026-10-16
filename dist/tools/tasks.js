@@ -207,8 +207,17 @@ export function activityActor(e) {
 export function renderActivity(res) {
     const rows = Array.isArray(res) ? res : (res?.data ?? []);
     const meta = res?.meta ?? {};
-    const value = (v) => (v === null || v === undefined || v === '' ? '-' : String(v));
-    const line = (a) => `[${a.created_at}] ${activityActor(a.employee)}: ${a.action}${a.field ? ` ${a.field}` : ''}` +
+    // One activity is one line: newlines and runs of whitespace in a value
+    // (a description, a title, a name) collapse to one space, so a value
+    // cannot print something that looks like further activity lines.
+    const flat = (v) => String(v).replace(/\s+/g, ' ').trim();
+    const value = (v) => {
+        if (v === null || v === undefined)
+            return '-';
+        const f = flat(typeof v === 'object' ? JSON.stringify(v) : v);
+        return f === '' ? '-' : f;
+    };
+    const line = (a) => `[${flat(a.created_at)}] ${flat(activityActor(a.employee))}: ${flat(a.action)}${a.field ? ` ${flat(a.field)}` : ''}` +
         (a.old_value != null || a.new_value != null ? ` (${value(a.old_value)} -> ${value(a.new_value)})` : '');
     return [
         ...(rows.length ? rows.map(line) : ['No activity.']),
@@ -607,10 +616,14 @@ export function registerTaskTools(server, config) {
                 .describe('Return only the newest upload of each file name, dropping superseded duplicates'),
         },
         handler: async (args, cfg) => {
-            const [raw, task, comments] = await Promise.all([
+            // The attachments are the tool's answer, so their failure fails it.
+            // The task and its comments only feed inline_media: if either read
+            // fails, the attachments still come back, with inline_media empty and
+            // a note saying it could not be read (never a silent "none").
+            const [raw, taskRes, commentsRes] = await Promise.all([
                 request(cfg, `/tasks/${args.id}/attachments`),
-                request(cfg, `/tasks/${args.id}`),
-                request(cfg, `/tasks/${args.id}/comments`),
+                request(cfg, `/tasks/${args.id}`).then((v) => ({ ok: true, v }), (e) => ({ ok: false, e })),
+                request(cfg, `/tasks/${args.id}/comments`).then((v) => ({ ok: true, v }), (e) => ({ ok: false, e })),
             ]);
             const rows = asAttachmentArray(raw);
             const attachments = rows
@@ -618,7 +631,19 @@ export function registerTaskTools(server, config) {
                     ? stampIsLatest(rows).filter((r) => r.is_latest)
                     : stampIsLatest(rows)
                 : raw;
-            return { attachments, inline_media: inlineMediaRows(task, comments) };
+            if (!taskRes.ok || !commentsRes.ok) {
+                const failed = [!taskRes.ok ? 'the task' : null, !commentsRes.ok ? 'its comments' : null]
+                    .filter(Boolean)
+                    .join(' and ');
+                const reason = (!taskRes.ok ? taskRes.e : commentsRes.e)?.message ?? 'unknown error';
+                return {
+                    attachments,
+                    inline_media: [],
+                    inline_media_note: `Inline media could not be listed: reading ${failed} failed (${reason}). ` +
+                        'This does not mean the task has none; try again, or read the task and its comments directly.',
+                };
+            }
+            return { attachments, inline_media: inlineMediaRows(taskRes.v, commentsRes.v) };
         },
     });
     registerTool(server, config, {

@@ -9,6 +9,7 @@
  */
 import { ClokioApiError, looksLikeText, requestRawBytes, seg, } from './client.js';
 import { mcpContent } from './tools/helpers.js';
+import { wrapInline, wrapUntrusted } from './untrusted.js';
 /**
  * How much decoded text (PDF or text file) we return inline before truncating.
  * Same reasoning as the text cap in requestRaw: a 5 MB PDF of logs would bury
@@ -246,6 +247,9 @@ export async function downloadTicketAttachment(config, ticketId, attachmentId, o
         savePath: opts.savePath,
         overwrite: opts.overwrite,
         fileName: typeHintOnly(opts.fileName ?? fileName),
+        // A ticket file is the customer's content: its text, PDF text and ZIP
+        // entry names come back inside the untrusted wrapper, like the thread.
+        wrap: true,
     });
 }
 /**
@@ -255,7 +259,12 @@ export async function downloadTicketAttachment(config, ticketId, attachmentId, o
  * DO Spaces url of the same path are both found; the drop-in shape
  * (tasks/org-N/T/FILE, an attachment row) and draft paths are not.
  */
-export const INLINE_MEDIA_PATTERN = /tasks\/org-\d+\/\d+\/media\/[^\s"'<>?#&\\/]+/g;
+//
+// The file-name class is the server's (TaskMediaController::PATH_PATTERN:
+// no "/", whitespace or control character), so a name with "&" is found
+// whole, minus the characters that end a url inside HTML: quotes, angle
+// brackets, "?" (query), "#" (fragment) and a backslash.
+export const INLINE_MEDIA_PATTERN = /tasks\/org-\d+\/\d+\/media\/[^\/\s\x00-\x1f\x7f"'<>?#\\]+/g;
 export function inlineMediaPaths(html) {
     const found = String(html ?? '').match(INLINE_MEDIA_PATTERN) ?? [];
     return [...new Set(found)];
@@ -298,10 +307,21 @@ export async function downloadTaskMedia(config, taskId, path, opts) {
     });
 }
 /**
- * Turn downloaded bytes into the most useful result for their type. Shared by
- * the task and doc downloads so both behave identically.
+ * Wrap the content part of a capText body; the truncation notice (ours) stays
+ * outside the wrapper.
  */
-async function renderDownload(buffer, contentType, opts) {
+function wrapCapped(body, truncated) {
+    if (!truncated)
+        return wrapUntrusted(body);
+    return wrapUntrusted(body.slice(0, TEXT_INLINE_LIMIT)) + body.slice(TEXT_INLINE_LIMIT);
+}
+/**
+ * Turn downloaded bytes into the most useful result for their type. Shared by
+ * the task, doc and ticket downloads so all behave identically, except that
+ * `wrap` (ticket files only) puts the customer's text, PDF text and ZIP entry
+ * names inside the untrusted-content wrapper. Images stay images.
+ */
+export async function renderDownload(buffer, contentType, opts) {
     const kb = (buffer.byteLength / 1024).toFixed(1);
     if (opts.savePath) {
         const abs = await saveBuffer(buffer, opts.savePath, opts.overwrite ?? false);
@@ -325,7 +345,7 @@ async function renderDownload(buffer, contentType, opts) {
                 pages,
                 truncated,
                 file_size: buffer.byteLength,
-                text: body,
+                text: opts.wrap ? wrapCapped(body, truncated) : body,
             };
         }
         catch (e) {
@@ -340,7 +360,8 @@ async function renderDownload(buffer, contentType, opts) {
     // ZIP -> entry list
     if (ext === 'zip' || contentType.includes('application/zip')) {
         try {
-            const entries = listZipEntries(buffer);
+            const listed = listZipEntries(buffer);
+            const entries = opts.wrap ? listed.map((e) => ({ ...e, name: wrapInline(e.name) })) : listed;
             return { kind: 'zip', entry_count: entries.length, entries };
         }
         catch (e) {
@@ -371,9 +392,10 @@ async function renderDownload(buffer, contentType, opts) {
     // Text -> decoded text (capped)
     if (looksLikeText(contentType, opts.fileName)) {
         const { body, truncated } = capText(buffer.toString('utf8'));
+        const shown = opts.wrap ? wrapCapped(body, truncated) : body;
         if (!truncated)
-            return body;
-        return `[truncated: showing the first ${TEXT_INLINE_LIMIT.toLocaleString()} characters of ${kb} KB]\n\n${body}`;
+            return shown;
+        return `[truncated: showing the first ${TEXT_INLINE_LIMIT.toLocaleString()} characters of ${kb} KB]\n\n${shown}`;
     }
     // Anything else -> describe it.
     return (`[binary file: ${contentType}, ${kb} KB]\n\n` +
