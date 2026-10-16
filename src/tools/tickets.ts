@@ -112,29 +112,92 @@ export function cleanMessageText(input: string): string {
   return out.join('\n').trim();
 }
 
+const NAMED_ENTITIES: Record<string, string> = { nbsp: ' ', lt: '<', gt: '>', quot: '"', apos: "'", amp: '&' };
+
+/** One pass, so "&#38;lt;" decodes to the text "&lt;" and never to "<". */
 function decodeEntities(s: string): string {
-  const cp = (n: number) => (Number.isInteger(n) && n >= 0 && n <= 0x10ffff ? String.fromCodePoint(n) : ' ');
-  return s
-    .replace(/&#x([0-9a-f]+);/gi, (_, h) => cp(parseInt(h, 16)))
-    .replace(/&#(\d+);/g, (_, d) => cp(Number(d)))
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;|&apos;/gi, "'")
-    .replace(/&amp;/gi, '&');
+  return s.replace(/&(#x[0-9a-f]+|#\d+|nbsp|lt|gt|quot|apos|amp);/gi, (whole, body: string) => {
+    if (body[0] !== '#') return NAMED_ENTITIES[body.toLowerCase()];
+    const n = body[1] === 'x' || body[1] === 'X' ? parseInt(body.slice(2), 16) : Number(body.slice(1));
+    return Number.isInteger(n) && n >= 0 && n <= 0x10ffff ? String.fromCodePoint(n) : ' ';
+  });
 }
 
-/** HTML to plain text, for a message whose text is empty: never raw HTML. */
+/** Hostile HTML is read only this far. */
+export const HTML_INPUT_LIMIT = 200_000;
+const TAG_START = /<(\/?)([a-zA-Z][a-zA-Z0-9]*)/y;
+
+/**
+ * HTML to plain text, for a message whose text is empty: never raw HTML.
+ * ONE linear scan: every search (next ">", a closing tag, "-->") moves forward
+ * from the cursor and a failed search ends the scan, so hostile input such as
+ * '<' repeated cannot make it quadratic.
+ */
 export function htmlToText(html: string): string {
-  const stripped = html
-    .replace(/<head[\s\S]*?<\/head>/gi, '')
-    .replace(/<(style|script)[\s\S]*?<\/\1>/gi, '')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/(p|div|tr|li|h[1-6]|table|blockquote)\s*>/gi, '\n')
-    .replace(/<\/t[dh]\s*>/gi, ' ')
-    .replace(/<[^>]*>/g, '');
-  return decodeEntities(stripped).replace(/[ \t\u00A0]+/g, ' ');
+  let src = html;
+  let note = '';
+  if (src.length > HTML_INPUT_LIMIT) {
+    src = src.slice(0, HTML_INPUT_LIMIT);
+    if (/[\uD800-\uDBFF]$/.test(src)) src = src.slice(0, -1);
+    note = `\n[... HTML cut at ${HTML_INPUT_LIMIT} characters]`;
+  }
+  const lower = src.toLowerCase();
+  const out: string[] = [];
+  let i = 0;
+  let textFrom = 0;
+  const flush = (to: number) => {
+    if (to > textFrom) out.push(src.slice(textFrom, to));
+  };
+
+  while (i < src.length) {
+    const lt = src.indexOf('<', i);
+    if (lt === -1) break;
+    if (src.startsWith('<!--', lt)) {
+      flush(lt);
+      const end = src.indexOf('-->', lt + 4);
+      if (end === -1) {
+        textFrom = src.length;
+        i = src.length;
+        break;
+      }
+      i = textFrom = end + 3;
+      continue;
+    }
+    TAG_START.lastIndex = lt;
+    const m = TAG_START.exec(src);
+    if (!m) {
+      i = lt + 1; // a literal "<"
+      continue;
+    }
+    const gt = src.indexOf('>', lt + m[0].length);
+    if (gt === -1) {
+      i = src.length; // no tag can close from here on: the rest is text
+      break;
+    }
+    flush(lt);
+    const closing = m[1] === '/';
+    const name = m[2].toLowerCase();
+    let next = gt + 1;
+    if (!closing && (name === 'head' || name === 'script' || name === 'style')) {
+      const close = lower.indexOf(`</${name}`, next);
+      if (close === -1) {
+        textFrom = src.length;
+        i = src.length;
+        break;
+      }
+      const closeGt = src.indexOf('>', close);
+      next = closeGt === -1 ? src.length : closeGt + 1;
+    } else if (name === 'br') {
+      out.push('\n');
+    } else if (closing && /^(p|div|tr|li|h[1-6]|table|blockquote)$/.test(name)) {
+      out.push('\n');
+    } else if (closing && (name === 'td' || name === 'th')) {
+      out.push(' ');
+    }
+    i = textFrom = next;
+  }
+  flush(src.length);
+  return decodeEntities(out.join('')).replace(/[ \t\u00A0]+/g, ' ') + note;
 }
 
 /** Characters as a reader counts them: grapheme clusters (an emoji, a letter with its marks), else code points. */
@@ -169,11 +232,11 @@ export function renderMessage(m: TicketMessage, opts: { maxChars?: number } = {}
   const files = m.attachments.length
     ? `\n[files: ${wrapInline(m.attachments.map((f) => `${f.name} (${f.mime}, ${f.size} bytes)`).join(', '))}]`
     : '';
-  const body = bodyOf(m, opts.maxChars);
-
   if (m.kind === 'event') {
-    return `[${m.created_at}] ${m.internal ? 'INTERNAL ' : ''}EVENT: ${wrapInline((m.text ?? '').trim())}`;
+    return `[${m.created_at}] ${m.internal ? 'INTERNAL ' : ''}EVENT: ${wrapInline(bodyOf(m))}`;
   }
+
+  const body = bodyOf(m, opts.maxChars);
 
   if (m.kind === 'note') {
     // A colleague's note is the team's own words: the label is what matters.
