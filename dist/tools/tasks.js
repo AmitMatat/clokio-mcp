@@ -436,7 +436,7 @@ export function registerTaskTools(server, config) {
         mutates: true,
         description: "Change a task's assignees. mode is REQUIRED: \"add\" appends, \"replace\" overwrites the whole list, " +
             '"remove" takes those people off. People are named by employee_code (e.g. "00080"). Adding someone ' +
-            'already assigned changes nothing. Assigning through the API sends the assignee no notification.\n\n' +
+            'already assigned leaves the assignee list and the activity log unchanged. Assigning through the API sends the assignee no notification.\n\n' +
             SHARED_BOARD_NOTE,
         schema: {
             id: z.number().int(),
