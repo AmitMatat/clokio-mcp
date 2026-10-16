@@ -173,11 +173,11 @@ const RECURRENCE_MODEL_NOTE =
 
 /** Task-management tools: the core of the Clokio API surface. */
 /** #5: what clokio_set_task_assignees answers - the id, the link and the people, never the whole task. */
-export function compactAssignees(taskId: number, t: any) {
+export function compactAssignees(taskId: number, t: any, baseUrl = 'https://app.clokio.io') {
   const assignees: any[] = Array.isArray(t?.assignees) ? t.assignees : [];
   return {
     id: t?.id ?? taskId,
-    task_url: t?.task_url ?? `https://app.clokio.io/tasks/${taskId}/view`,
+    task_url: t?.task_url ?? `${baseUrl.replace(/\/+$/, '')}/tasks/${taskId}/view`,
     assignees,
     external_assignees: Array.isArray(t?.external_assignees)
       ? t.external_assignees
@@ -535,6 +535,7 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
           method: 'PATCH',
           body: { employee_codes: args.employee_codes, mode: args.mode },
         }),
+        cfg.baseUrl,
       ),
   });
 

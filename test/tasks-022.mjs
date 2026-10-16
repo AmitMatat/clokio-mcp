@@ -14,6 +14,7 @@ const HIDDEN = { employee_code: '00099', name: 'Sam', organization: null, extern
 check('the compact answer', compactAssignees(5803, { id: 5803, title: 'x', description: 'long', task_url: 'https://app.example/tasks/5803/view', assignees: [DANA, GUEST], external_assignees: [{ employee_code: '00007', organization_id: 9 }] }), {
   id: 5803, task_url: 'https://app.example/tasks/5803/view', assignees: [DANA, GUEST], external_assignees: [{ employee_code: '00007', organization_id: 9 }],
 });
+check('a missing task_url is built from the configured base url', compactAssignees(12, { assignees: [] }, 'http://127.0.0.1:9/').task_url, 'http://127.0.0.1:9/tasks/12/view');
 check('a missing task_url falls back to the app link', compactAssignees(12, { assignees: [] }).task_url, 'https://app.clokio.io/tasks/12/view');
 check('external_assignees derived from external people when absent', compactAssignees(12, { assignees: [DANA, GUEST, HIDDEN] }).external_assignees, [{ employee_code: '00007', organization_id: 9 }, { employee_code: '00099', organization_id: null }]);
 check('an own actor', activityActor(DANA), 'Dana (00031, Matat)');
