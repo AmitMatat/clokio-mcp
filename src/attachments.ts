@@ -13,6 +13,7 @@ import {
   ClokioConfig,
   looksLikeText,
   requestRawBytes,
+  seg,
 } from './client.js';
 import { mcpContent, McpContentResult } from './tools/helpers.js';
 
@@ -284,6 +285,39 @@ export async function downloadDocAttachment(
   // declared, else the last segment of the storage path.
   const hint = opts.fileName ?? fileName ?? storagePath.split('/').pop();
   return renderDownload(buffer, contentType, { ...opts, fileName: hint });
+}
+
+/**
+ * A file name reduced to a TYPE HINT (N16): `attachment.<ext>` when it ends in
+ * a plain extension, else nothing. A ticket's file names are chosen by
+ * customers; the hint drives type detection only and never reaches a path or
+ * the tool's output.
+ */
+export function typeHintOnly(name: string | undefined): string | undefined {
+  const ext = (name ?? '').toLowerCase().match(/\.([a-z0-9]{1,10})$/)?.[1];
+  return ext ? `attachment.${ext}` : undefined;
+}
+
+/**
+ * Download one file of a ticket message (GET /api/v1/tickets/{id}/attachments/{attachmentId})
+ * and hand it to the shared renderer. save_path is the caller's own path, never
+ * joined with a file name.
+ */
+export async function downloadTicketAttachment(
+  config: ClokioConfig,
+  ticketId: number,
+  attachmentId: number,
+  opts: { fileName?: string; savePath?: string; overwrite?: boolean }
+): Promise<unknown> {
+  const { buffer, contentType, fileName } = await requestRawBytes(
+    config,
+    `/tickets/${seg(ticketId)}/attachments/${seg(attachmentId)}`
+  );
+  return renderDownload(buffer, contentType, {
+    savePath: opts.savePath,
+    overwrite: opts.overwrite,
+    fileName: typeHintOnly(opts.fileName ?? fileName),
+  });
 }
 
 /**

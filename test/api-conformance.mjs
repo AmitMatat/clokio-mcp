@@ -162,6 +162,8 @@ const TOOL_CALLS = [
   { tool: 'clokio_list_ticket_messages', method: 'get', path: '/tickets/{id}/messages', query: ['cursor', 'per_page'] },
   { tool: 'clokio_reply_ticket', method: 'post', path: '/tickets/{id}/replies', query: [] },
   { tool: 'clokio_add_ticket_note', method: 'post', path: '/tickets/{id}/notes', query: [] },
+  { tool: 'clokio_create_reply_draft', method: 'post', path: '/tickets/{id}/drafts', query: [] },
+  { tool: 'clokio_download_ticket_attachment', method: 'get', path: '/tickets/{id}/attachments/{attachmentId}', query: [] },
   { tool: 'clokio_update_ticket', method: 'patch', path: '/tickets/{id}', query: [] },
   { tool: 'clokio_add_ticket_label', method: 'post', path: '/tickets/{id}/labels', query: [] },
   { tool: 'clokio_remove_ticket_label', method: 'delete', path: '/tickets/{id}/labels/{labelId}', query: [] },
