@@ -53,6 +53,8 @@ const TOOL_CALLS = [
   { tool: 'clokio_start_timer', method: 'post', path: '/timer/start', query: [], body: ['task_id', 'description', 'force'] },
   { tool: 'clokio_stop_timer', method: 'post', path: '/timer/stop', query: [], body: [] },
   { tool: 'clokio_get_active_timer', method: 'get', path: '/timer/active', query: [] },
+  { tool: 'clokio_update_time_entry', method: 'patch', path: '/time-entries/{id}', query: [], body: ['task_id', 'date', 'start', 'end', 'duration_minutes', 'description'] },
+  { tool: 'clokio_delete_time_entry', method: 'delete', path: '/time-entries/{id}', query: [] },
   { tool: 'clokio_list_leaves', method: 'get', path: '/leaves', query: ['from', 'to', 'employee', 'status', 'per_page'] },
   { tool: 'clokio_get_leave_balances', method: 'get', path: '/leaves/balances', query: ['employee'] },
 
