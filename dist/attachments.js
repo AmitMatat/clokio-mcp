@@ -249,6 +249,55 @@ export async function downloadTicketAttachment(config, ticketId, attachmentId, o
     });
 }
 /**
+ * Inline task media (field report F1): the storage path of an image or
+ * video pasted into a task's HTML, editor shape only, one file deep. It is
+ * matched ANYWHERE in the html, so `/tasks/media/<path>` and an old absolute
+ * DO Spaces url of the same path are both found; the drop-in shape
+ * (tasks/org-N/T/FILE, an attachment row) and draft paths are not.
+ */
+export const INLINE_MEDIA_PATTERN = /tasks\/org-\d+\/\d+\/media\/[^\s"'<>?#&\\/]+/g;
+export function inlineMediaPaths(html) {
+    const found = String(html ?? '').match(INLINE_MEDIA_PATTERN) ?? [];
+    return [...new Set(found)];
+}
+/** One row per distinct path, in order of first appearance: the description first, then each comment. */
+export function inlineMediaRows(task, comments) {
+    const list = Array.isArray(comments) ? comments : (comments?.data ?? []);
+    const rows = [];
+    const seen = new Set();
+    const add = (path, source, commentId) => {
+        if (seen.has(path))
+            return;
+        seen.add(path);
+        rows.push({
+            path,
+            file_name: path.split('/').pop(),
+            source,
+            ...(commentId !== undefined ? { comment_id: commentId } : {}),
+        });
+    };
+    for (const p of inlineMediaPaths(task?.description))
+        add(p, 'description');
+    for (const c of list)
+        for (const p of inlineMediaPaths(c?.body))
+            add(p, 'comment', c?.id);
+    return rows;
+}
+/**
+ * Download one inline media file (GET /api/v1/tasks/{id}/media?path=...).
+ * The server 404s a path the task's description or public comments do not
+ * contain. The path travels as a QUERY value. requestRawBytes follows a
+ * redirect to signed storage by hand and sends no X-API-Key there.
+ */
+export async function downloadTaskMedia(config, taskId, path, opts) {
+    const { buffer, contentType } = await requestRawBytes(config, `/tasks/${seg(taskId)}/media`, { path });
+    return renderDownload(buffer, contentType, {
+        savePath: opts.savePath,
+        overwrite: opts.overwrite,
+        fileName: typeHintOnly(path.split('/').pop()),
+    });
+}
+/**
  * Turn downloaded bytes into the most useful result for their type. Shared by
  * the task and doc downloads so both behave identically.
  */

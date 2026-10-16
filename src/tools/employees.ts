@@ -23,7 +23,7 @@ export function registerEmployeeTools(server: McpServer, config: ClokioConfig): 
       'rather than listing everyone and matching yourself. Combine with status=active to skip people who have ' +
       'left. email is returned only if the key holds the employees:pii scope. ' +
       "It lists the key's OWN organisation only: people of a client organisation on a shared board are not " +
-      'here - get them, with their organization.id, from clokio_list_project_people. ' +
+      'here - get them, with their organization.id, from clokio_list_project_people, and assign them as {employee_code, organization_id}, never as "org:code". ' +
       'Paginated: the response is {data, meta}, the people under data.',
     schema: {
       search: z.string().max(120).optional().describe('Free text over name and employee_code'),

@@ -101,6 +101,7 @@ const TOOL_CALLS = [
   { tool: 'clokio_update_task_comment', method: 'patch', path: '/tasks/{id}/comments/{commentId}', query: [] },
   { tool: 'clokio_list_task_attachments', method: 'get', path: '/tasks/{id}/attachments', query: [] },
   { tool: 'clokio_download_task_attachment', method: 'get', path: '/tasks/{id}/attachments/{attachmentId}', query: [] },
+  { tool: 'clokio_download_task_media', method: 'get', path: '/tasks/{id}/media', query: ['path'] },
   // Bulk download first LISTS the task's attachments, then fetches each by id
   // (the same two endpoints the single list + download tools use). The list
   // endpoint is the one its own request() call hits; the per-file GETs go
