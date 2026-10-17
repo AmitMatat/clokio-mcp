@@ -734,7 +734,7 @@ export function renderWhatsAppTemplates(res: any, inboxIdArg: number): string {
     const buttonLine = !buttons.length
       ? 'buttons: none'
       : `buttons: ${buttons
-          .map((b) => `#${b?.index} ${b?.type ?? '-'} ${wrapInline(String(b?.label ?? ''))}${b?.needs ? ` -> buttons[${b.index}] = the ${b.needs === 'url_suffix' ? 'URL suffix' : 'code'}` : ''}`)
+          .map((b) => `#${b?.index} ${b?.type ?? '-'} ${wrapInline(String(b?.label ?? ''))}${b?.needs ? ` -> buttons[${b.index}] = the ${b.needs === 'url_suffix' ? 'URL suffix' : 'code'}` : ''}${typeof b?.url_prefix === 'string' && b.url_prefix !== '' ? ` (appended to ${wrapInline(b.url_prefix)})` : ''}`)
           .join('; ')}${fill.length ? '' : ' (nothing to send)'}`;
     const state = t?.sendable === false ? `NOT SENDABLE: ${t?.unsendable_reason ?? 'the API cannot send this template.'}` : 'sendable';
     return [

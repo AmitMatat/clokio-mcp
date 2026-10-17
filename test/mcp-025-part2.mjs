@@ -247,7 +247,7 @@ const WA = {
   inbox_id: 12,
   templates: [
     { name: 'follow_up', language: 'en', category: 'UTILITY', format: 'numbered', body: 'Hi {{1}}, order {{2}}.', variables: ['1', '2'],
-      header: { kind: 'text', text: 'Order {{1}}', variable: '1' }, footer: 'Thanks', buttons: [{ index: 0, type: 'URL', label: 'Track', needs: 'url_suffix' }, { index: 1, type: 'QUICK_REPLY', label: 'Stop', needs: null }],
+      header: { kind: 'text', text: 'Order {{1}}', variable: '1' }, footer: 'Thanks', buttons: [{ index: 0, type: 'URL', label: 'Track', needs: 'url_suffix', url_prefix: 'https://shop.example/track/' }, { index: 1, type: 'QUICK_REPLY', label: 'Stop', needs: null, url_prefix: null }],
       sendable: true, unsendable_reason: null },
     { name: 'greet', language: 'he', category: 'MARKETING', format: 'named', body: 'Hello {{first_name}}', variables: ['first_name'],
       header: { kind: 'none', text: null, variable: null }, footer: null, buttons: [], sendable: true, unsendable_reason: null },
@@ -275,6 +275,8 @@ has('...name and language to send', w0, 'template: {name: "follow_up", language:
 has('text header with a variable needs header_text', w0, 'header_text: the value of {{1}} in the header');
 has('a URL button needs its suffix by index', w0, 'buttons[0] = the URL suffix');
 check('a button with needs null asks for nothing', w0.includes('buttons[1] ='), false);
+has('a URL button names the prefix its suffix is appended to', w0, 'buttons[0] = the URL suffix (appended to <untrusted_customer_content>https://shop.example/track/</untrusted_customer_content>)');
+check('a null url_prefix prints nothing', (w0.match(/appended to/g) ?? []).length, 1);
 has('named: params as a map', w0, 'params: a map {"first_name": "..."}');
 has('a media header is NOT SENDABLE with the reason', w0, 'promo (en) [MARKETING, numbered] - NOT SENDABLE: This template needs a header file, which the API cannot send.');
 has('a sendable template says so', w0, 'follow_up (en) [UTILITY, numbered] - sendable');
