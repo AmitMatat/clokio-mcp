@@ -1,6 +1,6 @@
 {
   "name": "clokio-mcp",
-  "version": "0.24.0",
+  "version": "0.25.0",
   "description": "Model Context Protocol (MCP) server for Clokio - manage tasks, projects, clients, employees, attendance and documents from Claude and any MCP client.",
   "type": "module",
   "bin": {

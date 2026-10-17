@@ -327,7 +327,7 @@ export class ClokioApiError extends Error {
  * the server's own message.
  */
 export async function request(config, path, options = {}) {
-    const { method = 'GET', query, body, headers: extra } = options;
+    const { method = 'GET', query, body, headers: extra, onHeaders } = options;
     const url = buildUrl(config, path);
     applyQuery(url, query);
     const headers = {
@@ -352,6 +352,8 @@ export async function request(config, path, options = {}) {
     catch (e) {
         throw new ClokioApiError(0, `Network error reaching Clokio: ${e.message}`);
     }
+    if (res.ok && onHeaders)
+        onHeaders(res.headers);
     return parseEnvelope(res);
 }
 function applyQuery(url, query) {

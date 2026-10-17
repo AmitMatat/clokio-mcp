@@ -34,6 +34,7 @@ export async function runTools({ toolsets, calls, respond }) {
         method: req.method,
         path: u.pathname.replace('/api/v1', ''),
         query: Object.fromEntries(u.searchParams),
+        search: u.search,
         body: raw ? JSON.parse(raw) : null,
         key: req.headers['x-api-key'] ?? null,
         idempotencyKey: req.headers['idempotency-key'] ?? null,
@@ -45,7 +46,7 @@ export async function runTools({ toolsets, calls, respond }) {
         res.end(out.bytes);
         return;
       }
-      res.writeHead(out.status ?? 200, { 'content-type': 'application/json' });
+      res.writeHead(out.status ?? 200, { 'content-type': 'application/json', ...(out.headers ?? {}) });
       res.end(JSON.stringify(out.json));
     });
   });

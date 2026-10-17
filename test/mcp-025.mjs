@@ -1,12 +1,11 @@
-// 0.25.0 part 1: the MCP-only QA notes N1-N4 of task #5808 (comment 14541).
-//   N1  a plain 404 from create-task-from-ticket / delete-draft names its real
-//       cause (ticket, project, message, or an older server), found by
-//       follow-up reads; a 404 in other words passes through unchanged.
+// 0.25.0: the QA notes N1-N4 of task #5808 (comment 14541).
+//   N1  (E7, part 2) the server words a missing project / draft itself; those
+//       sentences pass through, and only a plain "Not found." gains the ticket
+//       cause plus the older server as ONE possible cause. No follow-up reads.
 //   N2  an empty time-entry list claims no time zone.
 //   N3  clokio_get_leave_days_taken, with clokio_get_leave_balances as a
 //       deprecated alias.
-//   N4  (no server replay signal exists; the wording stays as it is - see
-//       the 0.25.0 CHANGELOG entry.)
+//   N4  the replay wording is in test/mcp-025-part2.mjs.
 //
 // Run by hand:  npm run build && node test/mcp-025.mjs
 import { checker, runTools } from './support/harness.mjs';
@@ -55,95 +54,58 @@ check('both call the same route with the same query', lv.hits.map((h) => `${h.me
 check('same answer from both', lv.text(0), lv.text(1));
 check('the new name still requires employee_code', [lv.errored(2), lv.text(2).includes('employee_code is required')], [true, true]);
 
-// ── N1: create task from ticket ─────────────────────────────────────────
-// Scenarios keyed by ticket id; the POST always answers the plain 404.
+// ── N1 / E7: create task from ticket (the server's own sentences, no probing) ──
 const create = await runTools({
   toolsets: 'tickets',
   calls: [
-    ['clokio_create_task_from_ticket', { id: 21, project_id: 999, title: 'T' }], // new server, missing project
-    ['clokio_create_task_from_ticket', { id: 22, project_id: 4, title: 'T' }], // missing ticket
-    ['clokio_create_task_from_ticket', { id: 23, project_id: 4, title: 'T' }], // older server
-    ['clokio_create_task_from_ticket', { id: 24, project_id: 998, title: 'T' }], // no tasks:read, project missing
-    ['clokio_create_task_from_ticket', { id: 25, project_id: 4, title: 'T' }], // no tasks:read, no tickets:read
-    ['clokio_create_task_from_ticket', { id: 26, project_id: 4, title: 'T' }], // a 404 in other words
+    ['clokio_create_task_from_ticket', { id: 21, project_id: 999, title: 'T' }], // missing project: the server's sentence
+    ['clokio_create_task_from_ticket', { id: 22, project_id: 4, title: 'T' }], // plain Not found.
     ['clokio_create_task_from_ticket', { id: 27, project_id: 4, title: 'T' }], // a 422 is untouched
   ],
   respond: (hit) => {
     const id = Number(hit.path.split('/')[2]);
-    if (hit.method === 'POST') {
-      if (id === 26) return { status: 404, json: { status: 'error', message: 'That project is not available.', data: {} } };
-      if (id === 27) return { status: 422, json: { status: 'error', message: 'The given data was invalid.', errors: { title: ['x'] } } };
-      return NF;
-    }
-    if (hit.path.startsWith('/projects/')) return hit.path === '/projects/4/statuses' ? OK([]) : NF;
-    const isList = hit.path.endsWith('/tasks');
-    if (id === 21) return isList ? OK({ ticket: { id: 21 }, tasks: [] }) : OK({ ticket: { id: 21 } });
-    if (id === 22) return NF;
-    if (id === 23) return isList ? NF : OK({ ticket: { id: 23 } });
-    if (id === 24) return isList ? { status: 403, json: { status: 'error', message: 'Missing scope.', required_scope: 'tasks:read' } } : OK({ ticket: { id: 24 } });
-    if (id === 25) return { status: 403, json: { status: 'error', message: 'Missing scope.' } };
+    if (id === 21) return { status: 404, json: { status: 'error', message: 'That project is not available.', data: {} } };
+    if (id === 27) return { status: 422, json: { status: 'error', message: 'The given data was invalid.', errors: { title: ['x'] } } };
     return NF;
   },
 });
-for (let i = 0; i < 7; i++) check(`create ${i}: still an error`, create.errored(i), true);
-has('missing project: names the project', create.text(0), 'Project #999 does not exist or is not available');
-check('...and does not blame the server', create.text(0).includes('predates'), false);
-has('...keeps the server words first', create.text(0), 'HTTP 404): Not found. Project #999');
-has('missing ticket: names the ticket', create.text(1), 'Ticket #22 does not exist, or the acting employee cannot open it');
-check('...and does not blame the server', create.text(1).includes('predates'), false);
-has('older server: says so plainly', create.text(2), 'Ticket #23 opens, but this Clokio server has no tasks route on it: it predates task #5808.');
-has('no tasks:read, project probe 404: names the project', create.text(3), 'Project #998 does not exist');
-has('nothing readable: lists the causes', create.text(4), 'could not be narrowed (the follow-up read failed: HTTP 403)');
-has('...naming the project among them', create.text(4), 'project #4 is missing');
-has('...and the old-server hint as one of them', create.text(4), OLDER_SERVER_HINT);
-has('a 404 in other words is shown as is', create.text(5), 'That project is not available.');
-check('...with no hint and no probe', [create.text(5).includes('predates'), create.hits.some((h) => h.method === 'GET' && h.path.startsWith('/tickets/26'))], [false, false]);
-check('a 422 makes no probe', create.hits.some((h) => h.method === 'GET' && h.path.startsWith('/tickets/27')), false);
-check('the create was sent once per call (no retry of the write)', create.hits.filter((h) => h.method === 'POST').length, 7);
+for (let i = 0; i < 3; i++) check(`create ${i}: still an error`, create.errored(i), true);
+has('missing project: the server sentence as it comes', create.text(0), 'Clokio API error (HTTP 404): That project is not available.');
+check('...with no hint added', [create.text(0).includes('predates'), create.text(0).includes(OLDER_SERVER_HINT)], [false, false]);
+has('plain Not found.: names the ticket', create.text(1), 'HTTP 404): Not found. Ticket #22 does not exist, or the acting employee cannot open it');
+has('...and the old server as ONE possible cause', create.text(1), OLDER_SERVER_HINT);
+has('...worded as one possible cause', create.text(1), 'One possible cause:');
+check('a 422 has no hint', create.text(2).includes('possible cause'), false);
+check('no follow-up reads at all (only the POSTs)', create.hits.map((h) => h.method), ['POST', 'POST', 'POST']);
 
-// ── N1: delete reply draft ──────────────────────────────────────────────
-const msg = (id, extra = {}) => ({ id, kind: 'note', direction: 'outbound', internal: true, forward: false, author: { type: 'employee', name: 'Dana', employee_code: '00031' }, text: 'x', html: null, created_at: '2026-10-17T08:00:00Z', attachments: [], delivery: null, ...extra });
+// ── N1 / E7: delete reply draft ─────────────────────────────────────────
 const del = await runTools({
   toolsets: 'tickets',
   calls: [
-    ['clokio_delete_reply_draft', { id: 31, message_id: 500 }], // already deleted (not on the ticket)
-    ['clokio_delete_reply_draft', { id: 32, message_id: 600 }], // missing ticket
-    ['clokio_delete_reply_draft', { id: 33, message_id: 700 }], // older server: the draft is there
-    ['clokio_delete_reply_draft', { id: 34, message_id: 800 }], // no tickets:read
-    ['clokio_delete_reply_draft', { id: 35, message_id: 900 }], // message on page 2, older server
+    ['clokio_delete_reply_draft', { id: 31, message_id: 500 }], // already deleted: the server's sentence
+    ['clokio_delete_reply_draft', { id: 32, message_id: 600 }], // plain Not found.
   ],
   respond: (hit) => {
     const id = Number(hit.path.split('/')[2]);
-    if (hit.method === 'DELETE') return NF;
-    if (id === 32) return NF;
-    if (id === 34) return { status: 403, json: { status: 'error', message: 'Missing scope.', required_scope: 'tickets:read' } };
-    if (!hit.path.endsWith('/messages')) return OK({ ticket: { id } });
-    if (id === 31) return { json: { status: 'success', data: { messages: [msg(499)] }, meta: { next_cursor: null } } };
-    if (id === 33) return { json: { status: 'success', data: { messages: [msg(700, { draft: { state: 'pending', used_at: null } })] }, meta: { next_cursor: null } } };
-    if (id === 35) {
-      return hit.query.cursor
-        ? { json: { status: 'success', data: { messages: [msg(900, { draft: { state: 'pending', used_at: null } })] }, meta: { next_cursor: null } } }
-        : { json: { status: 'success', data: { messages: [msg(1)] }, meta: { next_cursor: 'c2' } } };
-    }
+    if (id === 31) return { status: 404, json: { status: 'error', message: 'This draft no longer exists.', data: {} } };
     return NF;
   },
 });
-for (let i = 0; i < 5; i++) check(`delete ${i}: still an error`, del.errored(i), true);
-has('already deleted: says so', del.text(0), 'Ticket #31 has no message #500: it was already deleted, or it belongs to another ticket.');
-check('...and does not blame the server', del.text(0).includes('predates'), false);
-has('missing ticket: names the ticket', del.text(1), 'Ticket #32 does not exist');
-has('older server: the message is there, so the route is missing', del.text(2), 'this Clokio server predates task #5808 and cannot delete drafts yet');
-has('no tickets:read: lists the causes', del.text(3), 'could not be narrowed (the follow-up read failed: HTTP 403)');
-has('...the deleted message among them', del.text(3), 'message #800 is not on it');
-has('the message walk follows the cursor', del.text(4), 'Message #900 is on ticket #35');
-check('...reading page 2 with the cursor', del.hits.some((h) => h.path === '/tickets/35/messages' && h.query.cursor === 'c2'), true);
+check('delete: both errors', [del.errored(0), del.errored(1)], [true, true]);
+has('deleted draft: the server sentence as it comes', del.text(0), 'Clokio API error (HTTP 404): This draft no longer exists.');
+check('...with no hint', del.text(0).includes('possible cause'), false);
+has('plain Not found.: names the ticket', del.text(1), 'Not found. Ticket #32 does not exist');
+has('...and the old server as one possible cause', del.text(1), OLDER_SERVER_HINT);
+check('no follow-up reads (only the DELETEs)', del.hits.map((h) => h.method), ['DELETE', 'DELETE']);
 
 // ── N1: the list keeps the 0.23 hint (a 404 there is the ticket or the route) ──
 const list = await runTools({ toolsets: 'tickets', calls: [['clokio_list_ticket_tasks', { id: 41 }]], respond: () => NF });
 has('list ticket tasks keeps the conditional hint', list.text(0), OLDER_SERVER_HINT);
 
 // ── descriptions ────────────────────────────────────────────────────────
-has('create description explains the 404 cause', create.tools.clokio_create_task_from_ticket?.description ?? '', 'to name the cause');
-has('delete description explains the 404 cause', del.tools.clokio_delete_reply_draft?.description ?? '', 'to name the cause');
+has('create description names the project sentence', create.tools.clokio_create_task_from_ticket?.description ?? '', '"That project is not available."');
+has('create description names the replay wording', create.tools.clokio_create_task_from_ticket?.description ?? '', 'already created from this ticket (replayed, no new task)');
+has('delete description names the draft sentence', del.tools.clokio_delete_reply_draft?.description ?? '', '"This draft no longer exists."');
+check('no description promises follow-up reads any more', /to name the cause/.test((create.tools.clokio_create_task_from_ticket?.description ?? '') + (del.tools.clokio_delete_reply_draft?.description ?? '')), false);
 
 done();

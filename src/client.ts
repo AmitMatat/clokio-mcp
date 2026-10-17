@@ -397,6 +397,12 @@ export interface RequestOptions {
    * They can never replace X-API-Key or Accept: those are set after them.
    */
   headers?: Record<string, string>;
+  /**
+   * Called with the response headers of a SUCCESSFUL answer, before the body
+   * is unwrapped (0.25.0: `Idempotency-Replayed: true` marks a replayed
+   * idempotent write). Never called for an error answer.
+   */
+  onHeaders?: (headers: Headers) => void;
 }
 
 /**
@@ -410,7 +416,7 @@ export async function request<T = unknown>(
   path: string,
   options: RequestOptions = {}
 ): Promise<T> {
-  const { method = 'GET', query, body, headers: extra } = options;
+  const { method = 'GET', query, body, headers: extra, onHeaders } = options;
 
   const url = buildUrl(config, path);
   applyQuery(url, query);
@@ -437,6 +443,8 @@ export async function request<T = unknown>(
   } catch (e) {
     throw new ClokioApiError(0, `Network error reaching Clokio: ${(e as Error).message}`);
   }
+
+  if (res.ok && onHeaders) onHeaders(res.headers);
 
   return parseEnvelope<T>(res);
 }

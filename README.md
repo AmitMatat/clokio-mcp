@@ -65,7 +65,7 @@ acting. An explicit code on a tool call always takes precedence.
 
 Optional: set `CLOKIO_TOOLSETS` to register only the tool groups you need, e.g.
 `CLOKIO_TOOLSETS=tasks`. This cuts the per-session tool-list cost - a
-task-focused session drops from 116 tools to 33. Optional groups are `tasks`,
+task-focused session drops from 119 tools to 33. Optional groups are `tasks`,
 `employees`, `attendance` (which includes leave, time entries and logging time), `docs` and
 `tickets`;
 combine them with commas. If your key cannot open documents (no acts-as
@@ -76,7 +76,7 @@ through it.
 
 ## Tools
 
-116 tools across seven areas. Read-only tools carry the MCP `readOnlyHint`; writes
+119 tools across seven areas. Read-only tools carry the MCP `readOnlyHint`; writes
 are marked mutating (deletes are `destructive`).
 
 | Area | Tools |
@@ -87,7 +87,7 @@ are marked mutating (deletes are `destructive`).
 | **Employees** | list (name search), lookup by PIN, task-stats, inbox (mentions, new assignments, others' status changes; with the tickets toolset, also the acting employee's open tickets), create, set status |
 | **Attendance** | daily, range, per-employee, monthly summary, clock in/out, break start/end, time entries (local times in the person's zone; edit / delete your own), leaves (with `days`, half days counted 0.5), days of leave taken per type and year (`clokio_get_leave_days_taken`; the old name `clokio_get_leave_balances` still works; Clokio tracks no quota or remaining balance; leave and time-entry lists take `employee_code` and at most 92 days per call), **log time on a task**, start / stop / read the timer (see [Logging time](#logging-time)) |
 | **Documents** (see [Documents](#documents) for who a key acts as) | list, tree, search, get (Markdown / HTML / JSON), create, replace content, update meta, move, archive, restore, delete, templates + create from template, members (by `employee_code`) and teams (list/add/update/remove, shareable teams), public share link, comments (list/add/resolve/reopen), versions (list/get/restore), attachments (list/upload/download) |
-| **Tickets** (see [Tickets](#tickets)) | list (filters + cursor), get (with its newest messages; internal notes labelled, everything the customer wrote wrapped as untrusted), more messages, **reply to the customer** (fresh `Idempotency-Key` per call, `destructive`), internal note (with mentions), update state / assignee, add / remove one label, contacts list / get / update, inboxes, ticket labels, saved replies, download a file a customer sent, save / delete your own reply draft, list the tasks opened from a ticket, **open a task from a ticket** (with its files; `Idempotency-Key` per call), **reports** (overview, agents, satisfaction + its ratings, workload) |
+| **Tickets** (see [Tickets](#tickets)) | list (filters incl. several labels, created dates, needs reply, sort + cursor), **open a new ticket by email or WhatsApp template** (sent, or as a draft a person sends; `Idempotency-Key` per call, `destructive`), get (with its newest messages; internal notes labelled, everything the customer wrote wrapped as untrusted), more messages, **reply to the customer** (fresh `Idempotency-Key` per call, `destructive`), internal note (with mentions), update state / assignee, add / remove one label, contacts list / get / create / update, inboxes, ticket labels (list / create), saved replies, download a file a customer sent, save / delete your own reply draft, list the tasks opened from a ticket, **open a task from a ticket** (with its files; `Idempotency-Key` per call), **reports** (overview, agents, satisfaction + its ratings, workload) |
 
 ### Conventions
 
@@ -258,6 +258,10 @@ tickets: a reply is written by the key's acting employee unless you name
 `author_employee_code` (which needs `tickets:send_as`).
 
 Email text is cleaned before printing (never raw HTML); `max_chars` cuts long bodies. Files carry ids (`clokio_download_ticket_attachment`). `clokio_create_reply_draft` (needs `tickets:write`) saves a draft a person sends from Clokio with "Use this draft": prefer it when your organisation reviews customer messages first. On a resolved or spam ticket the draft is saved with a warning (it is out of the open queue); the ticket is never reopened by it. `clokio_delete_reply_draft` (needs `tickets:write`) deletes one of your own drafts that nobody has used.
+
+`clokio_create_ticket` (needs the Clokio backend with the 0.25 API) opens a NEW ticket and sends its first message, as "New email" / "New WhatsApp message" on the Tickets screen: an email (`inbox_id`, `to`, optional `cc` / `bcc`, `subject`, Markdown `body`) or an approved WhatsApp template to one number. It needs `tickets:write` plus `tickets:send` to send; `draft: true` sends nothing and leaves a pending draft a person sends from Clokio with "Use this draft" (`tickets:write` only). Writing to someone no contact you can see holds needs the acting employee's `tickets.manage`, and a key opens at most 10 tickets per 10 minutes. Each call sends an `Idempotency-Key` (fresh, or the one you pass to retry); a replay says so and sends nothing. `clokio_create_ticket_label` and `clokio_create_contact` (both need `tickets.manage`) add a label or a contact; a contact whose address or number a contact you can see already holds is a 409 naming that contact. `clokio_list_tickets` takes `label_ids`, `created_after` / `created_before`, `needs_reply` and `sort` (pass the same `sort` with a cursor).
+
+A replayed idempotent write (a reply, a task from a ticket, a new ticket) says it was replayed and that nothing new was made. The ticket API names a missing project ("That project is not available.") and a missing draft ("This draft no longer exists."); those come back as they are, and only a plain "Not found." adds that an older server is one possible cause.
 
 `clokio_create_task_from_ticket` opens a task linked to the ticket, as the ticket screen's "Task" button does, and copies the ticket files you name into it (a file tasks refuse is listed in `skipped_files`). It needs BOTH `tickets:write` and `tasks:write`, and the acting employee's own right to create tasks in that project. Each call sends an `Idempotency-Key` (a fresh one, returned in the answer, or the one you pass to retry). `clokio_list_ticket_tasks` (needs `tickets:read` and `tasks:read`) lists the tasks opened from a ticket, and `clokio_get_task` names the ticket a task came from (`linked_ticket`).
 
