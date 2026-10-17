@@ -185,6 +185,12 @@ const TOOL_CALLS = [
   { tool: 'clokio_list_inboxes', method: 'get', path: '/inboxes', query: [] },
   { tool: 'clokio_list_ticket_labels', method: 'get', path: '/ticket-labels', query: [] },
   { tool: 'clokio_list_saved_replies', method: 'get', path: '/saved-replies', query: ['inbox_id'] },
+  // Ticket reports (backend #5807 phase 5).
+  { tool: 'clokio_ticket_report_overview', method: 'get', path: '/reports/tickets/overview', query: ['from', 'to', 'inbox_id', 'label'] },
+  { tool: 'clokio_ticket_report_agents', method: 'get', path: '/reports/tickets/agents', query: ['from', 'to', 'inbox_id', 'label', 'team_id'] },
+  { tool: 'clokio_ticket_report_satisfaction', method: 'get', path: '/reports/tickets/satisfaction', query: ['from', 'to', 'inbox_id', 'label', 'team_id'] },
+  { tool: 'clokio_ticket_report_satisfaction_ratings', method: 'get', path: '/reports/tickets/satisfaction/ratings', query: ['from', 'to', 'inbox_id', 'label', 'team_id', 'page', 'low'] },
+  { tool: 'clokio_ticket_report_workload', method: 'get', path: '/reports/tickets/workload', query: ['from', 'to', 'inbox_id', 'label', 'team_id'] },
 ];
 
 let fails = 0;
