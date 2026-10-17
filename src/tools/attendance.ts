@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { ClokioApiError, ClokioConfig, request, seg } from '../client.js';
-import { registerTool } from './helpers.js';
+import { calendarDate, isCalendarDate, registerTool } from './helpers.js';
 
 /** See employees.ts - an employee_code reaches the request path. */
 const employeeCode = z
@@ -184,13 +184,22 @@ export const MAX_RANGE_DAYS = 92;
 
 /**
  * L3 (0.23.0): the 92-day rule checked before the request, with the server's
- * own arithmetic (whole UTC days from `from` to `to`) and its sentence. Values
- * that are not YYYY-MM-DD are left for the server to refuse. Never splits.
+ * own arithmetic (whole UTC days from `from` to `to`) and its sentence. A
+ * YYYY-MM-DD that is not a real date (2026-02-30) is refused as a date; other
+ * shapes are left for the server to refuse. Never splits.
  */
 export function assertRangeWithinLimit(from: string, to: string): void {
-  const day = (v: string) => (/^\d{4}-\d{2}-\d{2}$/.test(v) ? Date.parse(`${v}T00:00:00Z`) : NaN);
-  const a = day(from);
-  const b = day(to);
+  // A real calendar date only (0.23.0 review): Date.parse rolls 2026-02-30 over
+  // to 2 March, which would then be refused with the range sentence instead of
+  // the date error the caller needs. A well-formed but impossible date is
+  // refused here, before any request; other shapes are left to the server.
+  const day = (v: string, name: string) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return NaN;
+    if (!isCalendarDate(v)) throw new Error(`${name} ${v} is not a real calendar date (YYYY-MM-DD).`);
+    return Date.parse(`${v}T00:00:00Z`);
+  };
+  const a = day(from, 'from');
+  const b = day(to, 'to');
   if (!Number.isFinite(a) || !Number.isFinite(b)) return;
   if ((b - a) / 86_400_000 > MAX_RANGE_DAYS) {
     throw new Error(
@@ -462,7 +471,7 @@ export function registerAttendanceTools(server: McpServer, config: ClokioConfig)
       ENTRY_LINE_NOTE,
     schema: {
       task_id: z.number().int().positive(),
-      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be YYYY-MM-DD').optional()
+      date: calendarDate('date').optional()
         .describe('YYYY-MM-DD, the day the entry STARTS. Required with start'),
       start: z.string().regex(/^\d{2}:\d{2}$/, 'start must be HH:MM').optional().describe('HH:MM, local time'),
       end: z.string().regex(/^\d{2}:\d{2}$/, 'end must be HH:MM').optional()
@@ -564,7 +573,7 @@ export function registerAttendanceTools(server: McpServer, config: ClokioConfig)
     schema: {
       id: z.number().int().positive().describe('The entry id (clokio_list_time_entries)'),
       task_id: z.number().int().positive().optional(),
-      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be YYYY-MM-DD').optional(),
+      date: calendarDate('date').optional(),
       start: z.string().regex(/^\d{2}:\d{2}$/, 'start must be HH:MM').optional().describe('HH:MM, local time'),
       end: z.string().regex(/^\d{2}:\d{2}$/, 'end must be HH:MM').optional().describe('HH:MM, local time. Not with duration_minutes'),
       duration_minutes: z.number().int().min(1).max(720).optional(),

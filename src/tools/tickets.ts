@@ -2,8 +2,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { markdownToHtml } from '../markdown.js';
-import { ClokioConfig, request, seg } from '../client.js';
-import { registerTool } from './helpers.js';
+import { ClokioApiError, ClokioConfig, request, seg } from '../client.js';
+import { calendarDate, registerTool } from './helpers.js';
 import { downloadTicketAttachment } from '../attachments.js';
 import { defuse, wrapInline, wrapUntrusted } from '../untrusted.js';
 
@@ -61,9 +61,12 @@ export { wrapUntrusted };
 function who(m: TicketMessage): string {
   const a = m.author;
   if (!a) return 'system';
-  if (a.name === null && a.employee_code) return `employee ${a.employee_code}`;
-  if (byColleague(m) && a.name !== null) return `${defuse(a.name.replace(/\s+/g, ' ').trim())} (${a.employee_code})`;
-  const name = wrapInline(a.name ?? (a.type === 'employee' ? 'the WhatsApp Business app' : 'unknown'));
+  // A missing, non-string or blank name is treated as no name (0.23.0 review):
+  // the server always sends null or a string, but a render must never throw.
+  const given = typeof a.name === 'string' && a.name.trim() !== '' ? a.name : null;
+  if (given === null && a.employee_code) return `employee ${a.employee_code}`;
+  if (byColleague(m) && given !== null) return `${defuse(given.replace(/\s+/g, ' ').trim())} (${a.employee_code})`;
+  const name = wrapInline(given ?? (a.type === 'employee' ? 'the WhatsApp Business app' : 'unknown'));
   return a.employee_code ? `${name} (${a.employee_code})` : name;
 }
 
@@ -485,6 +488,37 @@ export function renderTaskFromTicket(res: any, idempotencyKey: string): Record<s
   };
 }
 
+/**
+ * 0.23.0 review: the line clokio_create_reply_draft adds when the state read
+ * failed (typically a key without tickets:read), so "open" is never confused
+ * with "could not tell".
+ */
+export function stateReadFailure(e: unknown): string {
+  const why = e instanceof ClokioApiError ? `HTTP ${e.status}` : 'the request failed';
+  return `\nNOTE: the ticket's state could not be read (${why}), so no resolved/spam check was made. Reading it needs tickets:read.`;
+}
+
+/** The hint added to a 404 from a route that only the #5808 backend serves. */
+export const OLDER_SERVER_HINT =
+  'If the ticket opens with clokio_get_ticket, this Clokio server predates task #5808 and does not have this route yet.';
+
+/**
+ * 0.23.0 review: run a call to one of the three routes added with task #5808
+ * (draft delete, ticket tasks list / create). An older server answers 404 on
+ * every ticket, which reads like "no such ticket"; the 404 keeps the server's
+ * message and gains the hint. Every other error passes through unchanged.
+ */
+export async function withOlderServerHint<T>(call: () => Promise<T>): Promise<T> {
+  try {
+    return await call();
+  } catch (e) {
+    if (e instanceof ClokioApiError && e.status === 404) {
+      throw new ClokioApiError(404, `${e.message} ${OLDER_SERVER_HINT}`, e.body);
+    }
+    throw e;
+  }
+}
+
 /** The Idempotency-Key shape the server accepts (8-191 of A-Za-z0-9 . _ : -). */
 export const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{8,191}$/;
 
@@ -633,18 +667,21 @@ export function registerTicketTools(server: McpServer, config: ClokioConfig): vo
       'body is Markdown (converted to HTML; chat and WhatsApp tickets keep its plain text). The draft is the acting employee\'s; ' +
       'in the ticket it reads "Reply draft" with a "Use this draft" button. ' +
       'On a RESOLVED or SPAM ticket the draft is saved but the ticket stays where it is (out of the open queue): the answer then carries a warning, ' +
-      'and the ticket is never reopened automatically (clokio_update_ticket state=open does that).',
+      'and the ticket is never reopened automatically (clokio_update_ticket state=open does that). ' +
+      'The state check reads the ticket and so needs tickets:read too; without it the draft is still saved and the answer says the state could not be checked.',
     schema: { id: ticketId, body: z.string().min(1).max(10000) },
     handler: async (args, cfg) => {
       // #2c (0.23.0, owner decision D2): read the state first. A draft is a note and
       // moves nothing, so on a resolved or spam ticket it sits where nobody looks.
       // Warn, never reopen or refuse. A failed read only loses the warning.
       let state: string | null = null;
+      let stateUnread = '';
       try {
         const t = await request<any>(cfg, `/tickets/${seg(args.id)}`);
         state = (t?.ticket ?? t)?.state ?? null;
-      } catch {
+      } catch (e) {
         state = null;
+        stateUnread = stateReadFailure(e);
       }
       const res = await request<any>(cfg, `/tickets/${seg(args.id)}/drafts`, {
         method: 'POST',
@@ -655,7 +692,8 @@ export function registerTicketTools(server: McpServer, config: ClokioConfig): vo
         `a person must open the ticket and click "Use this draft", then send it. ${res?.ticket_url ?? ''}`
       ).trim() +
         (res?.message_id ? `\nTo discard it: clokio_delete_reply_draft id=${res?.ticket_id ?? args.id} message_id=${res.message_id}.` : '') +
-        draftStateWarning(state);
+        draftStateWarning(state) +
+        stateUnread;
     },
   });
 
@@ -674,7 +712,9 @@ export function registerTicketTools(server: McpServer, config: ClokioConfig): vo
       message_id: z.number().int().positive().describe('The draft\'s message id (message #id in clokio_get_ticket)'),
     },
     handler: async (args, cfg) => {
-      const res = await request<any>(cfg, `/tickets/${seg(args.id)}/drafts/${seg(args.message_id)}`, { method: 'DELETE' });
+      const res = await withOlderServerHint(() =>
+        request<any>(cfg, `/tickets/${seg(args.id)}/drafts/${seg(args.message_id)}`, { method: 'DELETE' }),
+      );
       return `Draft message #${res?.deleted ?? args.message_id} deleted from ticket #${res?.ticket_id ?? args.id}.`;
     },
   });
@@ -686,7 +726,8 @@ export function registerTicketTools(server: McpServer, config: ClokioConfig): vo
       'id, title, status, project, assignees and task_url, one line each. Needs BOTH tickets:read and tasks:read ' +
       '(a key with only one is refused 403, naming the missing scope). A ticket you cannot open is 404.',
     schema: { id: ticketId },
-    handler: async (args, cfg) => renderTicketTasks(await request<any>(cfg, `/tickets/${seg(args.id)}/tasks`), args.id),
+    handler: async (args, cfg) =>
+      renderTicketTasks(await withOlderServerHint(() => request<any>(cfg, `/tickets/${seg(args.id)}/tasks`)), args.id),
   });
 
   registerTool(server, config, {
@@ -694,7 +735,7 @@ export function registerTicketTools(server: McpServer, config: ClokioConfig): vo
     mutates: true,
     description:
       'Open a task FROM a ticket, as the ticket screen\'s "Task" button does: the task is linked to the ticket, the acting employee is its creator, ' +
-      'and the ticket files you name are copied into it. Needs BOTH tickets:write and tasks:write; the acting employee must also hold the ' +
+      'and the ticket files you name are copied into it. Write your own short task title; do not paste the customer\'s subject or words into it. Needs BOTH tickets:write and tasks:write; the acting employee must also hold the ' +
       'tasks.create permission and may create tasks in project_id (an edit or full-edit member, a project manager or an admin; an archived project refuses everyone), else 403. ' +
       'This differs from clokio_create_task, which acts for the whole key and is not linked. ' +
       'project_id and title are required. description is Markdown, HTML or plain text (Markdown is converted to HTML). status is a slug of that project (empty = its default). ' +
@@ -711,7 +752,7 @@ export function registerTicketTools(server: McpServer, config: ClokioConfig): vo
       description: z.string().max(65000).optional().describe('Markdown, HTML or plain text (Markdown is converted to HTML)'),
       priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
       status: z.string().max(100).optional().describe("A status slug of THIS project's board; omit for its default"),
-      due_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'due_date must be YYYY-MM-DD').optional(),
+      due_date: calendarDate('due_date').optional(),
       assignee_employee_codes: z.array(employeeCode).max(50).optional(),
       attachment_ids: z.array(z.number().int().positive()).max(20).optional().describe('File ids of THIS ticket to copy into the task'),
       idempotency_key: z
@@ -722,7 +763,7 @@ export function registerTicketTools(server: McpServer, config: ClokioConfig): vo
     },
     handler: async (args, cfg) => {
       const key = args.idempotency_key ?? `mcp-${randomUUID()}`;
-      const res = await request<any>(cfg, `/tickets/${seg(args.id)}/tasks`, {
+      const res = await withOlderServerHint(() => request<any>(cfg, `/tickets/${seg(args.id)}/tasks`, {
         method: 'POST',
         headers: { 'Idempotency-Key': key },
         body: {
@@ -735,7 +776,7 @@ export function registerTicketTools(server: McpServer, config: ClokioConfig): vo
           assignee_employee_codes: args.assignee_employee_codes,
           attachment_ids: args.attachment_ids,
         },
-      });
+      }));
       return renderTaskFromTicket(res, key);
     },
   });

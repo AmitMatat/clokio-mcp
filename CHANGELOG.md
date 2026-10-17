@@ -2,7 +2,7 @@
 
 ## 0.23.0
 
-From the QA review of 0.22.0 (Clokio task #5808). Needs the Clokio backend released with task #5808 (feature/mcp-5808-api) or later; the new routes answer 404 on an older server. On an older server the time-entry, leave and balance tools fall back to their 0.22 output and say so. After updating, start a NEW session and check that `clokio_whoami` reports `mcp_version` 0.23.0.
+From the QA review of 0.22.0 (Clokio task #5808). Needs the Clokio backend released with task #5808 (feature/mcp-5808-api) or later; the new routes answer 404 on an older server. On an older server the time-entry tools print UTC as in 0.22; the leave and balance tools still answer text and say that the server sends no `days` / `taken`; and the three new ticket tools add to the server's 404 a hint that the server may predate task #5808. After updating, start a NEW session and check that `clokio_whoami` reports `mcp_version` 0.23.0.
 
 Before publishing, run `node test/api-conformance.mjs` against the deployed spec: it now checks the new calls `DELETE /tickets/{id}/drafts/{messageId}`, `GET /tickets/{id}/tasks`, `POST /tickets/{id}/tasks` (with its body keys) and `GET /leaves/balances` with `year` (110 tools, 116 calls).
 
@@ -15,6 +15,8 @@ Before publishing, run `node test/api-conformance.mjs` against the deployed spec
 - **`clokio_get_task` names the linked ticket** - a task opened from a ticket starts with `linked_ticket: "ticket #<id> <url>"` (in place of the raw `ticket` object); a task with no ticket shows nothing (owner decision D5). (#4)
 - **Leave rows with `days`** - `clokio_list_leaves` prints one line per request with the type's `day_value` (1 a full day, 0.5 a half day) and `days` (dates x day value, e.g. 1.5), beside `number_of_days` (the count of dates). A row without `days` (older server) says that a half-day type counts 1 per date there. (L1, owner decision D8)
 - **Days taken in `clokio_get_leave_balances`** - the answer lists, per leave type, `taken` (approved) and `pending` days for the year, half days as 0.5, with an optional `year` (2000-2100, default the employee's current year). The description says Clokio counts days taken, half days included, and tracks no quota or remaining balance. The round-one interim wording is gone. An older server without `taken` gets a line saying so. (L4, owner decision D9)
+
+- **Review fixes** - `clokio_create_reply_draft` says when the ticket's state could not be read (its check needs `tickets:read`), so "open" is never confused with "could not tell". A well-formed date that is not a real calendar day (`2026-02-30`) is refused before any request as a date error, on `clokio_list_leaves`, `clokio_list_time_entries`, `clokio_log_time`, `clokio_update_time_entry` and `clokio_create_task_from_ticket`. `clokio_create_task_from_ticket` asks for the agent's own task title, never the customer's subject pasted in.
 
 ### Needs no new backend
 
@@ -34,6 +36,10 @@ Callers that parse these tools' output must adjust:
 - **`clokio_get_task`** replaces the `ticket` object with the `linked_ticket` line, and drops `ticket: null`.
 - **`clokio_list_time_entries`, `clokio_update_time_entry`, `clokio_delete_time_entry`** print local times and the zone instead of UTC when the server sends them.
 - **`clokio_log_time`, `clokio_start_timer`, `clokio_stop_timer`, `clokio_get_active_timer`** gain an `entry_line` field; the rest of the object is unchanged.
+- **`clokio_get_ticket` / `clokio_list_ticket_messages`** - every message header carries ` message #<id>` after the timestamp, and an identified colleague's name is no longer inside the `<untrusted_customer_content>` tags.
+- **`clokio_create_reply_draft`** - the answer writes `(message #N)` instead of `(message N)`, and may gain a "To discard it: clokio_delete_reply_draft ..." line, a WARNING line (resolved or spam ticket) and a NOTE line (the state could not be read).
+- **`clokio_get_inbox`** - gains a top-level `tickets` key when the tickets toolset is loaded.
+- **Other task-returning tools** (`clokio_create_task`, `clokio_update_task`, full `clokio_list_tasks` rows, and the `task` of `clokio_create_task_from_ticket`) now carry the server's raw `ticket` object (`{id, ticket_url}` or `null`) as it comes; only `clokio_get_task` turns it into the `linked_ticket` line.
 
 ### Already in 0.22.0, please re-test
 

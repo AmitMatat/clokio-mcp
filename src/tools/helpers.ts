@@ -119,3 +119,21 @@ export function registerTool<S extends ZodRawShape>(
     callback as any
   );
 }
+
+/**
+ * 0.23.0 review: whether a YYYY-MM-DD string names a real calendar day.
+ * Date.parse rolls 2026-02-30 over to 2 March, so the round trip is the check.
+ */
+export function isCalendarDate(v: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const t = Date.parse(`${v}T00:00:00Z`);
+  return Number.isFinite(t) && new Date(t).toISOString().slice(0, 10) === v;
+}
+
+/** A YYYY-MM-DD argument that must also be a real calendar date. */
+export function calendarDate(name: string) {
+  return z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, `${name} must be YYYY-MM-DD`)
+    .refine(isCalendarDate, `${name} must be a real calendar date (YYYY-MM-DD)`);
+}
