@@ -79,6 +79,10 @@ has('reply: the retry is a replay, nothing new sent', rk.text(1), 'Reply message
 check('reply: a malformed key is refused before any request', [rk.errored(2), rk.hits.length], [true, 2]);
 check('reply: a fresh key is returned when none is given', /^mcp-/.test(JSON.parse(rp.text(1)).idempotency_key), true);
 const rdesc = rk.tools.clokio_reply_ticket?.description ?? '';
+has('reply: WhatsApp part points at the template list', rdesc, 'clokio_list_whatsapp_templates');
+has('reply: an email draft ticket uses the drafted recipients', rdesc, 'the first reply goes to the drafted To/Cc/Bcc with the drafted subject');
+has('reply: the draft then reads used', rdesc, 'the draft then reads "used"');
+has('task from ticket: an invisible project is the project sentence', rk.tools.clokio_create_task_from_ticket?.description ?? '', 'one the acting employee cannot see is 404 "That project is not available."');
 has('reply description explains the safe retry', rdesc, 'To retry SAFELY');
 has('...with the same key and fields', rdesc, 'pass the SAME idempotency_key and the same fields');
 check('reply stays destructive', rk.tools.clokio_reply_ticket?.annotations?.destructiveHint, true);
@@ -153,7 +157,11 @@ for (const i of [4, 5, 6, 7, 9, 12]) check(`refusal ${i} is an error`, ct.errore
 check('only the valid calls reached the server', posts.length, 7);
 
 const desc = ct.tools.clokio_create_ticket?.description ?? '';
-has('create_ticket says no route lists templates', desc, 'no API route lists them yet');
+has('create_ticket points at the template list', desc, 'clokio_list_whatsapp_templates');
+has('create_ticket: only successful creates count', desc, 'Only SUCCESSFUL creates count');
+has('create_ticket: a replay is answered past the limit', desc, 'answered even past the limit');
+has('create_ticket: the first reply goes to the drafted recipients', desc, 'goes to the drafted recipients with the drafted subject');
+has('create_ticket draft answer: the draft becomes used', ct.text(1), 'the draft reads "used" and cannot be deleted');
 check('create_ticket is mutating (not read-only)', ct.tools.clokio_create_ticket?.annotations?.readOnlyHint, false);
 check('...and marked destructive (a send reaches a customer)', ct.tools.clokio_create_ticket?.annotations?.destructiveHint, true);
 for (const needle of ['tickets:write', 'tickets:send', "tickets.manage", '10 new tickets per 10 minutes', 'draft: true', 'PENDING DRAFT', 'Use this draft', 'Idempotency-Key']) {
@@ -233,6 +241,48 @@ check('...no request for it', cc.hits.length, 3);
 has('contact 422 passes through', cc.text(3), 'already in use on another contact');
 check('contact tool is mutating', cc.tools.clokio_create_contact?.annotations?.readOnlyHint, false);
 has('contact description names the 409', cc.tools.clokio_create_contact?.description ?? '', '409');
+
+// ── clokio_list_whatsapp_templates ──────────────────────────────────────
+const WA = {
+  inbox_id: 12,
+  templates: [
+    { name: 'follow_up', language: 'en', category: 'UTILITY', format: 'numbered', body: 'Hi {{1}}, order {{2}}.', variables: ['1', '2'],
+      header: { kind: 'text', text: 'Order {{1}}', variable: '1' }, footer: 'Thanks', buttons: [{ index: 0, type: 'URL', label: 'Track', needs: 'url_suffix' }, { index: 1, type: 'QUICK_REPLY', label: 'Stop', needs: null }],
+      sendable: true, unsendable_reason: null },
+    { name: 'greet', language: 'he', category: 'MARKETING', format: 'named', body: 'Hello {{first_name}}', variables: ['first_name'],
+      header: { kind: 'none', text: null, variable: null }, footer: null, buttons: [], sendable: true, unsendable_reason: null },
+    { name: 'promo', language: 'en', category: 'MARKETING', format: 'numbered', body: 'Sale', variables: [],
+      header: { kind: 'image', text: null, variable: null }, footer: null, buttons: [], sendable: false, unsendable_reason: 'This template needs a header file, which the API cannot send.' },
+  ],
+};
+const wa = await runTools({
+  toolsets: 'tickets',
+  calls: [
+    ['clokio_list_whatsapp_templates', { inbox_id: 12 }],
+    ['clokio_list_whatsapp_templates', { inbox_id: 13 }],
+    ['clokio_list_whatsapp_templates', { inbox_id: 14 }],
+  ],
+  respond: (hit) => {
+    if (hit.path === '/inboxes/12/whatsapp-templates') return { json: { status: 'success', message: 'WhatsApp templates', data: WA } };
+    if (hit.path === '/inboxes/13/whatsapp-templates') return { json: { status: 'success', message: 'WhatsApp templates', data: { inbox_id: 13, templates: [] } } };
+    return { status: 404, json: { status: 'error', message: 'Not found.', data: {} } };
+  },
+});
+const w0 = wa.text(0);
+check('templates: the route, no query', [wa.hits[0].method, wa.hits[0].path, wa.hits[0].search], ['GET', '/inboxes/12/whatsapp-templates', '']);
+has('numbered: params as a list in order', w0, 'params: a list of 2 in this order [{{1}}, {{2}}]');
+has('...name and language to send', w0, 'template: {name: "follow_up", language: "en"}');
+has('text header with a variable needs header_text', w0, 'header_text: the value of {{1}} in the header');
+has('a URL button needs its suffix by index', w0, 'buttons[0] = the URL suffix');
+check('a button with needs null asks for nothing', w0.includes('buttons[1] ='), false);
+has('named: params as a map', w0, 'params: a map {"first_name": "..."}');
+has('a media header is NOT SENDABLE with the reason', w0, 'promo (en) [MARKETING, numbered] - NOT SENDABLE: This template needs a header file, which the API cannot send.');
+has('a sendable template says so', w0, 'follow_up (en) [UTILITY, numbered] - sendable');
+has('the body is wrapped', w0, 'body: <untrusted_customer_content>Hi {{1}}, order {{2}}.</untrusted_customer_content>');
+has('no templates: says so', wa.text(1), 'has no approved templates');
+has('404: the number cause', wa.text(2), 'Not found. The number does not exist, is not a WhatsApp number');
+check('templates tool is read-only', wa.tools.clokio_list_whatsapp_templates?.annotations?.readOnlyHint, true);
+has('templates description names tickets:read', wa.tools.clokio_list_whatsapp_templates?.description ?? '', 'tickets:read');
 
 // The constants stay distinct: the ticket hint mentions opening the ticket, the new-route hint does not.
 check('two hints', [OLDER_SERVER_HINT.includes('clokio_get_ticket'), NEW_ROUTE_HINT.includes('clokio_get_ticket')], [true, false]);

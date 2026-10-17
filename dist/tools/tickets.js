@@ -583,7 +583,8 @@ export function renderCreatedTicket(res, idempotencyKey, replayed, channel) {
     else if (res?.draft) {
         head =
             `Draft ticket #${id} saved (${msg}). Nothing was sent to the customer: a person opens the ticket in Clokio and clicks "Use this draft" to send it.` +
-                `\nTo discard the draft: clokio_delete_reply_draft id=${id} message_id=${res?.message_id ?? '-'}.`;
+                `\nTo discard the draft while it is pending: clokio_delete_reply_draft id=${id} message_id=${res?.message_id ?? '-'}. ` +
+                'Once the first reply is sent (from Clokio, or clokio_reply_ticket, which then goes to the drafted recipients with the drafted subject), the draft reads "used" and cannot be deleted.';
     }
     else if (res?.reused) {
         head = `Sent on the customer's open ticket #${id} for this number (no new ticket; ${msg}, delivery: ${res?.delivery ?? '-'}).`;
@@ -608,6 +609,53 @@ export function contactConflict(e) {
     if (typeof id !== 'number')
         return e;
     return new ClokioApiError(409, `${e.message} Existing contact_id ${id}: read it with clokio_get_contact id=${id}.`, e.body);
+}
+/**
+ * 0.25.0: GET /inboxes/{id}/whatsapp-templates as text, one block per template
+ * with the slots `template` takes on clokio_create_ticket. Template text is
+ * the organisation's (written in Clokio / Meta), printed as is; it can hold a
+ * customer's words only through what an agent typed, so the body is wrapped
+ * inline like a label name.
+ */
+export function renderWhatsAppTemplates(res, inboxIdArg) {
+    const rows = Array.isArray(res?.templates) ? res.templates : [];
+    const inbox = res?.inbox_id ?? inboxIdArg;
+    if (!rows.length)
+        return `WhatsApp number ${inbox} (inbox_id) has no approved templates.`;
+    const blocks = rows.map((t) => {
+        const vars = Array.isArray(t?.variables) ? t.variables.map(String) : [];
+        const named = t?.format === 'named';
+        const params = !vars.length
+            ? 'params: none'
+            : named
+                ? `params: a map {${vars.map((v) => `"${v}": "..."`).join(', ')}}`
+                : `params: a list of ${vars.length} in this order [${vars.map((v) => `{{${v}}}`).join(', ')}]`;
+        const h = t?.header ?? {};
+        const header = h.kind === 'text'
+            ? h.variable
+                ? `header_text: the value of {{${h.variable}}} in the header ${wrapInline(String(h.text ?? ''))}`
+                : `header: text ${wrapInline(String(h.text ?? ''))} (nothing to send)`
+            : h.kind && h.kind !== 'none'
+                ? `header: ${h.kind} file`
+                : 'header: none';
+        const buttons = Array.isArray(t?.buttons) ? t.buttons : [];
+        const fill = buttons.filter((b) => b?.needs);
+        const buttonLine = !buttons.length
+            ? 'buttons: none'
+            : `buttons: ${buttons
+                .map((b) => `#${b?.index} ${b?.type ?? '-'} ${wrapInline(String(b?.label ?? ''))}${b?.needs ? ` -> buttons[${b.index}] = the ${b.needs === 'url_suffix' ? 'URL suffix' : 'code'}` : ''}`)
+                .join('; ')}${fill.length ? '' : ' (nothing to send)'}`;
+        const state = t?.sendable === false ? `NOT SENDABLE: ${t?.unsendable_reason ?? 'the API cannot send this template.'}` : 'sendable';
+        return [
+            `${t?.name} (${t?.language}) [${t?.category ?? '-'}, ${t?.format ?? '-'}] - ${state}`,
+            `  body: ${wrapInline(String(t?.body ?? ''))}${t?.footer ? ` | footer: ${wrapInline(String(t.footer))}` : ''}`,
+            `  template: {name: "${t?.name}", language: "${t?.language}"} | ${params} | ${header} | ${buttonLine}`,
+        ].join('\n');
+    });
+    return [
+        `Approved WhatsApp templates of number ${inbox} (inbox_id), for clokio_create_ticket channel "whatsapp":`,
+        ...blocks,
+    ].join('\n\n');
 }
 /** The Idempotency-Key shape the server accepts (8-191 of A-Za-z0-9 . _ : -). */
 export const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{8,191}$/;
@@ -711,7 +759,13 @@ export function registerTicketTools(server, config) {
             'Without a key, calling the tool again sends again. To retry SAFELY after a timeout or a lost answer, pass the SAME idempotency_key and the same fields ' +
             'within 24 hours: the first answer is replayed (replayed_note says so) and nothing is sent twice; a different body with that key is a 422. ' +
             'Never reuse a key for a new reply. Refusals come back in the ' +
-            'inbox\'s own words (spam, WhatsApp 24-hour window, ...). When your organisation reviews customer messages first, use clokio_create_reply_draft instead.',
+            'inbox\'s own words (spam, WhatsApp 24-hour window, ...). ' +
+            'WHATSAPP: this tool sends free text, which WhatsApp accepts only within 24 hours of the customer\'s last message; it takes no template. ' +
+            'To reach the customer after that window, send an approved template with clokio_create_ticket (channel "whatsapp", the same number: the customer\'s open ticket is reused); ' +
+            'read the templates and their slots with clokio_list_whatsapp_templates. ' +
+            'An EMAIL DRAFT TICKET (opened by clokio_create_ticket draft: true) and no recipients: the first reply goes to the drafted To/Cc/Bcc with the drafted subject ' +
+            '(a new address still needs tickets.manage), and the draft then reads "used" (it can no longer be deleted). ' +
+            'When your organisation reviews customer messages first, use clokio_create_reply_draft instead.',
         schema: {
             id: ticketId,
             body: z.string().min(1).max(10000),
@@ -745,11 +799,13 @@ export function registerTicketTools(server, config) {
             'EMAIL (channel "email"): inbox_id a connected mailbox the person may send from (clokio_list_inboxes), to (1-20 addresses), optional cc / bcc, subject (max 200, sent as written) ' +
             'and body (Markdown, converted to HTML; at most 20000 characters after conversion). ' +
             'WHATSAPP (channel "whatsapp"): inbox_id a connected number, to ONE number with its country code, and template: an APPROVED template of that number ' +
-            '(its name and language as Clokio shows them under the number\'s WhatsApp templates; no API route lists them yet) ' +
+            '(list them, with the slots each takes and whether the API can send it, with clokio_list_whatsapp_templates inbox_id=<the number>) ' +
             '{name, language, params (a list for {{1}}, {{2}}... or a map by name), header_text?, buttons? (values by button index)}; body, subject, cc and bcc are refused, and an open ticket of the same customer on that number is reused. ' +
             'contact_id (optional) names the customer: to then defaults to its first address or number. assignee_employee_code (optional, default the acting employee): someone else needs the person\'s tickets.manage. ' +
             'Writing to an address or number that no contact the person can see holds (for email, a colleague\'s address is fine) needs the person\'s tickets.manage, drafts included; otherwise a 422 names them. ' +
-            'At most 10 new tickets per 10 minutes per API key (sends and drafts together; 429). ' +
+            'At most 10 new tickets per 10 minutes per API key (sends and drafts together; 429 with retry_after). Only SUCCESSFUL creates count (a refused one uses nothing), ' +
+            'and a replay of a stored answer (same key, same fields) is answered even past the limit. ' +
+            'An email draft ticket: the first reply (here or clokio_reply_ticket without recipients) goes to the drafted recipients with the drafted subject, and the draft then reads "used". ' +
             'Every call sends an Idempotency-Key: a fresh one (returned in the answer), or the idempotency_key you pass. To retry after a timeout, pass the SAME key and the same fields: ' +
             'the first answer is replayed ("already created ... (replayed ...)") and nothing is sent twice. Refusals come back in the inbox\'s own words.',
         schema: {
@@ -851,7 +907,7 @@ export function registerTicketTools(server, config) {
         description: 'PERMANENTLY deletes one of YOUR OWN reply drafts that nobody has used yet (the acting employee\'s, saved by clokio_create_reply_draft ' +
             'or written by the AI for them), with its mentions and files. Needs tickets:write; no extra Clokio permission (tickets.manage is not needed). ' +
             'message_id is the draft\'s message #id: the "REPLY DRAFT (pending)" row of clokio_get_ticket, or the answer of clokio_create_reply_draft. ' +
-            'The server refuses, in its own words: a message that is not a reply draft (422); a draft already used (422, it is the history of the reply that was sent); ' +
+            'The server refuses, in its own words: a message that is not a reply draft (422); a draft already used (422, it is the history of the reply that was sent; this includes a draft ticket\'s first draft once its first reply went out); ' +
             'someone else\'s draft (403). A message not on this ticket, or already deleted (a second delete), is 404 "This draft no longer exists."; ' +
             'a ticket that does not exist or that you cannot open is 404 "Not found." (the answer then names an older server as one possible cause).',
         schema: {
@@ -886,7 +942,7 @@ export function registerTicketTools(server, config) {
             'pass the SAME idempotency_key and the same fields: the first answer is replayed and no second task is made (a different body with that key is a 422). ' +
             'Subtasks, labels, created_by_employee_code and assignees of a client organisation are not accepted here. At most 30 a minute per acting employee. ' +
             'A replay answers "Task #N was already created from this ticket (replayed, no new task)". ' +
-            'A project that is missing or outside the ticket\'s organisation is 404 "That project is not available."; a ticket that does not exist or that you cannot open is 404 "Not found." ' +
+            'A project that is missing, outside the ticket\'s organisation, or one the acting employee cannot see is 404 "That project is not available." (a visible project without create rights is 403); a ticket that does not exist or that you cannot open is 404 "Not found." ' +
             '(the answer then names an older server as one possible cause).',
         schema: {
             id: ticketId,
@@ -1029,6 +1085,16 @@ export function registerTicketTools(server, config) {
             }
             return res?.contact ? `Contact created.\n\n${renderContact(res.contact)}` : res;
         },
+    });
+    registerTool(server, config, {
+        name: 'clokio_list_whatsapp_templates',
+        description: 'The APPROVED templates of one WhatsApp number the acting employee may start a conversation from, as the Tickets screen\'s template picker lists them (needs tickets:read). ' +
+            'inbox_id is the number (clokio_list_inboxes, type whatsapp); another organisation\'s number, one closed to the person, a mailbox or a widget is 404. ' +
+            'Each template prints the slots to fill `template` on clokio_create_ticket: name and language; params (a LIST in the order shown for a numbered template, {{1}} first; ' +
+            'a MAP by the names shown for a named one); header_text when the header has a variable; buttons[index] for a button that needs a URL suffix or a code. ' +
+            'A template marked NOT SENDABLE (for example a media header, whose file the API cannot send) is listed with its reason and cannot be used here.',
+        schema: { inbox_id: z.number().int().positive().describe('The WhatsApp number (clokio_list_inboxes)') },
+        handler: async (args, cfg) => renderWhatsAppTemplates(await withOlderServerHint(() => request(cfg, `/inboxes/${seg(args.inbox_id)}/whatsapp-templates`), 'The number does not exist, is not a WhatsApp number, or is not open to the acting employee.', NEW_ROUTE_HINT), args.inbox_id),
     });
     registerTool(server, config, {
         name: 'clokio_list_inboxes',

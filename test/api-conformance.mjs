@@ -189,6 +189,8 @@ const TOOL_CALLS = [
   { tool: 'clokio_update_contact', method: 'patch', path: '/contacts/{id}', query: [] },
   { tool: 'clokio_create_contact', method: 'post', path: '/contacts', query: [], body: ['name', 'email', 'phone'] },
   { tool: 'clokio_list_inboxes', method: 'get', path: '/inboxes', query: [] },
+  // 0.25.0: a number's approved templates, for clokio_create_ticket.
+  { tool: 'clokio_list_whatsapp_templates', method: 'get', path: '/inboxes/{id}/whatsapp-templates', query: [] },
   { tool: 'clokio_list_ticket_labels', method: 'get', path: '/ticket-labels', query: [] },
   { tool: 'clokio_create_ticket_label', method: 'post', path: '/ticket-labels', query: [], body: ['name', 'color'] },
   { tool: 'clokio_list_saved_replies', method: 'get', path: '/saved-replies', query: ['inbox_id'] },
