@@ -365,7 +365,10 @@ export function registerAttendanceTools(server, config) {
             from: z.string().describe('YYYY-MM-DD, required'),
             to: z.string().describe('YYYY-MM-DD, required, on or after from'),
             employee: employeeCode.optional().describe("An employee_code, e.g. '00080'"),
-            status: z.enum(['PENDING', 'APPROVED', 'REJECTED']).optional(),
+            status: z
+                .enum(['PENDING', 'APPROVED', 'REJECTED', 'REVOKED', 'CANCELLED'])
+                .optional()
+                .describe('REVOKED = approved, then withdrawn by an approver; CANCELLED = withdrawn by the employee before a decision'),
             per_page: z.number().int().min(1).max(100).optional(),
         },
         handler: (args, cfg) => request(cfg, '/leaves', {
@@ -380,8 +383,10 @@ export function registerAttendanceTools(server, config) {
     });
     registerTool(server, config, {
         name: 'clokio_get_leave_balances',
-        description: "One employee's leave balances (quota, used, remaining per leave type). The employee_code is REQUIRED - " +
-            'there is no org-wide form of this call.',
+        description: 'Clokio does NOT track leave balances today: this always returns an empty `balances` list ' +
+            '(no quotas exist, and approving or revoking a leave changes no balance). Do not read the empty list as ' +
+            '"zero days left". To count days taken, use clokio_list_leaves with status APPROVED and sum number_of_days. ' +
+            'The employee_code is REQUIRED; there is no org-wide form of this call.',
         schema: {
             employee: employeeCode.describe("The employee_code, e.g. '00080'"),
         },

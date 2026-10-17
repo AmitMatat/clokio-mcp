@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+Needs the Clokio backend released on 2026-10-17 (main c0da1a3fc) or later.
+
+- **`clokio_get_leave_balances`** - the description now says plainly that Clokio does not track leave balances: the answer is always an empty list, not "zero days left". Count taken days with `clokio_list_leaves` (status APPROVED, sum `number_of_days`).
+- **`clokio_list_leaves`** - `status` also accepts `REVOKED` (approved, then withdrawn by an approver) and `CANCELLED` (withdrawn by the employee before a decision).
+
 ## 0.22.0 (unreleased)
 
 From the QA review of 0.21.0 and two field reports. Needs the Clokio backend of 2026-10-16 or later (the new routes answer 404 on an older server), so publish only after that backend is deployed. After updating, start a NEW session and check that `clokio_whoami` reports `mcp_version` 0.22.0: a running session keeps the build it started with.
