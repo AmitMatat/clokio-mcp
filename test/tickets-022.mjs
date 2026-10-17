@@ -96,7 +96,7 @@ has('files print their id, size and the tool', withFiles, '[files: #771 <untrust
 has('an older server row names no id', renderMessage(msg({ text: 'x', attachments: [{ name: 'a.pdf', size: 1, mime: 'application/pdf' }] })), '(no id: server older than 2026-10-16)');
 
 const draft = renderMessage({ ...msg({ kind: 'note', direction: 'outbound', internal: true, author: { type: 'employee', name: 'Amit', employee_code: '00055' }, text: 'Your order ships today.' }), draft: { state: 'pending', used_at: null } });
-has('a draft is labelled', draft, 'REPLY DRAFT (pending) - not sent; a person reviews and sends it - by <untrusted_customer_content>Amit</untrusted_customer_content> (00055):');
+has('a draft is labelled, with its message id and an unwrapped colleague (0.23.0 #2b, #3)', draft, 'message #1 REPLY DRAFT (pending) - not sent; a person reviews and sends it - by Amit (00055):');
 has('a colleague\'s draft text is printed as is', draft, '\nYour order ships today.');
 check('a draft is never printed as INTERNAL NOTE', draft.includes('INTERNAL NOTE'), false);
 
@@ -123,7 +123,7 @@ check('the download calls the ticket route', run2.hits.slice(0, 2).map((h) => [h
 check('an image comes back as an image', run2.content(0).some((c) => c.type === 'image'), true);
 check('save_path writes the bytes', readFileSync(join(dir, 'saved.bin'), 'utf8'), '%PDF-1.4 not really');
 check('the customer file name never reaches the output', run2.text(1).includes('untrusted') || run2.text(1).includes('../'), false);
-check('the draft posts html', run2.hits[2].body, { html: '<p>Your order <strong>ships</strong> today.</p>' });
+check('the draft reads the ticket, then posts html (0.23.0 #2c)', [run2.hits[2].method, run2.hits[2].path, run2.hits[3].method, run2.hits[3].body], ['GET', '/tickets/412', 'POST', { html: '<p>Your order <strong>ships</strong> today.</p>' }]);
 has('the draft answer says a person must use it', run2.text(2), 'click "Use this draft"');
 const tools2 = run2.tools;
 check('download is read-only, draft is mutating', [tools2.clokio_download_ticket_attachment?.annotations?.readOnlyHint, tools2.clokio_create_reply_draft?.annotations?.readOnlyHint], [true, false]);

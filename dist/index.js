@@ -66,7 +66,7 @@ async function main() {
     if (toolsets.has('tasks'))
         registerTaskTools(server, config);
     if (toolsets.has('employees'))
-        registerEmployeeTools(server, config);
+        registerEmployeeTools(server, config, { tickets: toolsets.has('tickets') });
     if (toolsets.has('attendance'))
         registerAttendanceTools(server, config);
     if (toolsets.has('docs'))

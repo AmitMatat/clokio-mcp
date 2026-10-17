@@ -5,7 +5,7 @@ import { markdownToHtml } from '../markdown.js';
 import { ClokioConfig, request, seg } from '../client.js';
 import { registerTool } from './helpers.js';
 import { downloadTicketAttachment } from '../attachments.js';
-import { wrapInline, wrapUntrusted } from '../untrusted.js';
+import { defuse, wrapInline, wrapUntrusted } from '../untrusted.js';
 
 /**
  * Tickets (the support inbox) over /api/v1/tickets, /contacts, /inboxes,
@@ -52,11 +52,17 @@ export interface TicketMessage {
 
 export { wrapUntrusted };
 
-/** The author of a message: the name is untrusted (a contact picks it; a bot or app sender is outside), the code is ours. */
+/**
+ * The author of a message. A colleague (an identified employee, #3 in 0.23.0)
+ * is printed as is: an employee name is written by the organisation, the same
+ * trust as the assignee line. Every other author (a contact, a bot, the
+ * WhatsApp Business app, an unknown sender) is wrapped as untrusted.
+ */
 function who(m: TicketMessage): string {
   const a = m.author;
   if (!a) return 'system';
   if (a.name === null && a.employee_code) return `employee ${a.employee_code}`;
+  if (byColleague(m) && a.name !== null) return `${defuse(a.name.replace(/\s+/g, ' ').trim())} (${a.employee_code})`;
   const name = wrapInline(a.name ?? (a.type === 'employee' ? 'the WhatsApp Business app' : 'unknown'));
   return a.employee_code ? `${name} (${a.employee_code})` : name;
 }
@@ -222,8 +228,10 @@ function filesLine(m: TicketMessage): string {
 
 export function renderMessage(m: TicketMessage, opts: { maxChars?: number } = {}): string {
   const files = filesLine(m);
+  // #2b (0.23.0): every message names its id, so a draft or a message can be referred to.
+  const at = `[${m.created_at}]${typeof m.id === 'number' ? ` message #${m.id}` : ''}`;
   if (m.kind === 'event') {
-    return `[${m.created_at}] ${m.internal ? 'INTERNAL ' : ''}EVENT: ${wrapInline(bodyOf(m))}`;
+    return `${at} ${m.internal ? 'INTERNAL ' : ''}EVENT: ${wrapInline(bodyOf(m))}`;
   }
 
   const body = bodyOf(m, opts.maxChars);
@@ -235,22 +243,22 @@ export function renderMessage(m: TicketMessage, opts: { maxChars?: number } = {}
 
     if (m.draft) {
       // #8: a reply draft is the team's proposed answer, not yet sent.
-      return `[${m.created_at}] REPLY DRAFT (${m.draft.state}) - not sent; a person reviews and sends it - by ${who(m)}:\n${text}${files}`;
+      return `${at} REPLY DRAFT (${m.draft.state}) - not sent; a person reviews and sends it - by ${who(m)}:\n${text}${files}`;
     }
-    return `[${m.created_at}] INTERNAL NOTE - never send to the customer - by ${who(m)}:\n${text}${files}`;
+    return `${at} INTERNAL NOTE - never send to the customer - by ${who(m)}:\n${text}${files}`;
   }
 
   if (m.forward) {
-    return `[${m.created_at}] INTERNAL FORWARD - a side thread with someone else, not the customer - ${who(m)}:\n${wrapUntrusted(body)}${files}`;
+    return `${at} INTERNAL FORWARD - a side thread with someone else, not the customer - ${who(m)}:\n${wrapUntrusted(body)}${files}`;
   }
 
-  if (m.direction === 'inbound') return `[${m.created_at}] CUSTOMER ${who(m)} wrote:\n${wrapUntrusted(body)}${files}`;
+  if (m.direction === 'inbound') return `${at} CUSTOMER ${who(m)} wrote:\n${wrapUntrusted(body)}${files}`;
 
   // An outbound reply by an identified colleague is our own words; one sent from the
   // WhatsApp Business app or by a bot has no colleague behind it, so it is wrapped.
   const text = byColleague(m) ? body : wrapUntrusted(body);
 
-  return `[${m.created_at}] REPLY to the customer by ${who(m)}${m.delivery ? ` (delivery: ${m.delivery})` : ''}:\n${text}${files}`;
+  return `${at} REPLY to the customer by ${who(m)}${m.delivery ? ` (delivery: ${m.delivery})` : ''}:\n${text}${files}`;
 }
 
 function contactText(contact: any): string {
@@ -407,6 +415,18 @@ export function renderSavedReplies(rows: any[], opts: { format?: 'text' | 'html'
     .join('\n');
 }
 
+/**
+ * #2c: the line clokio_create_reply_draft adds when the ticket is resolved or
+ * spam, else ''. The draft never reopens the ticket by itself.
+ */
+export function draftStateWarning(state: string | null | undefined): string {
+  if (state !== 'resolved' && state !== 'spam') return '';
+  return (
+    `\nWARNING: this ticket is ${state.toUpperCase()}. The draft will not appear in the open queue, so nobody may see it. ` +
+    'The ticket was NOT reopened. If a person should pick the draft up, reopen it with clokio_update_ticket state=open.'
+  );
+}
+
 export function registerTicketTools(server: McpServer, config: ClokioConfig): void {
   registerTool(server, config, {
     name: 'clokio_list_tickets',
@@ -550,17 +570,29 @@ export function registerTicketTools(server: McpServer, config: ClokioConfig): vo
     description:
       'Saves a DRAFT reply on the ticket for a person to review, edit and send from Clokio. Nothing reaches the customer. Needs tickets:write. ' +
       'body is Markdown (converted to HTML; chat and WhatsApp tickets keep its plain text). The draft is the acting employee\'s; ' +
-      'in the ticket it reads "Reply draft" with a "Use this draft" button.',
+      'in the ticket it reads "Reply draft" with a "Use this draft" button. ' +
+      'On a RESOLVED or SPAM ticket the draft is saved but the ticket stays where it is (out of the open queue): the answer then carries a warning, ' +
+      'and the ticket is never reopened automatically (clokio_update_ticket state=open does that).',
     schema: { id: ticketId, body: z.string().min(1).max(10000) },
     handler: async (args, cfg) => {
+      // #2c (0.23.0, owner decision D2): read the state first. A draft is a note and
+      // moves nothing, so on a resolved or spam ticket it sits where nobody looks.
+      // Warn, never reopen or refuse. A failed read only loses the warning.
+      let state: string | null = null;
+      try {
+        const t = await request<any>(cfg, `/tickets/${seg(args.id)}`);
+        state = (t?.ticket ?? t)?.state ?? null;
+      } catch {
+        state = null;
+      }
       const res = await request<any>(cfg, `/tickets/${seg(args.id)}/drafts`, {
         method: 'POST',
         body: { html: markdownToHtml(args.body) },
       });
       return (
-        `Draft saved on ticket #${res?.ticket_id ?? args.id} (message ${res?.message_id ?? '-'}). Nothing was sent: ` +
+        `Draft saved on ticket #${res?.ticket_id ?? args.id} (message #${res?.message_id ?? '-'}). Nothing was sent: ` +
         `a person must open the ticket and click "Use this draft", then send it. ${res?.ticket_url ?? ''}`
-      ).trim();
+      ).trim() + draftStateWarning(state);
     },
   });
 

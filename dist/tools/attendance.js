@@ -37,6 +37,42 @@ export function renderTimeEntries(res) {
     ].join('\n');
 }
 /**
+ * L2 (0.23.0): the leave and time-entry tools take `employee_code`, like every
+ * other tool, and keep `employee` (their old name) as an alias. Both with
+ * different values is refused. The API's query parameter stays `employee`.
+ */
+export function employeeFilter(args) {
+    const { employee_code: code, employee: alias } = args;
+    if (code !== undefined && alias !== undefined && code !== alias) {
+        throw new Error(`employee_code "${code}" and employee "${alias}" disagree. employee is an old name for employee_code: send employee_code only.`);
+    }
+    return code ?? alias;
+}
+/** The server's limit on GET /leaves and GET /time-entries: `to - from` at most this many days. */
+export const MAX_RANGE_DAYS = 92;
+/**
+ * L3 (0.23.0): the 92-day rule checked before the request, with the server's
+ * own arithmetic (whole UTC days from `from` to `to`) and its sentence. Values
+ * that are not YYYY-MM-DD are left for the server to refuse. Never splits.
+ */
+export function assertRangeWithinLimit(from, to) {
+    const day = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(v) ? Date.parse(`${v}T00:00:00Z`) : NaN);
+    const a = day(from);
+    const b = day(to);
+    if (!Number.isFinite(a) || !Number.isFinite(b))
+        return;
+    if ((b - a) / 86_400_000 > MAX_RANGE_DAYS) {
+        throw new Error(`Date range cannot exceed ${MAX_RANGE_DAYS} days. from ${from} to ${to} is ${Math.round((b - a) / 86_400_000)} days: ` +
+            'split it into windows of at most 92 days (to - from <= 92) and call once per window.');
+    }
+}
+const employeeCodeArg = employeeCode
+    .optional()
+    .describe("An employee_code, e.g. '00080'");
+const employeeAliasArg = employeeCode
+    .optional()
+    .describe('Old name of employee_code, still accepted. Send employee_code instead');
+/**
  * clokio_stop_timer's answer: always the API's object (like start_timer,
  * log_time and get_active_timer), plus a `warning` field when the stopped
  * entry lasted under a minute. Never a string, so a caller reads one shape.
@@ -206,25 +242,31 @@ export function registerAttendanceTools(server, config) {
     });
     registerTool(server, config, {
         name: 'clokio_list_time_entries',
-        description: 'Time-tracking entries in a date range. from and to are both REQUIRED (YYYY-MM-DD, to >= from). ' +
-            'Optionally narrow to one person or one project. ' +
+        description: 'Time-tracking entries in a date range. from and to are both REQUIRED (YYYY-MM-DD, to >= from), ' +
+            'and to - from may be at most 92 days (93 calendar dates); a longer range is refused before any request, so split it yourself. ' +
+            'Optionally narrow to one person (employee_code) or one project (project_id). ' +
             'Printed one line per entry with its id (for clokio_update_time_entry / clokio_delete_time_entry) and RUNNING for a timer still running; times in UTC.',
         schema: {
             from: z.string().describe('YYYY-MM-DD, required'),
-            to: z.string().describe('YYYY-MM-DD, required, on or after from'),
-            employee: employeeCode.optional().describe("An employee_code, e.g. '00080'"),
+            to: z.string().describe('YYYY-MM-DD, required, on or after from, at most 92 days after it'),
+            employee_code: employeeCodeArg,
+            employee: employeeAliasArg,
             project_id: z.number().int().optional(),
             per_page: z.number().int().min(1).max(100).optional(),
         },
-        handler: async (args, cfg) => renderTimeEntries(await request(cfg, '/time-entries', {
-            query: {
-                from: args.from,
-                to: args.to,
-                employee: args.employee,
-                project_id: args.project_id,
-                per_page: args.per_page,
-            },
-        })),
+        handler: async (args, cfg) => {
+            const employee = employeeFilter(args);
+            assertRangeWithinLimit(args.from, args.to);
+            return renderTimeEntries(await request(cfg, '/time-entries', {
+                query: {
+                    from: args.from,
+                    to: args.to,
+                    employee,
+                    project_id: args.project_id,
+                    per_page: args.per_page,
+                },
+            }));
+        },
     });
     // Logging time (backend task #5775). The time is ALWAYS the key's acting
     // person's: none of these tools takes an employee, and the server refuses
@@ -359,37 +401,53 @@ export function registerAttendanceTools(server, config) {
     });
     registerTool(server, config, {
         name: 'clokio_list_leaves',
-        description: 'Leave requests in a date range. from and to are both REQUIRED (YYYY-MM-DD, to >= from). ' +
-            'Optionally narrow to one person by employee_code, or to one approval state.',
+        description: 'Leave requests in a date range. from and to are both REQUIRED (YYYY-MM-DD, to >= from), ' +
+            'and to - from may be at most 92 days (93 calendar dates); a longer range is refused before any request, so split it yourself ' +
+            '(a leave that crosses two windows is returned in both, and rows carry no id to tell them apart). ' +
+            'Optionally narrow to one person by employee_code, or to one approval state. ' +
+            'number_of_days counts the leave\'s DATES: a half-day leave type still counts 1 per date until the server reports `days`; when a row has `days`, use it instead.',
         schema: {
             from: z.string().describe('YYYY-MM-DD, required'),
-            to: z.string().describe('YYYY-MM-DD, required, on or after from'),
-            employee: employeeCode.optional().describe("An employee_code, e.g. '00080'"),
+            to: z.string().describe('YYYY-MM-DD, required, on or after from, at most 92 days after it'),
+            employee_code: employeeCodeArg,
+            employee: employeeAliasArg,
             status: z
                 .enum(['PENDING', 'APPROVED', 'REJECTED', 'REVOKED', 'CANCELLED'])
                 .optional()
                 .describe('REVOKED = approved, then withdrawn by an approver; CANCELLED = withdrawn by the employee before a decision'),
             per_page: z.number().int().min(1).max(100).optional(),
         },
-        handler: (args, cfg) => request(cfg, '/leaves', {
-            query: {
-                from: args.from,
-                to: args.to,
-                employee: args.employee,
-                status: args.status,
-                per_page: args.per_page,
-            },
-        }),
+        handler: async (args, cfg) => {
+            const employee = employeeFilter(args);
+            assertRangeWithinLimit(args.from, args.to);
+            return request(cfg, '/leaves', {
+                query: {
+                    from: args.from,
+                    to: args.to,
+                    employee,
+                    status: args.status,
+                    per_page: args.per_page,
+                },
+            });
+        },
     });
     registerTool(server, config, {
         name: 'clokio_get_leave_balances',
         description: 'Clokio does NOT track leave balances today: this always returns an empty `balances` list ' +
             '(no quotas exist, and approving or revoking a leave changes no balance). Do not read the empty list as ' +
-            '"zero days left". To count days taken, use clokio_list_leaves with status APPROVED and sum number_of_days. ' +
-            'The employee_code is REQUIRED; there is no org-wide form of this call.',
+            '"zero days left". To count days taken, use clokio_list_leaves with status APPROVED: prefer each row\'s `days` when present; ' +
+            'without it, number_of_days counts DATES, so a half-day leave is counted as a whole day until the server reports `days` ' +
+            '(say so rather than reporting the sum as exact). clokio_list_leaves covers at most 92 days per call. ' +
+            'employee_code is REQUIRED; there is no org-wide form of this call.',
         schema: {
-            employee: employeeCode.describe("The employee_code, e.g. '00080'"),
+            employee_code: employeeCodeArg.describe("The employee_code, e.g. '00080'. Required"),
+            employee: employeeAliasArg,
         },
-        handler: (args, cfg) => request(cfg, '/leaves/balances', { query: { employee: args.employee } }),
+        handler: async (args, cfg) => {
+            const employee = employeeFilter(args);
+            if (employee === undefined)
+                throw new Error('employee_code is required: whose leave? (no org-wide form of this call)');
+            return request(cfg, '/leaves/balances', { query: { employee } });
+        },
     });
 }

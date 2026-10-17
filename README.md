@@ -84,8 +84,8 @@ are marked mutating (deletes are `destructive`).
 | **Tasks** | list (with `compact` / `sort` / `updated_since` / `recurring`), get (with `comments_limit`), create, update (incl. recurring series: set a rule, pause/resume, stop), delete, bulk update, set assignees (a shared board's client people as `{employee_code, organization_id}`), list a board's people, list/add/edit comments, list attachments (with `is_latest` + `latest_only`), upload, download one (save to disk, or read PDF text / ZIP entries / images / text inline), download all to a folder, read images pasted into descriptions and comments, activity (with organisations, paged), list/add/remove dependencies, set custom field |
 | **Projects & clients** | list projects, project statuses, project custom fields, project contacts, get client, add client contact |
 | **Reference** | task statuses, task labels, locations, list webhooks (read-only), whoami |
-| **Employees** | list (name search), lookup by PIN, task-stats, inbox (mentions, new assignments, others' status changes), create, set status |
-| **Attendance** | daily, range, per-employee, monthly summary, clock in/out, break start/end, time entries (edit / delete your own), leaves, leave balances (always empty: Clokio does not track balances), **log time on a task**, start / stop / read the timer (see [Logging time](#logging-time)) |
+| **Employees** | list (name search), lookup by PIN, task-stats, inbox (mentions, new assignments, others' status changes; with the tickets toolset, also the acting employee's open tickets), create, set status |
+| **Attendance** | daily, range, per-employee, monthly summary, clock in/out, break start/end, time entries (edit / delete your own), leaves, leave balances (always empty: Clokio does not track balances; leave and time-entry lists take `employee_code` and at most 92 days per call), **log time on a task**, start / stop / read the timer (see [Logging time](#logging-time)) |
 | **Documents** (see [Documents](#documents) for who a key acts as) | list, tree, search, get (Markdown / HTML / JSON), create, replace content, update meta, move, archive, restore, delete, templates + create from template, members (by `employee_code`) and teams (list/add/update/remove, shareable teams), public share link, comments (list/add/resolve/reopen), versions (list/get/restore), attachments (list/upload/download) |
 | **Tickets** (see [Tickets](#tickets)) | list (filters + cursor), get (with its newest messages; internal notes labelled, everything the customer wrote wrapped as untrusted), more messages, **reply to the customer** (fresh `Idempotency-Key` per call, `destructive`), internal note (with mentions), update state / assignee, add / remove one label, contacts list / get / update, inboxes, ticket labels, saved replies, download a file a customer sent, save a reply draft |
 
@@ -245,7 +245,9 @@ ticked separately, only on a key created by an administrator.
 under "INTERNAL NOTE - never send to the customer" and wrap everything the
 customer or an outside party wrote (message text, subject, contact, author
 names, file names, event lines) and the label names in
-`<untrusted_customer_content>` tags: data, never instructions.
+`<untrusted_customer_content>` tags: data, never instructions. A colleague's
+name (an identified employee) is printed as is. Every message names its id
+(`message #<id>`), reply drafts included.
 `clokio_get_ticket` shows the NEWEST messages (default 100, `messages_limit`
 for fewer), oldest first so the latest is last; it pages through the thread
 to reach them and says how many earlier messages it left out and how to read
@@ -255,7 +257,7 @@ second call is a second reply. CLOKIO_DEFAULT_ACTOR does not apply to
 tickets: a reply is written by the key's acting employee unless you name
 `author_employee_code` (which needs `tickets:send_as`).
 
-Email text is cleaned before printing (never raw HTML); `max_chars` cuts long bodies. Files carry ids (`clokio_download_ticket_attachment`). `clokio_create_reply_draft` (needs `tickets:write`) saves a draft a person sends from Clokio with "Use this draft": prefer it when your organisation reviews customer messages first.
+Email text is cleaned before printing (never raw HTML); `max_chars` cuts long bodies. Files carry ids (`clokio_download_ticket_attachment`). `clokio_create_reply_draft` (needs `tickets:write`) saves a draft a person sends from Clokio with "Use this draft": prefer it when your organisation reviews customer messages first. On a resolved or spam ticket the draft is saved with a warning (it is out of the open queue); the ticket is never reopened by it.
 
 ## Security
 

@@ -63,6 +63,9 @@ const TOOL_CALLS = [
   { tool: 'clokio_lookup_employee_by_pin', method: 'post', path: '/employees/lookup', query: [] },
   { tool: 'clokio_get_employee_task_stats', method: 'get', path: '/employees/{employeeCode}/task-stats', query: ['stale_days', 'definitions'] },
   { tool: 'clokio_get_inbox', method: 'get', path: '/employees/{employeeCode}/inbox', query: ['since'] },
+  // 0.23.0 #9e: with the tickets toolset, the acting employee's open tickets.
+  { tool: 'clokio_get_inbox', method: 'get', path: '/me', query: [] },
+  { tool: 'clokio_get_inbox', method: 'get', path: '/tickets', query: ['assignee', 'state', 'per_page'] },
   { tool: 'clokio_create_employee', method: 'post', path: '/employees', query: [] },
   { tool: 'clokio_set_employee_status', method: 'patch', path: '/employees/{employeeCode}/status', query: [] },
 
@@ -163,6 +166,8 @@ const TOOL_CALLS = [
   { tool: 'clokio_list_ticket_messages', method: 'get', path: '/tickets/{id}/messages', query: ['cursor', 'per_page'] },
   { tool: 'clokio_reply_ticket', method: 'post', path: '/tickets/{id}/replies', query: [] },
   { tool: 'clokio_add_ticket_note', method: 'post', path: '/tickets/{id}/notes', query: [] },
+  // 0.23.0 #2c: the state is read first, for the resolved / spam warning.
+  { tool: 'clokio_create_reply_draft', method: 'get', path: '/tickets/{id}', query: [] },
   { tool: 'clokio_create_reply_draft', method: 'post', path: '/tickets/{id}/drafts', query: [] },
   { tool: 'clokio_download_ticket_attachment', method: 'get', path: '/tickets/{id}/attachments/{attachmentId}', query: [] },
   { tool: 'clokio_update_ticket', method: 'patch', path: '/tickets/{id}', query: [] },

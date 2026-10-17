@@ -77,7 +77,7 @@ async function main(): Promise<void> {
   registerProjectTools(server, config);
 
   if (toolsets.has('tasks')) registerTaskTools(server, config);
-  if (toolsets.has('employees')) registerEmployeeTools(server, config);
+  if (toolsets.has('employees')) registerEmployeeTools(server, config, { tickets: toolsets.has('tickets') });
   if (toolsets.has('attendance')) registerAttendanceTools(server, config);
   if (toolsets.has('docs')) registerDocTools(server, config);
   if (toolsets.has('tickets')) registerTicketTools(server, config);
