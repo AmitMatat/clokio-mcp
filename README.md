@@ -65,7 +65,7 @@ acting. An explicit code on a tool call always takes precedence.
 
 Optional: set `CLOKIO_TOOLSETS` to register only the tool groups you need, e.g.
 `CLOKIO_TOOLSETS=tasks`. This cuts the per-session tool-list cost - a
-task-focused session drops from 115 tools to 33. Optional groups are `tasks`,
+task-focused session drops from 116 tools to 33. Optional groups are `tasks`,
 `employees`, `attendance` (which includes leave, time entries and logging time), `docs` and
 `tickets`;
 combine them with commas. If your key cannot open documents (no acts-as
@@ -76,7 +76,7 @@ through it.
 
 ## Tools
 
-115 tools across seven areas. Read-only tools carry the MCP `readOnlyHint`; writes
+116 tools across seven areas. Read-only tools carry the MCP `readOnlyHint`; writes
 are marked mutating (deletes are `destructive`).
 
 | Area | Tools |
@@ -85,7 +85,7 @@ are marked mutating (deletes are `destructive`).
 | **Projects & clients** | list projects, project statuses, project custom fields, project contacts, get client, add client contact |
 | **Reference** | task statuses, task labels, locations, list webhooks (read-only), whoami |
 | **Employees** | list (name search), lookup by PIN, task-stats, inbox (mentions, new assignments, others' status changes; with the tickets toolset, also the acting employee's open tickets), create, set status |
-| **Attendance** | daily, range, per-employee, monthly summary, clock in/out, break start/end, time entries (local times in the person's zone; edit / delete your own), leaves (with `days`, half days counted 0.5), days of leave taken per type and year (Clokio tracks no quota or remaining balance; leave and time-entry lists take `employee_code` and at most 92 days per call), **log time on a task**, start / stop / read the timer (see [Logging time](#logging-time)) |
+| **Attendance** | daily, range, per-employee, monthly summary, clock in/out, break start/end, time entries (local times in the person's zone; edit / delete your own), leaves (with `days`, half days counted 0.5), days of leave taken per type and year (`clokio_get_leave_days_taken`; the old name `clokio_get_leave_balances` still works; Clokio tracks no quota or remaining balance; leave and time-entry lists take `employee_code` and at most 92 days per call), **log time on a task**, start / stop / read the timer (see [Logging time](#logging-time)) |
 | **Documents** (see [Documents](#documents) for who a key acts as) | list, tree, search, get (Markdown / HTML / JSON), create, replace content, update meta, move, archive, restore, delete, templates + create from template, members (by `employee_code`) and teams (list/add/update/remove, shareable teams), public share link, comments (list/add/resolve/reopen), versions (list/get/restore), attachments (list/upload/download) |
 | **Tickets** (see [Tickets](#tickets)) | list (filters + cursor), get (with its newest messages; internal notes labelled, everything the customer wrote wrapped as untrusted), more messages, **reply to the customer** (fresh `Idempotency-Key` per call, `destructive`), internal note (with mentions), update state / assignee, add / remove one label, contacts list / get / update, inboxes, ticket labels, saved replies, download a file a customer sent, save / delete your own reply draft, list the tasks opened from a ticket, **open a task from a ticket** (with its files; `Idempotency-Key` per call), **reports** (overview, agents, satisfaction + its ratings, workload) |
 

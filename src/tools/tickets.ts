@@ -543,10 +543,12 @@ export const OLDER_SERVER_HINT =
   'If the ticket opens with clokio_get_ticket, this Clokio server predates task #5808 and does not have this route yet.';
 
 /**
- * 0.23.0 review: run a call to one of the three routes added with task #5808
- * (draft delete, ticket tasks list / create). An older server answers 404 on
- * every ticket, which reads like "no such ticket"; the 404 keeps the server's
- * message and gains the hint. Every other error passes through unchanged.
+ * 0.23.0 review: run a call to a route added with task #5808. An older server
+ * answers 404 on every ticket, which reads like "no such ticket"; the 404
+ * keeps the server's message and gains the hint. Every other error passes
+ * through unchanged. Since 0.25.0 (N1) only clokio_list_ticket_tasks uses it,
+ * where a 404 is either the ticket or the route; the two writes use
+ * with404Cause, which finds the real cause.
  */
 export async function withOlderServerHint<T>(call: () => Promise<T>): Promise<T> {
   try {
@@ -554,6 +556,112 @@ export async function withOlderServerHint<T>(call: () => Promise<T>): Promise<T>
   } catch (e) {
     if (e instanceof ClokioApiError && e.status === 404) {
       throw new ClokioApiError(404, `${e.message} ${OLDER_SERVER_HINT}`, e.body);
+    }
+    throw e;
+  }
+}
+
+/**
+ * N1 (0.25.0): the ticket API answers EVERY 404 with the same "Not found."
+ * (Handler::TICKET_API_PATHS: a missing project, a missing draft, an invisible
+ * ticket and a route an older server lacks all read alike). The hint above
+ * blamed an old server for all of them. These follow-up reads find the real
+ * cause; a 404 with any other message is the server's own words and passes
+ * through unchanged.
+ */
+export const PLAIN_NOT_FOUND = 'Not found.';
+
+type Probe = 'ok' | 'not_found' | 'unknown';
+
+async function probe(cfg: ClokioConfig, path: string, query?: Record<string, string | number | undefined>): Promise<{ state: Probe; data?: any; why?: string }> {
+  try {
+    return { state: 'ok', data: await request<any>(cfg, path, query ? { query } : {}) };
+  } catch (e) {
+    if (e instanceof ClokioApiError && e.status === 404) return { state: 'not_found' };
+    return { state: 'unknown', why: e instanceof ClokioApiError && e.status > 0 ? `HTTP ${e.status}` : 'the request failed' };
+  }
+}
+
+function notFound(text: string, body?: unknown): ClokioApiError {
+  return new ClokioApiError(404, `${PLAIN_NOT_FOUND} ${text}`, body);
+}
+
+const ticketGone = (id: number) =>
+  `Ticket #${id} does not exist, or the acting employee cannot open it (an invisible, trashed or other organisation's ticket reads the same).`;
+
+/** The cause of a plain 404 from POST /tickets/{id}/tasks. */
+export async function explainCreateTaskNotFound(cfg: ClokioConfig, ticketId: number, projectId: number): Promise<string> {
+  const projectGone = `Project #${projectId} does not exist or is not available in the ticket's organisation (the server answers a missing project with the same 404). Check project_id with clokio_list_projects.`;
+  // The list route ships with the create route: if it answers, the route exists and the ticket opens, so the 404 is the project.
+  const list = await probe(cfg, `/tickets/${seg(ticketId)}/tasks`);
+  if (list.state === 'ok') return projectGone;
+  const ticket = await probe(cfg, `/tickets/${seg(ticketId)}`);
+  if (ticket.state === 'not_found') return ticketGone(ticketId);
+  if (ticket.state === 'ok' && list.state === 'not_found') {
+    return `Ticket #${ticketId} opens, but this Clokio server has no tasks route on it: it predates task #5808.`;
+  }
+  if (ticket.state === 'ok') {
+    const project = await probe(cfg, `/projects/${seg(projectId)}/statuses`);
+    if (project.state === 'not_found') return projectGone;
+    if (project.state === 'ok') {
+      return `Ticket #${ticketId} and project #${projectId} both exist, so this Clokio server most likely predates task #5808 and does not have this route yet.`;
+    }
+  }
+  const why = ticket.state === 'unknown' ? ticket.why : list.why;
+  return (
+    `The cause could not be narrowed (the follow-up read failed: ${why}). It is one of: ticket #${ticketId} is missing or not visible to the acting employee; ` +
+    `project #${projectId} is missing or not in the ticket's organisation; or the server is older. ${OLDER_SERVER_HINT}`
+  );
+}
+
+/** The cause of a plain 404 from DELETE /tickets/{id}/drafts/{messageId}. */
+export async function explainDeleteDraftNotFound(cfg: ClokioConfig, ticketId: number, messageId: number): Promise<string> {
+  const ticket = await probe(cfg, `/tickets/${seg(ticketId)}`);
+  if (ticket.state === 'not_found') return ticketGone(ticketId);
+  let why = ticket.why;
+  if (ticket.state === 'ok') {
+    let cursor: string | null = null;
+    let complete = false;
+    let found: TicketMessage | undefined;
+    for (let pages = 0; pages < GET_TICKET_MAX_PAGES; pages++) {
+      const page = await probe(cfg, `/tickets/${seg(ticketId)}/messages`, { per_page: 100, cursor: cursor ?? undefined });
+      if (page.state !== 'ok') {
+        why = page.why ?? 'HTTP 404';
+        break;
+      }
+      const { messages, next } = messagesPage(page.data);
+      found = messages.find((m) => Number(m?.id) === messageId);
+      if (found) break;
+      cursor = next;
+      if (!cursor) {
+        complete = true;
+        break;
+      }
+    }
+    if (found) {
+      // The #5808 server deletes, or refuses with 422 / 403, a message it can see on a ticket that opens; only a server without the route 404s it.
+      return `Message #${messageId} is on ticket #${ticketId}, so the 404 is the route: this Clokio server predates task #5808 and cannot delete drafts yet.`;
+    }
+    if (complete) {
+      return `Ticket #${ticketId} has no message #${messageId}: it was already deleted, or it belongs to another ticket. Read the current message ids with clokio_get_ticket.`;
+    }
+    if (!why) {
+      return `Message #${messageId} was not found in the first ${GET_TICKET_MAX_PAGES * 100} messages of ticket #${ticketId}: most likely it was already deleted, or it belongs to another ticket.`;
+    }
+  }
+  return (
+    `The cause could not be narrowed (the follow-up read failed: ${why}). It is one of: ticket #${ticketId} is missing or not visible to the acting employee; ` +
+    `message #${messageId} is not on it (already deleted, or on another ticket); or the server is older. ${OLDER_SERVER_HINT}`
+  );
+}
+
+/** Run a #5808 write; a plain "Not found." gains the cause `explain` finds. Every other error passes through unchanged. */
+export async function with404Cause<T>(call: () => Promise<T>, explain: () => Promise<string>): Promise<T> {
+  try {
+    return await call();
+  } catch (e) {
+    if (e instanceof ClokioApiError && e.status === 404 && e.message.trim() === PLAIN_NOT_FOUND) {
+      throw notFound(await explain(), e.body);
     }
     throw e;
   }
@@ -746,14 +854,16 @@ export function registerTicketTools(server: McpServer, config: ClokioConfig): vo
       'message_id is the draft\'s message #id: the "REPLY DRAFT (pending)" row of clokio_get_ticket, or the answer of clokio_create_reply_draft. ' +
       'The server refuses, in its own words: a ticket you cannot open, or a message not on THIS ticket (404 Not found.); ' +
       'a message that is not a reply draft (422); a draft already used (422, it is the history of the reply that was sent); ' +
-      'someone else\'s draft (403). A second delete is 404.',
+      'someone else\'s draft (403). A second delete is 404. The server words every 404 the same ("Not found."), so on a 404 the tool reads the ticket ' +
+      'and its messages to name the cause: no such ticket, no such message (already deleted), or a server too old for this route.',
     schema: {
       id: ticketId,
       message_id: z.number().int().positive().describe('The draft\'s message id (message #id in clokio_get_ticket)'),
     },
     handler: async (args, cfg) => {
-      const res = await withOlderServerHint(() =>
-        request<any>(cfg, `/tickets/${seg(args.id)}/drafts/${seg(args.message_id)}`, { method: 'DELETE' }),
+      const res = await with404Cause(
+        () => request<any>(cfg, `/tickets/${seg(args.id)}/drafts/${seg(args.message_id)}`, { method: 'DELETE' }),
+        () => explainDeleteDraftNotFound(cfg, args.id, args.message_id),
       );
       return `Draft message #${res?.deleted ?? args.message_id} deleted from ticket #${res?.ticket_id ?? args.id}.`;
     },
@@ -784,7 +894,9 @@ export function registerTicketTools(server: McpServer, config: ClokioConfig): vo
       'A file tasks refuse (type, size, content not matching its name) is skipped and listed in skipped_files; the task is still created. ' +
       'Every call sends an Idempotency-Key: a fresh one (returned as idempotency_key), or the one you pass. To retry after a timeout or a lost answer, ' +
       'pass the SAME idempotency_key and the same fields: the first answer is replayed and no second task is made (a different body with that key is a 422). ' +
-      'Subtasks, labels, created_by_employee_code and assignees of a client organisation are not accepted here. At most 30 a minute per acting employee.',
+      'Subtasks, labels, created_by_employee_code and assignees of a client organisation are not accepted here. At most 30 a minute per acting employee. ' +
+      'The server words every 404 the same ("Not found."), so on a 404 the tool reads the ticket (and, if needed, the project) to name the cause: ' +
+      'a missing or invisible ticket, a project that is missing or outside the ticket\'s organisation, or a server too old for this route.',
     schema: {
       id: ticketId,
       project_id: z.number().int().positive(),
@@ -803,7 +915,7 @@ export function registerTicketTools(server: McpServer, config: ClokioConfig): vo
     },
     handler: async (args, cfg) => {
       const key = args.idempotency_key ?? `mcp-${randomUUID()}`;
-      const res = await withOlderServerHint(() => request<any>(cfg, `/tickets/${seg(args.id)}/tasks`, {
+      const res = await with404Cause(() => request<any>(cfg, `/tickets/${seg(args.id)}/tasks`, {
         method: 'POST',
         headers: { 'Idempotency-Key': key },
         body: {
@@ -816,7 +928,7 @@ export function registerTicketTools(server: McpServer, config: ClokioConfig): vo
           assignee_employee_codes: args.assignee_employee_codes,
           attachment_ids: args.attachment_ids,
         },
-      }));
+      }), () => explainCreateTaskNotFound(cfg, args.id, args.project_id));
       return renderTaskFromTicket(res, key);
     },
   });

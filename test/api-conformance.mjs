@@ -58,6 +58,8 @@ const TOOL_CALLS = [
   { tool: 'clokio_list_leaves', method: 'get', path: '/leaves', query: ['from', 'to', 'employee', 'status', 'per_page'] },
   // 0.23.0 L4: the year to count (task #5808).
   { tool: 'clokio_get_leave_balances', method: 'get', path: '/leaves/balances', query: ['employee', 'year'] },
+  // 0.25.0 N3: the new name of the same call (the old one stays as an alias).
+  { tool: 'clokio_get_leave_days_taken', method: 'get', path: '/leaves/balances', query: ['employee', 'year'] },
 
   // employees.ts
   { tool: 'clokio_list_employees', method: 'get', path: '/employees', query: ['search', 'email', 'status', 'department', 'per_page'] },

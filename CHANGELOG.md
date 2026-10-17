@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.25.0 (unreleased)
+
+From the QA notes on 0.22.1 + 0.23.0 (Clokio task #5808, "New small notes" N1-N4). Part 1 needs no new backend. Items #5 (new outbound ticket) and #9 (smaller ticket gaps) follow in part 2, after the backend.
+
+- **A 404 names its real cause** - the ticket API words every 404 the same ("Not found."), so `clokio_create_task_from_ticket` and `clokio_delete_reply_draft` no longer blame an older server for all of them. On a plain "Not found." they make follow-up reads and say which it is: a ticket that does not exist or that the acting employee cannot open; for the create, a project that does not exist or is outside the ticket's organisation (read through `GET /tickets/{id}/tasks`, else `GET /projects/{id}/statuses`); for the draft delete, a message that is not on the ticket (already deleted, or on another ticket), found by walking the ticket's messages. The older-server hint is given only when the reads show the route itself is missing, or as one of the listed causes when the reads fail (for example a key without `tickets:read`). A 404 in any other words is shown as the server wrote it, with no hint and no extra reads. `clokio_list_ticket_tasks` keeps the 0.23 conditional hint. (N1)
+- **An empty time-entry list claims no time zone** - `clokio_list_time_entries` with no entries answers "No time entries." and that `clokio_update_time_entry` takes the person's local date and times, instead of the UTC header an older server gets. (N2)
+- **New name: `clokio_get_leave_days_taken`** - the tool returns days taken, not balances, so it has that name. `clokio_get_leave_balances` stays as a deprecated alias with the same input and answer; its description starts with "DEPRECATED: use clokio_get_leave_days_taken". (N3)
+- **Idempotent replay wording: unchanged** - the server sends no replay signal: a replay of `POST /tickets/{id}/tasks` returns the stored body and status (201) byte for byte, with no header or field that marks it (`IdempotencyStore` / `TicketTaskController` on the backend). The tool therefore cannot tell a replay from a first create, and the answer still reads "Task #N created from ticket". A backend signal (for example an `Idempotency-Replayed: true` header) would let it say "already created, replayed". (N4)
+
 ## 0.24.0
 
 Adds the ticket reports tools and multi-select contact fields to 0.23.0. Needs the Clokio backend released 2026-10-17 with the ticket reports API (task #5807) and multi-select contact fields (task #5806); on an older server the report tools answer 404. After updating, start a NEW session and check that `clokio_whoami` reports `mcp_version` 0.24.0. `node test/api-conformance.mjs` checks 115 tools against the deployed spec.

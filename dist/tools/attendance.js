@@ -63,7 +63,8 @@ const ZONE_NOTE = "the person's CURRENT location zone, which clokio_update_time_
 /**
  * The page header and rows. One zone on the page: named once in the header,
  * rows without it. Several zones (or a mix with UTC rows): each row names its
- * own. No local times at all (an older server): the 0.22 UTC output.
+ * own. No local times at all (an older server): the 0.22 UTC output. No rows:
+ * "No time entries." and no zone claimed either way.
  */
 export function renderTimeEntries(res) {
     const rows = Array.isArray(res) ? res : (res?.data ?? []);
@@ -72,7 +73,12 @@ export function renderTimeEntries(res) {
     const zones = new Set(local.map((e) => e.timezone));
     let header;
     let zoneInRow = true;
-    if (local.length === 0) {
+    if (rows.length === 0) {
+        // N2 (0.25.0): no row to read a zone from, so the header claims none.
+        header =
+            "No time entries. (No row to read a time zone from; clokio_update_time_entry takes the person's LOCAL date and times, in their location's zone.)";
+    }
+    else if (local.length === 0) {
         header = "Times are UTC (HH:MM of the API's instants); clokio_update_time_entry takes the person's LOCAL date and times.";
     }
     else if (zones.size === 1 && local.length === rows.length) {
@@ -84,7 +90,7 @@ export function renderTimeEntries(res) {
     }
     return [
         header,
-        ...(rows.length ? rows.map((e) => timeEntryLine(e, { zone: zoneInRow })) : ['No time entries.']),
+        ...rows.map((e) => timeEntryLine(e, { zone: zoneInRow })),
         `Page ${meta.current_page ?? '-'} of ${meta.last_page ?? '-'} (total ${meta.total ?? '-'}); raise per_page or narrow from/to to see more.`,
     ].join('\n');
 }
@@ -571,15 +577,19 @@ export function registerAttendanceTools(server, config) {
             }));
         },
     });
-    registerTool(server, config, {
-        name: 'clokio_get_leave_balances',
-        description: 'Days of leave one employee TOOK in a calendar year, per leave type: taken (approved) and pending, in days. ' +
-            'Clokio counts days taken, half days included (a half-day type counts 0.5 per date, so three half days are 1.5); ' +
-            'it tracks NO quota and NO remaining balance, so nothing here is "days left" and no answer means "zero days left". ' +
-            'Rejected, revoked and cancelled requests count nothing; a request across New Year counts only its dates inside the year. ' +
-            'Every active leave type is listed, zeros included. year defaults to the current year in the employee\'s time zone (2000-2100). ' +
-            'employee_code is REQUIRED; there is no org-wide form of this call. Needs leaves:read. ' +
-            'A server older than task #5808 reports no days taken; the answer then says so.',
+    // N3 (0.25.0): the tool returns days TAKEN, not balances, so it has that name.
+    // The old name stays as a deprecated alias with the same handler.
+    const leaveDaysTakenDescription = 'Days of leave one employee TOOK in a calendar year, per leave type: taken (approved) and pending, in days. ' +
+        'Clokio counts days taken, half days included (a half-day type counts 0.5 per date, so three half days are 1.5); ' +
+        'it tracks NO quota and NO remaining balance, so nothing here is "days left" and no answer means "zero days left". ' +
+        'Rejected, revoked and cancelled requests count nothing; a request across New Year counts only its dates inside the year. ' +
+        'Every active leave type is listed, zeros included. year defaults to the current year in the employee\'s time zone (2000-2100). ' +
+        'employee_code is REQUIRED; there is no org-wide form of this call. Needs leaves:read. ' +
+        'A server older than task #5808 reports no days taken; the answer then says so.';
+    // Called with { name: '...' } literals so the conformance test's source scan sees both names.
+    const registerLeaveDaysTaken = ({ name, description }) => registerTool(server, config, {
+        name,
+        description,
         schema: {
             employee_code: employeeCodeArg.describe("The employee_code, e.g. '00080'. Required"),
             employee: employeeAliasArg,
@@ -591,5 +601,11 @@ export function registerAttendanceTools(server, config) {
                 throw new Error('employee_code is required: whose leave? (no org-wide form of this call)');
             return renderLeaveTaken(await request(cfg, '/leaves/balances', { query: { employee, year: args.year } }));
         },
+    });
+    registerLeaveDaysTaken({ name: 'clokio_get_leave_days_taken', description: leaveDaysTakenDescription });
+    registerLeaveDaysTaken({
+        name: 'clokio_get_leave_balances',
+        description: 'DEPRECATED: use clokio_get_leave_days_taken (same answer; this old name is kept as an alias and will be removed in a later version). ' +
+            leaveDaysTakenDescription,
     });
 }
