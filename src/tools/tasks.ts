@@ -258,6 +258,21 @@ export function renderActivity(res: any): string {
   ].join('\n');
 }
 
+/**
+ * #4 (0.23.0): the ticket a task was opened from, as `linked_ticket:
+ * "ticket #<id> <url>"` first in the answer, replacing the raw `ticket`
+ * object. No ticket (`ticket: null`, or an older server without the key): no
+ * line at all. Anything that is not a task object passes through untouched.
+ */
+export function withLinkedTicket(task: any): any {
+  if (task === null || typeof task !== 'object' || Array.isArray(task) || !('ticket' in task)) return task;
+  const { ticket, ...rest } = task;
+  if (ticket && typeof ticket === 'object' && ticket.id !== undefined && ticket.id !== null) {
+    return { linked_ticket: `ticket #${ticket.id}${ticket.ticket_url ? ` ${ticket.ticket_url}` : ''}`, ...rest };
+  }
+  return rest;
+}
+
 export function registerTaskTools(server: McpServer, config: ClokioConfig): void {
   registerTool(server, config, {
     name: 'clokio_list_tasks',
@@ -380,7 +395,9 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
       'an employee_code is unique only within one organisation, so pair it with organization.id when ' +
       'external is true (organization is null when that organisation is hidden from you). ' +
       'Images pasted into the description or comments are listed by clokio_list_task_attachments ' +
-      '(inline_media) and read with clokio_download_task_media.',
+      '(inline_media) and read with clokio_download_task_media. ' +
+      'A task opened from a support ticket starts with linked_ticket ("ticket #<id> <url>"; read it with clokio_get_ticket); ' +
+      'a task with no ticket has no such line.',
     schema: {
       id: z.number().int(),
       comments_limit: z
@@ -391,8 +408,8 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
         .optional()
         .describe('Newest N comments only (0 = none). Omitted returns every comment'),
     },
-    handler: (args, cfg) =>
-      request(cfg, `/tasks/${args.id}`, { query: { comments_limit: args.comments_limit } }),
+    handler: async (args, cfg) =>
+      withLinkedTicket(await request<any>(cfg, `/tasks/${args.id}`, { query: { comments_limit: args.comments_limit } })),
   });
 
   registerTool(server, config, {

@@ -427,6 +427,67 @@ export function draftStateWarning(state: string | null | undefined): string {
   );
 }
 
+/**
+ * #4 (0.23.0): GET /tickets/{id}/tasks as lines. Task titles and assignee
+ * names are the organisation's, printed like every task tool prints them.
+ */
+export function renderTicketTasks(res: any, ticketIdArg: number): string {
+  const ticket = res?.ticket ?? {};
+  const tasks: any[] = Array.isArray(res?.tasks) ? res.tasks : [];
+  const head = `Ticket #${ticket.id ?? ticketIdArg}${ticket.ticket_url ? ` ${ticket.ticket_url}` : ''}`;
+  if (!tasks.length) {
+    return `${head}: no task opened from it that you can see (a task on a board the acting employee cannot see is not listed).`;
+  }
+  return [
+    `${head}: ${tasks.length} task${tasks.length === 1 ? '' : 's'} opened from it (oldest first):`,
+    ...tasks.map((t) => {
+      const people = Array.isArray(t?.assignees) && t.assignees.length
+        ? t.assignees.map((a: any) => `${a?.name ?? '-'} (${a?.employee_code ?? '-'})`).join(', ')
+        : 'nobody';
+      return `#${t?.id} ${t?.title ?? ''} [${t?.status?.name ?? '-'} / ${t?.status?.slug ?? '-'}] | project #${t?.project?.id ?? '-'} ${t?.project?.name ?? ''} | assignees: ${people} | ${t?.task_url ?? ''}`;
+    }),
+  ].join('\n');
+}
+
+/** The reasons POST /tickets/{id}/tasks gives for a file it did not copy. */
+const SKIP_REASONS: Record<string, string> = {
+  type: 'a file type tasks do not accept',
+  size: 'over the task file size limit',
+  content: 'its content does not match its name',
+};
+
+/**
+ * #4 (0.23.0): the create answer, compact: the task's key fields, the link, the
+ * Idempotency-Key used (a retry with it creates nothing new) and every file
+ * that was NOT copied. File names came from the customer, so they are wrapped.
+ */
+export function renderTaskFromTicket(res: any, idempotencyKey: string): Record<string, unknown> {
+  const task = res?.task ?? {};
+  const skipped: any[] = Array.isArray(res?.skipped_files) ? res.skipped_files : [];
+  const pick = Object.fromEntries(
+    ['id', 'title', 'status', 'priority', 'due_date', 'project', 'assignees', 'task_url', 'ticket']
+      .filter((k) => task[k] !== undefined)
+      .map((k) => [k, task[k]]),
+  );
+  return {
+    created: `Task #${task.id ?? '-'} created from ticket #${res?.ticket_id ?? '-'}${task.task_url ? `: ${task.task_url}` : ''}`,
+    task: pick,
+    skipped_files: skipped.map((f) => ({
+      id: f?.id ?? null,
+      name: wrapInline(String(f?.name ?? '')),
+      reason_code: f?.reason_code ?? null,
+      reason: SKIP_REASONS[f?.reason_code] ?? 'refused by the task file rules',
+    })),
+    ...(skipped.length
+      ? { skipped_note: `${skipped.length} file${skipped.length === 1 ? ' was' : 's were'} NOT copied into the task (listed in skipped_files); the task was still created.` }
+      : {}),
+    idempotency_key: idempotencyKey,
+  };
+}
+
+/** The Idempotency-Key shape the server accepts (8-191 of A-Za-z0-9 . _ : -). */
+export const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{8,191}$/;
+
 export function registerTicketTools(server: McpServer, config: ClokioConfig): void {
   registerTool(server, config, {
     name: 'clokio_list_tickets',
@@ -592,7 +653,90 @@ export function registerTicketTools(server: McpServer, config: ClokioConfig): vo
       return (
         `Draft saved on ticket #${res?.ticket_id ?? args.id} (message #${res?.message_id ?? '-'}). Nothing was sent: ` +
         `a person must open the ticket and click "Use this draft", then send it. ${res?.ticket_url ?? ''}`
-      ).trim() + draftStateWarning(state);
+      ).trim() +
+        (res?.message_id ? `\nTo discard it: clokio_delete_reply_draft id=${res?.ticket_id ?? args.id} message_id=${res.message_id}.` : '') +
+        draftStateWarning(state);
+    },
+  });
+
+  registerTool(server, config, {
+    name: 'clokio_delete_reply_draft',
+    mutates: 'destructive',
+    description:
+      'PERMANENTLY deletes one of YOUR OWN reply drafts that nobody has used yet (the acting employee\'s, saved by clokio_create_reply_draft ' +
+      'or written by the AI for them), with its mentions and files. Needs tickets:write; no extra Clokio permission (tickets.manage is not needed). ' +
+      'message_id is the draft\'s message #id: the "REPLY DRAFT (pending)" row of clokio_get_ticket, or the answer of clokio_create_reply_draft. ' +
+      'The server refuses, in its own words: a ticket you cannot open, or a message not on THIS ticket (404 Not found.); ' +
+      'a message that is not a reply draft (422); a draft already used (422, it is the history of the reply that was sent); ' +
+      'someone else\'s draft (403). A second delete is 404.',
+    schema: {
+      id: ticketId,
+      message_id: z.number().int().positive().describe('The draft\'s message id (message #id in clokio_get_ticket)'),
+    },
+    handler: async (args, cfg) => {
+      const res = await request<any>(cfg, `/tickets/${seg(args.id)}/drafts/${seg(args.message_id)}`, { method: 'DELETE' });
+      return `Draft message #${res?.deleted ?? args.message_id} deleted from ticket #${res?.ticket_id ?? args.id}.`;
+    },
+  });
+
+  registerTool(server, config, {
+    name: 'clokio_list_ticket_tasks',
+    description:
+      'The tasks opened from a ticket that the acting employee may see (a task on a board they cannot see is simply not listed), oldest first: ' +
+      'id, title, status, project, assignees and task_url, one line each. Needs BOTH tickets:read and tasks:read ' +
+      '(a key with only one is refused 403, naming the missing scope). A ticket you cannot open is 404.',
+    schema: { id: ticketId },
+    handler: async (args, cfg) => renderTicketTasks(await request<any>(cfg, `/tickets/${seg(args.id)}/tasks`), args.id),
+  });
+
+  registerTool(server, config, {
+    name: 'clokio_create_task_from_ticket',
+    mutates: true,
+    description:
+      'Open a task FROM a ticket, as the ticket screen\'s "Task" button does: the task is linked to the ticket, the acting employee is its creator, ' +
+      'and the ticket files you name are copied into it. Needs BOTH tickets:write and tasks:write; the acting employee must also hold the ' +
+      'tasks.create permission and may create tasks in project_id (an edit or full-edit member, a project manager or an admin; an archived project refuses everyone), else 403. ' +
+      'This differs from clokio_create_task, which acts for the whole key and is not linked. ' +
+      'project_id and title are required. description is Markdown, HTML or plain text (Markdown is converted to HTML). status is a slug of that project (empty = its default). ' +
+      'assignee_employee_codes: codes of your organisation (an unknown or inactive code is a 422 naming it; who may be assigned follows the person\'s own rights on the board). ' +
+      'attachment_ids: file ids of THIS ticket (the #numbers in a message\'s [files: ...] line, at most 20; another ticket\'s file is a 422). ' +
+      'A file tasks refuse (type, size, content not matching its name) is skipped and listed in skipped_files; the task is still created. ' +
+      'Every call sends an Idempotency-Key: a fresh one (returned as idempotency_key), or the one you pass. To retry after a timeout or a lost answer, ' +
+      'pass the SAME idempotency_key and the same fields: the first answer is replayed and no second task is made (a different body with that key is a 422). ' +
+      'Subtasks, labels, created_by_employee_code and assignees of a client organisation are not accepted here. At most 30 a minute per acting employee.',
+    schema: {
+      id: ticketId,
+      project_id: z.number().int().positive(),
+      title: z.string().min(1).max(255),
+      description: z.string().max(65000).optional().describe('Markdown, HTML or plain text (Markdown is converted to HTML)'),
+      priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
+      status: z.string().max(100).optional().describe("A status slug of THIS project's board; omit for its default"),
+      due_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'due_date must be YYYY-MM-DD').optional(),
+      assignee_employee_codes: z.array(employeeCode).max(50).optional(),
+      attachment_ids: z.array(z.number().int().positive()).max(20).optional().describe('File ids of THIS ticket to copy into the task'),
+      idempotency_key: z
+        .string()
+        .regex(IDEMPOTENCY_KEY, 'idempotency_key must be 8-191 of letters, digits, ., _, : or -')
+        .optional()
+        .describe('Reuse the key of an earlier call only to retry THAT call; omit for a new task'),
+    },
+    handler: async (args, cfg) => {
+      const key = args.idempotency_key ?? `mcp-${randomUUID()}`;
+      const res = await request<any>(cfg, `/tickets/${seg(args.id)}/tasks`, {
+        method: 'POST',
+        headers: { 'Idempotency-Key': key },
+        body: {
+          project_id: args.project_id,
+          title: args.title,
+          description: args.description === undefined ? undefined : markdownToHtml(args.description),
+          priority: args.priority,
+          status: args.status,
+          due_date: args.due_date,
+          assignee_employee_codes: args.assignee_employee_codes,
+          attachment_ids: args.attachment_ids,
+        },
+      });
+      return renderTaskFromTicket(res, key);
     },
   });
 

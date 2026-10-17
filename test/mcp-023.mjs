@@ -114,9 +114,9 @@ check('...and keep employee as an alias', [leavesTool, entriesTool, balTool].map
 has('list_leaves describes the 92-day limit', leavesTool?.description ?? '', 'at most 92 days');
 has('list_time_entries describes the 92-day limit', entriesTool?.description ?? '', 'at most 92 days');
 check('balances no longer says to sum number_of_days', /sum number_of_days/.test(balTool?.description ?? ''), false);
-has('balances says half days count as whole days until `days`', balTool?.description ?? '', 'a half-day leave is counted as a whole day until the server reports `days`');
-has('balances prefers `days`', balTool?.description ?? '', 'prefer each row\'s `days` when present');
-has('list_leaves explains number_of_days', leavesTool?.description ?? '', 'when a row has `days`, use it instead');
+check('the round-1 interim wording is gone', /until the server reports `days`/.test((balTool?.description ?? '') + (leavesTool?.description ?? '')), false);
+has('balances says no quota is tracked', balTool?.description ?? '', 'it tracks NO quota and NO remaining balance');
+has('list_leaves says to sum days', leavesTool?.description ?? '', 'Sum `days` for days taken, never number_of_days');
 
 // ── #9e: tickets in clokio_get_inbox ────────────────────────────────────
 const TASKS = { mentions_waiting: [], newly_assigned: [], status_changes: [] };

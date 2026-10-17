@@ -56,7 +56,8 @@ const TOOL_CALLS = [
   { tool: 'clokio_update_time_entry', method: 'patch', path: '/time-entries/{id}', query: [], body: ['task_id', 'date', 'start', 'end', 'duration_minutes', 'description'] },
   { tool: 'clokio_delete_time_entry', method: 'delete', path: '/time-entries/{id}', query: [] },
   { tool: 'clokio_list_leaves', method: 'get', path: '/leaves', query: ['from', 'to', 'employee', 'status', 'per_page'] },
-  { tool: 'clokio_get_leave_balances', method: 'get', path: '/leaves/balances', query: ['employee'] },
+  // 0.23.0 L4: the year to count (task #5808).
+  { tool: 'clokio_get_leave_balances', method: 'get', path: '/leaves/balances', query: ['employee', 'year'] },
 
   // employees.ts
   { tool: 'clokio_list_employees', method: 'get', path: '/employees', query: ['search', 'email', 'status', 'department', 'per_page'] },
@@ -169,6 +170,11 @@ const TOOL_CALLS = [
   // 0.23.0 #2c: the state is read first, for the resolved / spam warning.
   { tool: 'clokio_create_reply_draft', method: 'get', path: '/tickets/{id}', query: [] },
   { tool: 'clokio_create_reply_draft', method: 'post', path: '/tickets/{id}/drafts', query: [] },
+  // 0.23.0 (task #5808, backend feature/mcp-5808-api): delete your own pending
+  // draft, and the ticket-task link (both POST scopes: tickets:write + tasks:write).
+  { tool: 'clokio_delete_reply_draft', method: 'delete', path: '/tickets/{id}/drafts/{messageId}', query: [] },
+  { tool: 'clokio_list_ticket_tasks', method: 'get', path: '/tickets/{id}/tasks', query: [] },
+  { tool: 'clokio_create_task_from_ticket', method: 'post', path: '/tickets/{id}/tasks', query: [], body: ['project_id', 'title', 'description', 'priority', 'status', 'due_date', 'assignee_employee_codes', 'attachment_ids'] },
   { tool: 'clokio_download_ticket_attachment', method: 'get', path: '/tickets/{id}/attachments/{attachmentId}', query: [] },
   { tool: 'clokio_update_ticket', method: 'patch', path: '/tickets/{id}', query: [] },
   { tool: 'clokio_add_ticket_label', method: 'post', path: '/tickets/{id}/labels', query: [] },

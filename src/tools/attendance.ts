@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { ClokioConfig, request, seg } from '../client.js';
+import { ClokioApiError, ClokioConfig, request, seg } from '../client.js';
 import { registerTool } from './helpers.js';
 
 /** See employees.ts - an employee_code reaches the request path. */
@@ -27,22 +27,141 @@ export function utcClock(iso: unknown): string {
   return typeof iso === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(iso) ? iso.slice(11, 16) : '--:--';
 }
 
-/** One time entry as one line: `#{id} {date} {in}-{out|RUNNING} UTC {hours}h | {code} | task #{id} {title} | {description}`. */
-export function timeEntryLine(e: any): string {
-  const id = e?.id === undefined || e?.id === null ? '(no id: server older than 2026-10-16)' : `#${e.id}`;
-  const running = e?.running === true || e?.check_out === null;
-  const task = e?.task ? `task #${e.task.id} ${e.task.title}` : 'no task';
-  return `${id} ${e?.date ?? '-'} ${utcClock(e?.check_in)}-${running ? 'RUNNING' : utcClock(e?.check_out)} UTC ${e?.work_hour ?? 0}h | ${e?.employee_code ?? '-'} | ${task} | ${e?.description ?? ''}`;
+/**
+ * HH:MM of a local ISO-8601 instant with its offset (`2026-08-05T09:00:00+03:00`),
+ * as the server wrote it, or --:--. The server already converted the instant
+ * (DST-correct), so the wall clock is read off the string, never recomputed.
+ */
+export function localClock(iso: unknown): string {
+  return utcClock(iso);
 }
 
+/**
+ * #1 (0.23.0): whether an entry carries the server's local times
+ * (`timezone`, `check_in_local`, `check_out_local`, task #5808). An older
+ * server sends none of them, and the entry is then printed in UTC as before.
+ */
+export function hasLocalTimes(e: any): boolean {
+  return typeof e?.timezone === 'string' && e.timezone !== '' && typeof e?.check_in_local === 'string';
+}
+
+/**
+ * An entry's clock span: `09:00-10:30 Asia/Jerusalem` from the local fields
+ * (the zone left out when `zone` is false, because a page header names it),
+ * else `06:00-07:30 UTC`. A running entry ends in RUNNING.
+ */
+export function entryClock(e: any, opts: { zone?: boolean } = {}): string {
+  const running = e?.running === true || e?.check_out === null;
+  if (hasLocalTimes(e)) {
+    const span = `${localClock(e.check_in_local)}-${running ? 'RUNNING' : localClock(e.check_out_local)}`;
+    return opts.zone === false ? span : `${span} ${e.timezone}`;
+  }
+  return `${utcClock(e?.check_in)}-${running ? 'RUNNING' : utcClock(e?.check_out)} UTC`;
+}
+
+/**
+ * One time entry as one line: `#{id} {date} {in}-{out|RUNNING} {zone} {hours}h | {code} | task #{id} {title} | {description}`.
+ * The zone is the entry's `timezone` (local times) or UTC (an older server).
+ * `zone: false` drops a local entry's zone, for a page whose header names it once.
+ */
+export function timeEntryLine(e: any, opts: { zone?: boolean } = {}): string {
+  const id = e?.id === undefined || e?.id === null ? '(no id: server older than 2026-10-16)' : `#${e.id}`;
+  const task = e?.task ? `task #${e.task.id} ${e.task.title}` : 'no task';
+  return `${id} ${e?.date ?? '-'} ${entryClock(e, opts)} ${e?.work_hour ?? 0}h | ${e?.employee_code ?? '-'} | ${task} | ${e?.description ?? ''}`;
+}
+
+const ZONE_NOTE =
+  "the person's CURRENT location zone, which clokio_update_time_entry reads date/start/end in (after a location change it may differ from where the entry was logged)";
+
+/**
+ * The page header and rows. One zone on the page: named once in the header,
+ * rows without it. Several zones (or a mix with UTC rows): each row names its
+ * own. No local times at all (an older server): the 0.22 UTC output.
+ */
 export function renderTimeEntries(res: any): string {
   const rows: any[] = Array.isArray(res) ? res : (res?.data ?? []);
   const meta = res?.meta ?? {};
+  const local = rows.filter(hasLocalTimes);
+  const zones = new Set(local.map((e) => e.timezone));
+  let header: string;
+  let zoneInRow = true;
+  if (local.length === 0) {
+    header = "Times are UTC (HH:MM of the API's instants); clokio_update_time_entry takes the person's LOCAL date and times.";
+  } else if (zones.size === 1 && local.length === rows.length) {
+    header = `Times are local, in ${[...zones][0]}: ${ZONE_NOTE}.`;
+    zoneInRow = false;
+  } else {
+    header = `Times are local; each row names its zone: ${ZONE_NOTE}. A row marked UTC came without local times.`;
+  }
   return [
-    "Times are UTC (HH:MM of the API's instants); clokio_update_time_entry takes the person's LOCAL date and times.",
-    ...(rows.length ? rows.map(timeEntryLine) : ['No time entries.']),
+    header,
+    ...(rows.length ? rows.map((e) => timeEntryLine(e, { zone: zoneInRow })) : ['No time entries.']),
     `Page ${meta.current_page ?? '-'} of ${meta.last_page ?? '-'} (total ${meta.total ?? '-'}); raise per_page or narrow from/to to see more.`,
   ].join('\n');
+}
+
+/**
+ * #1 (0.23.0): the object answers of log_time, start_timer, stop_timer and
+ * get_active_timer keep the API's object and gain `entry_line`, the entry in
+ * the list's one-line form (local HH:MM and the zone, or UTC on an older
+ * server), placed first. No entry (nothing running): the answer is unchanged.
+ */
+export function withEntryLine(res: any): any {
+  const entry = res?.entry;
+  if (res === null || typeof res !== 'object' || Array.isArray(res) || !entry || typeof entry !== 'object') return res;
+  return { entry_line: timeEntryLine(entry), ...res };
+}
+
+/** Leave rows (L1, 0.23.0) as lines; `days` when the server sends it, else the dates count with a note. */
+export function leaveLine(l: any): string {
+  const t = l?.leave_type ?? {};
+  const dv = typeof t.day_value === 'number' ? ` day_value ${t.day_value}${t.day_value === 0.5 ? ' (half day)' : t.day_value === 1 ? ' (full day)' : ''}` : '';
+  const type = `${t.name ?? '-'} (${t.code ?? '-'}${dv ? `,${dv}` : ''})`;
+  const n = l?.number_of_days;
+  const count =
+    typeof l?.days === 'number'
+      ? `${l.days} day${l.days === 1 ? '' : 's'} (${n ?? '-'} date${n === 1 ? '' : 's'})`
+      : `${n ?? '-'} date${n === 1 ? '' : 's'} (no \`days\` from this server: a half-day type still counts 1 per date)`;
+  const dates = Array.isArray(l?.dates) && l.dates.length ? ` | dates ${l.dates.join(', ')}` : '';
+  return `${l?.employee_code ?? '-'} ${l?.employee_name ?? ''} | ${type} | ${l?.status ?? '-'} | ${l?.start_date ?? '-'} to ${l?.end_date ?? '-'} | ${count}${dates} | requested ${l?.requested_at ?? '-'}`;
+}
+
+export function renderLeaves(res: any): string {
+  const rows: any[] = Array.isArray(res) ? res : (res?.data ?? []);
+  const meta = res?.meta ?? {};
+  return [
+    'Leave requests. To count days taken, sum `days` (dates x the type\'s day_value, half days 0.5), never number_of_days (dates).',
+    ...(rows.length ? rows.map(leaveLine) : ['No leave requests.']),
+    `Page ${meta.current_page ?? '-'} of ${meta.last_page ?? '-'} (total ${meta.total ?? '-'}); raise per_page or narrow from/to to see more.`,
+  ].join('\n');
+}
+
+/** L4 (0.23.0): GET /leaves/balances as text: days taken per type for the year, never a balance. */
+export function renderLeaveTaken(res: any): string {
+  const d = res ?? {};
+  const who = `${d.employee_name ?? ''} (${d.employee_code ?? '-'})`.trim();
+  const lines: string[] = [];
+  if (!Array.isArray(d.taken)) {
+    lines.push(
+      `${who}: this server reports no days taken (it predates the leave-day counts of task #5808).`,
+      'Clokio tracks no quota or remaining balance. Count days with clokio_list_leaves (status APPROVED): number_of_days there counts dates, so a half-day leave counts 1.',
+    );
+  } else {
+    lines.push(
+      `Days taken by ${who} in ${d.year ?? '-'}, per leave type. Clokio counts the days taken (half days count 0.5); it tracks no quota or remaining balance, so nothing here is days left.`,
+    );
+    if (!d.taken.length) lines.push('No leave types.');
+    for (const r of d.taken) {
+      const t = r?.leave_type ?? {};
+      lines.push(
+        `- ${t.name ?? '-'} (${t.code ?? '-'}${t.counts_as ? `, counts as ${t.counts_as}` : ''}, day_value ${t.day_value ?? '-'}): taken ${r?.taken_days ?? 0}, pending ${r?.pending_days ?? 0}`,
+      );
+    }
+  }
+  if (Array.isArray(d.balances) && d.balances.length) {
+    lines.push(`balances (rows inserted by hand, not maintained by Clokio): ${JSON.stringify(d.balances)}`);
+  }
+  return lines.join('\n');
 }
 
 /**
@@ -286,7 +405,9 @@ export function registerAttendanceTools(server: McpServer, config: ClokioConfig)
       'Time-tracking entries in a date range. from and to are both REQUIRED (YYYY-MM-DD, to >= from), ' +
       'and to - from may be at most 92 days (93 calendar dates); a longer range is refused before any request, so split it yourself. ' +
       'Optionally narrow to one person (employee_code) or one project (project_id). ' +
-      'Printed one line per entry with its id (for clokio_update_time_entry / clokio_delete_time_entry) and RUNNING for a timer still running; times in UTC.',
+      'Printed one line per entry with its id (for clokio_update_time_entry / clokio_delete_time_entry) and RUNNING for a timer still running. ' +
+      "Times are LOCAL HH:MM in the person's current location zone (the zone clokio_update_time_entry reads), named once in the header, or on each row when the page mixes zones; " +
+      'a server without local times (older than task #5808) prints UTC, and the header says so. Needs time_entries:read.',
     schema: {
       from: z.string().describe('YYYY-MM-DD, required'),
       to: z.string().describe('YYYY-MM-DD, required, on or after from, at most 92 days after it'),
@@ -316,6 +437,9 @@ export function registerAttendanceTools(server: McpServer, config: ClokioConfig)
   // person's: none of these tools takes an employee, and the server refuses
   // one in the body. Scope time_entries:write: Full access, or ticked on a
   // key with chosen permissions.
+  const ENTRY_LINE_NOTE =
+    "The answer is the API's object with entry_line first: the entry in one line, LOCAL HH:MM and the person's zone " +
+    '(UTC on a server older than task #5808).';
   const actingPerson =
     "The time is ALWAYS recorded for the API key's ACTING person (its \"acts as\" employee, else the person who issued it), " +
     'never for anyone else; there is no way to log time for another employee. ' +
@@ -334,7 +458,8 @@ export function registerAttendanceTools(server: McpServer, config: ClokioConfig)
       'At most 12 hours (720 minutes) per entry; nothing may start or end more than 10 minutes in the future; ' +
       'an entry overlapping another time entry of the same person (including their running timer, and an overnight entry from the day before) is refused. ' +
       'A duration counts real minutes across a DST change. ' + taskRule + ' ' +
-      "The project's billable flag is inherited and the description defaults to the task title.",
+      "The project's billable flag is inherited and the description defaults to the task title. " +
+      ENTRY_LINE_NOTE,
     schema: {
       task_id: z.number().int().positive(),
       date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be YYYY-MM-DD').optional()
@@ -346,7 +471,7 @@ export function registerAttendanceTools(server: McpServer, config: ClokioConfig)
       description: z.string().max(255).optional(),
     },
     mutates: true,
-    handler: (args, cfg) => {
+    handler: async (args, cfg) => {
       if ((args.end === undefined) === (args.duration_minutes === undefined)) {
         throw new Error('Give exactly one of end or duration_minutes.');
       }
@@ -356,7 +481,7 @@ export function registerAttendanceTools(server: McpServer, config: ClokioConfig)
       if (args.end !== undefined && args.start === undefined) {
         throw new Error('start is required with end.');
       }
-      return request(cfg, '/time-entries', {
+      return withEntryLine(await request<any>(cfg, '/time-entries', {
         method: 'POST',
         body: {
           task_id: args.task_id,
@@ -366,7 +491,7 @@ export function registerAttendanceTools(server: McpServer, config: ClokioConfig)
           duration_minutes: args.duration_minutes,
           description: args.description,
         },
-      });
+      }));
     },
   });
 
@@ -375,18 +500,31 @@ export function registerAttendanceTools(server: McpServer, config: ClokioConfig)
     description:
       "Start a running timer on a task. " + actingPerson + ' ' + taskRule + ' ' +
       'If a timer is already running the call is refused (409) and the running entry is returned; ' +
-      'pass force: true to stop that timer and start this one. The description defaults to the task title.',
+      'pass force: true to stop that timer and start this one. The description defaults to the task title. ' +
+      ENTRY_LINE_NOTE,
     schema: {
       task_id: z.number().int().positive(),
       description: z.string().max(255).optional(),
       force: z.boolean().optional().describe('Stop a running timer first instead of being refused'),
     },
     mutates: true,
-    handler: (args, cfg) =>
-      request(cfg, '/timer/start', {
-        method: 'POST',
-        body: { task_id: args.task_id, description: args.description, force: args.force },
-      }),
+    handler: async (args, cfg) => {
+      try {
+        return withEntryLine(
+          await request<any>(cfg, '/timer/start', {
+            method: 'POST',
+            body: { task_id: args.task_id, description: args.description, force: args.force },
+          }),
+        );
+      } catch (e) {
+        // The 409 carries the running entry: name it in the same one-line form.
+        const active = e instanceof ClokioApiError ? (e.body as any)?.data?.active_entry : undefined;
+        if (e instanceof ClokioApiError && active && typeof active === 'object') {
+          throw new ClokioApiError(e.status, `${e.message} Running: ${timeEntryLine(active)}`, e.body);
+        }
+        throw e;
+      }
+    },
   });
 
   registerTool(server, config, {
@@ -394,21 +532,23 @@ export function registerAttendanceTools(server: McpServer, config: ClokioConfig)
     description:
       "Stop the running timer of the API key's ACTING person (never anyone else's) and return the entry with its hours. " +
       'Refused (409) when nothing is running. Needs time_entries:write (Full access, or listed on the key). ' +
-      'Short entries are kept (as on the web and mobile); one under a minute gets a warning field naming clokio_delete_time_entry.',
+      'Short entries are kept (as on the web and mobile); one under a minute gets a warning field naming clokio_delete_time_entry. ' +
+      ENTRY_LINE_NOTE,
     schema: {},
     mutates: true,
     handler: async (_args, cfg) => {
       const res = await request<any>(cfg, '/timer/stop', { method: 'POST' });
-      return withShortEntryWarning(res);
+      return withShortEntryWarning(withEntryLine(res));
     },
   });
 
   registerTool(server, config, {
     name: 'clokio_get_active_timer',
     description:
-      "The running timer of the API key's ACTING person, or entry: null when none runs. Needs time_entries:read.",
+      "The running timer of the API key's ACTING person, or entry: null when none runs. Needs time_entries:read. " +
+      ENTRY_LINE_NOTE,
     schema: {},
-    handler: (_args, cfg) => request(cfg, '/timer/active'),
+    handler: async (_args, cfg) => withEntryLine(await request<any>(cfg, '/timer/active')),
   });
 
   registerTool(server, config, {
@@ -454,7 +594,7 @@ export function registerAttendanceTools(server: McpServer, config: ClokioConfig)
       const res = await request<any>(cfg, `/time-entries/${seg(args.id)}`, { method: 'DELETE' });
       const e = res?.entry ?? {};
       const task = e.task ? `task #${e.task.id} ${e.task.title}` : 'no task';
-      return `Deleted entry ${e.id ?? args.id}: ${e.date ?? '-'} ${utcClock(e.check_in)}-${utcClock(e.check_out)} UTC, ${task}`;
+      return `Deleted entry ${e.id ?? args.id}: ${e.date ?? '-'} ${entryClock(e)}, ${task}`;
     },
   });
 
@@ -464,8 +604,10 @@ export function registerAttendanceTools(server: McpServer, config: ClokioConfig)
       'Leave requests in a date range. from and to are both REQUIRED (YYYY-MM-DD, to >= from), ' +
       'and to - from may be at most 92 days (93 calendar dates); a longer range is refused before any request, so split it yourself ' +
       '(a leave that crosses two windows is returned in both, and rows carry no id to tell them apart). ' +
-      'Optionally narrow to one person by employee_code, or to one approval state. ' +
-      'number_of_days counts the leave\'s DATES: a half-day leave type still counts 1 per date until the server reports `days`; when a row has `days`, use it instead.',
+      'Optionally narrow to one person by employee_code, or to one approval state. Needs leaves:read. ' +
+      'Printed one line per request: the type with its day_value (1 a full day, 0.5 a half day), the status, the range, ' +
+      '`days` (dates x day_value, e.g. 1.5 for three half days) and number_of_days (the count of DATES). Sum `days` for days taken, never number_of_days. ' +
+      'A server older than task #5808 sends no `days`; the row then says so, and a half-day type counts 1 per date there.',
     schema: {
       from: z.string().describe('YYYY-MM-DD, required'),
       to: z.string().describe('YYYY-MM-DD, required, on or after from, at most 92 days after it'),
@@ -482,35 +624,39 @@ export function registerAttendanceTools(server: McpServer, config: ClokioConfig)
     handler: async (args, cfg) => {
       const employee = employeeFilter(args);
       assertRangeWithinLimit(args.from, args.to);
-      return request(cfg, '/leaves', {
-        query: {
-          from: args.from,
-          to: args.to,
-          employee,
-          status: args.status,
-          per_page: args.per_page,
-        },
-      });
+      return renderLeaves(
+        await request<any>(cfg, '/leaves', {
+          query: {
+            from: args.from,
+            to: args.to,
+            employee,
+            status: args.status,
+            per_page: args.per_page,
+          },
+        }),
+      );
     },
   });
 
   registerTool(server, config, {
     name: 'clokio_get_leave_balances',
     description:
-      'Clokio does NOT track leave balances today: this always returns an empty `balances` list ' +
-      '(no quotas exist, and approving or revoking a leave changes no balance). Do not read the empty list as ' +
-      '"zero days left". To count days taken, use clokio_list_leaves with status APPROVED: prefer each row\'s `days` when present; ' +
-      'without it, number_of_days counts DATES, so a half-day leave is counted as a whole day until the server reports `days` ' +
-      '(say so rather than reporting the sum as exact). clokio_list_leaves covers at most 92 days per call. ' +
-      'employee_code is REQUIRED; there is no org-wide form of this call.',
+      'Days of leave one employee TOOK in a calendar year, per leave type: taken (approved) and pending, in days. ' +
+      'Clokio counts days taken, half days included (a half-day type counts 0.5 per date, so three half days are 1.5); ' +
+      'it tracks NO quota and NO remaining balance, so nothing here is "days left" and no answer means "zero days left". ' +
+      'Rejected, revoked and cancelled requests count nothing; a request across New Year counts only its dates inside the year. ' +
+      'Every active leave type is listed, zeros included. year defaults to the current year in the employee\'s time zone (2000-2100). ' +
+      'employee_code is REQUIRED; there is no org-wide form of this call. Needs leaves:read. ' +
+      'A server older than task #5808 reports no days taken; the answer then says so.',
     schema: {
       employee_code: employeeCodeArg.describe("The employee_code, e.g. '00080'. Required"),
       employee: employeeAliasArg,
+      year: z.number().int().min(2000).max(2100).optional().describe('The calendar year to count, e.g. 2026. Default: the current year'),
     },
     handler: async (args, cfg) => {
       const employee = employeeFilter(args);
       if (employee === undefined) throw new Error('employee_code is required: whose leave? (no org-wide form of this call)');
-      return request(cfg, '/leaves/balances', { query: { employee } });
+      return renderLeaveTaken(await request<any>(cfg, '/leaves/balances', { query: { employee, year: args.year } }));
     },
   });
 }

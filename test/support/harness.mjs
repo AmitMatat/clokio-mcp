@@ -36,6 +36,7 @@ export async function runTools({ toolsets, calls, respond }) {
         query: Object.fromEntries(u.searchParams),
         body: raw ? JSON.parse(raw) : null,
         key: req.headers['x-api-key'] ?? null,
+        idempotencyKey: req.headers['idempotency-key'] ?? null,
       };
       hits.push(hit);
       const out = respond?.(hit) ?? { status: 200, json: { status: 'success', message: 'ok', data: {} } };
