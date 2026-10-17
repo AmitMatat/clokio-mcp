@@ -65,7 +65,7 @@ acting. An explicit code on a tool call always takes precedence.
 
 Optional: set `CLOKIO_TOOLSETS` to register only the tool groups you need, e.g.
 `CLOKIO_TOOLSETS=tasks`. This cuts the per-session tool-list cost - a
-task-focused session drops from 98 tools to 32. Optional groups are `tasks`,
+task-focused session drops from 110 tools to 33. Optional groups are `tasks`,
 `employees`, `attendance` (which includes leave, time entries and logging time), `docs` and
 `tickets`;
 combine them with commas. If your key cannot open documents (no acts-as
@@ -76,18 +76,18 @@ through it.
 
 ## Tools
 
-107 tools across seven areas. Read-only tools carry the MCP `readOnlyHint`; writes
+110 tools across seven areas. Read-only tools carry the MCP `readOnlyHint`; writes
 are marked mutating (deletes are `destructive`).
 
 | Area | Tools |
 |------|-------|
-| **Tasks** | list (with `compact` / `sort` / `updated_since` / `recurring`), get (with `comments_limit`), create, update (incl. recurring series: set a rule, pause/resume, stop), delete, bulk update, set assignees (a shared board's client people as `{employee_code, organization_id}`), list a board's people, list/add/edit comments, list attachments (with `is_latest` + `latest_only`), upload, download one (save to disk, or read PDF text / ZIP entries / images / text inline), download all to a folder, read images pasted into descriptions and comments, activity (with organisations, paged), list/add/remove dependencies, set custom field |
+| **Tasks** | list (with `compact` / `sort` / `updated_since` / `recurring`), get (with `comments_limit`; names the ticket a task was opened from), create, update (incl. recurring series: set a rule, pause/resume, stop), delete, bulk update, set assignees (a shared board's client people as `{employee_code, organization_id}`), list a board's people, list/add/edit comments, list attachments (with `is_latest` + `latest_only`), upload, download one (save to disk, or read PDF text / ZIP entries / images / text inline), download all to a folder, read images pasted into descriptions and comments, activity (with organisations, paged), list/add/remove dependencies, set custom field |
 | **Projects & clients** | list projects, project statuses, project custom fields, project contacts, get client, add client contact |
 | **Reference** | task statuses, task labels, locations, list webhooks (read-only), whoami |
 | **Employees** | list (name search), lookup by PIN, task-stats, inbox (mentions, new assignments, others' status changes; with the tickets toolset, also the acting employee's open tickets), create, set status |
-| **Attendance** | daily, range, per-employee, monthly summary, clock in/out, break start/end, time entries (edit / delete your own), leaves, leave balances (always empty: Clokio does not track balances; leave and time-entry lists take `employee_code` and at most 92 days per call), **log time on a task**, start / stop / read the timer (see [Logging time](#logging-time)) |
+| **Attendance** | daily, range, per-employee, monthly summary, clock in/out, break start/end, time entries (local times in the person's zone; edit / delete your own), leaves (with `days`, half days counted 0.5), days of leave taken per type and year (Clokio tracks no quota or remaining balance; leave and time-entry lists take `employee_code` and at most 92 days per call), **log time on a task**, start / stop / read the timer (see [Logging time](#logging-time)) |
 | **Documents** (see [Documents](#documents) for who a key acts as) | list, tree, search, get (Markdown / HTML / JSON), create, replace content, update meta, move, archive, restore, delete, templates + create from template, members (by `employee_code`) and teams (list/add/update/remove, shareable teams), public share link, comments (list/add/resolve/reopen), versions (list/get/restore), attachments (list/upload/download) |
-| **Tickets** (see [Tickets](#tickets)) | list (filters + cursor), get (with its newest messages; internal notes labelled, everything the customer wrote wrapped as untrusted), more messages, **reply to the customer** (fresh `Idempotency-Key` per call, `destructive`), internal note (with mentions), update state / assignee, add / remove one label, contacts list / get / update, inboxes, ticket labels, saved replies, download a file a customer sent, save a reply draft |
+| **Tickets** (see [Tickets](#tickets)) | list (filters + cursor), get (with its newest messages; internal notes labelled, everything the customer wrote wrapped as untrusted), more messages, **reply to the customer** (fresh `Idempotency-Key` per call, `destructive`), internal note (with mentions), update state / assignee, add / remove one label, contacts list / get / update, inboxes, ticket labels, saved replies, download a file a customer sent, save / delete your own reply draft, list the tasks opened from a ticket, **open a task from a ticket** (with its files; `Idempotency-Key` per call) |
 
 ### Conventions
 
@@ -136,7 +136,7 @@ employee and the server refuses one.
   entry; nothing may start or end more than 10 minutes in the future; an
   overlap with another time entry of the same person (their running timer and
   an overnight entry from the day before included) is refused.
-- `clokio_update_time_entry` and `clokio_delete_time_entry` (0.22.0) change or remove one of the acting person's own entries (ids from `clokio_list_time_entries`, which prints times in UTC); edits take local times and get the same checks; a running entry must be stopped before its times change or it is deleted.
+- `clokio_update_time_entry` and `clokio_delete_time_entry` (0.22.0) change or remove one of the acting person's own entries (ids from `clokio_list_time_entries`, which prints local times in the person's current zone since 0.23.0, or UTC on an older server); edits take local times in that same zone and get the same checks; a running entry must be stopped before its times change or it is deleted.
 - `clokio_start_timer` is refused while a timer runs; `force: true` stops it
   and starts the new one. `clokio_stop_timer` is refused when nothing runs.
 - The task must be visible to that person, on an active project of your
@@ -257,7 +257,9 @@ second call is a second reply. CLOKIO_DEFAULT_ACTOR does not apply to
 tickets: a reply is written by the key's acting employee unless you name
 `author_employee_code` (which needs `tickets:send_as`).
 
-Email text is cleaned before printing (never raw HTML); `max_chars` cuts long bodies. Files carry ids (`clokio_download_ticket_attachment`). `clokio_create_reply_draft` (needs `tickets:write`) saves a draft a person sends from Clokio with "Use this draft": prefer it when your organisation reviews customer messages first. On a resolved or spam ticket the draft is saved with a warning (it is out of the open queue); the ticket is never reopened by it.
+Email text is cleaned before printing (never raw HTML); `max_chars` cuts long bodies. Files carry ids (`clokio_download_ticket_attachment`). `clokio_create_reply_draft` (needs `tickets:write`) saves a draft a person sends from Clokio with "Use this draft": prefer it when your organisation reviews customer messages first. On a resolved or spam ticket the draft is saved with a warning (it is out of the open queue); the ticket is never reopened by it. `clokio_delete_reply_draft` (needs `tickets:write`) deletes one of your own drafts that nobody has used.
+
+`clokio_create_task_from_ticket` opens a task linked to the ticket, as the ticket screen's "Task" button does, and copies the ticket files you name into it (a file tasks refuse is listed in `skipped_files`). It needs BOTH `tickets:write` and `tasks:write`, and the acting employee's own right to create tasks in that project. Each call sends an `Idempotency-Key` (a fresh one, returned in the answer, or the one you pass to retry). `clokio_list_ticket_tasks` (needs `tickets:read` and `tasks:read`) lists the tasks opened from a ticket, and `clokio_get_task` names the ticket a task came from (`linked_ticket`).
 
 ## Security
 

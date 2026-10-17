@@ -1,8 +1,22 @@
 # Changelog
 
-## 0.23.0 (unreleased)
+## 0.23.0
 
-From the QA review of 0.22.0 (Clokio task #5808). This part needs no new backend: it runs on the server 0.22.1 needs. After updating, start a NEW session and check that `clokio_whoami` reports the new `mcp_version`.
+From the QA review of 0.22.0 (Clokio task #5808). Needs the Clokio backend released with task #5808 (feature/mcp-5808-api) or later; the new routes answer 404 on an older server. On an older server the time-entry, leave and balance tools fall back to their 0.22 output and say so. After updating, start a NEW session and check that `clokio_whoami` reports `mcp_version` 0.23.0.
+
+Before publishing, run `node test/api-conformance.mjs` against the deployed spec: it now checks the new calls `DELETE /tickets/{id}/drafts/{messageId}`, `GET /tickets/{id}/tasks`, `POST /tickets/{id}/tasks` (with its body keys) and `GET /leaves/balances` with `year` (110 tools, 116 calls).
+
+### Needs the #5808 backend
+
+- **Local times on time entries** - `clokio_list_time_entries` prints each entry's local `HH:MM` from the server's `check_in_local` / `check_out_local`, in the person's CURRENT location zone (the zone `clokio_update_time_entry` reads; after a location change it can differ from where the entry was logged, owner decision D1). One zone on the page is named once in the header; a page that mixes zones names it on each row. `clokio_update_time_entry` and `clokio_delete_time_entry` print the same local line with its zone; `clokio_log_time`, `clokio_start_timer`, `clokio_stop_timer` and `clokio_get_active_timer` keep the API's object and add `entry_line` first; a refused start (409) names the running entry the same way. A server without the local fields gets the 0.22 UTC output. (#1)
+- **New: `clokio_delete_reply_draft`** - delete one of your own reply drafts that nobody has used (`DELETE /tickets/{id}/drafts/{messageId}`, `tickets:write`, no `tickets.manage`, owner decision D3). Marked destructive. The server's refusals come back in its own words: not on this ticket (404), not a reply draft or already used (422), someone else's draft (403). `clokio_create_reply_draft` now names it in its answer. (#2a)
+- **New: `clokio_list_ticket_tasks`** - the tasks opened from a ticket that the acting employee may see, one line each (`GET /tickets/{id}/tasks`, needs both `tickets:read` and `tasks:read`). (#4)
+- **New: `clokio_create_task_from_ticket`** - open a task linked to the ticket, as the ticket screen does, with the server's own keys: `project_id`, `title`, `description` (Markdown converted to HTML), `priority`, `status`, `due_date`, `assignee_employee_codes` and `attachment_ids` (ticket files to copy). Needs both `tickets:write` and `tasks:write`, plus the acting employee's `tasks.create` permission and right to create tasks in the project (owner decision D4). Every call sends an `Idempotency-Key`: a fresh UUID, or `idempotency_key` when you pass one to retry; the answer returns the key used. The answer is compact (the task's key fields and link) and lists `skipped_files` (each with its reason; file names wrapped as customer content). (#4)
+- **`clokio_get_task` names the linked ticket** - a task opened from a ticket starts with `linked_ticket: "ticket #<id> <url>"` (in place of the raw `ticket` object); a task with no ticket shows nothing (owner decision D5). (#4)
+- **Leave rows with `days`** - `clokio_list_leaves` prints one line per request with the type's `day_value` (1 a full day, 0.5 a half day) and `days` (dates x day value, e.g. 1.5), beside `number_of_days` (the count of dates). A row without `days` (older server) says that a half-day type counts 1 per date there. (L1, owner decision D8)
+- **Days taken in `clokio_get_leave_balances`** - the answer lists, per leave type, `taken` (approved) and `pending` days for the year, half days as 0.5, with an optional `year` (2000-2100, default the employee's current year). The description says Clokio counts days taken, half days included, and tracks no quota or remaining balance. The round-one interim wording is gone. An older server without `taken` gets a line saying so. (L4, owner decision D9)
+
+### Needs no new backend
 
 - **Message ids** - `clokio_get_ticket` and `clokio_list_ticket_messages` print `message #<id>` on every message, `REPLY DRAFT (pending)` lines included, so a draft or a message can be named. (#2b)
 - **`clokio_create_reply_draft` on a resolved or spam ticket** - the tool reads the ticket's state first. On a resolved or spam ticket the draft is still saved, and the answer adds a warning: the draft will not appear in the open queue, and `clokio_update_ticket state=open` reopens the ticket if a person should pick it up. The ticket is never reopened automatically (owner decision D2). If the state cannot be read, the draft is saved without the warning. The answer now writes the draft as `message #<id>`. (#2c)
@@ -10,7 +24,16 @@ From the QA review of 0.22.0 (Clokio task #5808). This part needs no new backend
 - **`clokio_get_inbox` shows tickets** - with the tickets toolset loaded, and when `employee_code` is the key's acting employee (`acting_as` from `/me`, else `issued_by`), the answer gains a `tickets` part: the open tickets assigned to that person (`GET /tickets?assignee=me&state=open`, one wrapped line each, first 50, the next cursor named) and which of them wait for our reply (`waiting_for_reply`, from `waiting_since`). For any other employee `tickets` only says why none are shown (ticket visibility is the acting employee's), and a failed tickets read is reported there without failing the task inbox. Without the tickets toolset nothing changes and no extra call is made. A "waiting for me" filter on the server (#9c) would make this exact; until then it lists what is assigned and open. (#9e)
 - **`employee_code` on the leave and time-entry tools** - `clokio_list_leaves`, `clokio_get_leave_balances` and `clokio_list_time_entries` take `employee_code`, like every other tool, and still accept `employee` (the old name) as an alias. Both with different values is refused before any request. The descriptions now name the real parameters; the API query parameter is unchanged. (L2)
 - **The 92-day limit** - `clokio_list_leaves` and `clokio_list_time_entries` say that `to - from` may be at most 92 days, and refuse a longer range before the request with the server's sentence ("Date range cannot exceed 92 days.") and a hint to split it. The tool does not split the range itself: leave rows carry no id, so a leave that crosses two windows could not be told apart. (L3)
-- **Half-day leaves, interim wording** - `clokio_get_leave_balances` no longer tells agents to sum `number_of_days`. Both leave descriptions say that `number_of_days` counts dates, so a half-day leave counts as a whole day until the server reports `days`, and to prefer `days` when a row has it. (L1, L4)
+
+### Output format changes
+
+Callers that parse these tools' output must adjust:
+
+- **`clokio_list_leaves`** now returns text, one line per request plus a page line, not JSON.
+- **`clokio_get_leave_balances`** now returns text, one line per leave type, not JSON. Legacy `balances` rows, if any were inserted by hand, are printed as JSON on their own line.
+- **`clokio_get_task`** replaces the `ticket` object with the `linked_ticket` line, and drops `ticket: null`.
+- **`clokio_list_time_entries`, `clokio_update_time_entry`, `clokio_delete_time_entry`** print local times and the zone instead of UTC when the server sends them.
+- **`clokio_log_time`, `clokio_start_timer`, `clokio_stop_timer`, `clokio_get_active_timer`** gain an `entry_line` field; the rest of the object is unchanged.
 
 ### Already in 0.22.0, please re-test
 
@@ -23,7 +46,6 @@ From the QA review of 0.22.0 (Clokio task #5808). This part needs no new backend
 - **Creating ticket labels and filtering by several labels (#9b):** server changes; the label rules live in the web controller and move into one shared class first. Not in the owner decisions for 0.23 (D7 does not list it), so it waits for the tickets API phase after the backend round.
 - **Needs-reply and created-date filters and sort on `clokio_list_tickets` (#9c):** server changes (the "waiting on this person" rule must be shared with the sidebar badge first); sort needs a new cursor. Not in the owner decisions for 0.23 (D7 does not list it). `clokio_get_inbox` already shows `waiting_since` meanwhile.
 - **Creating a contact (#9d):** no product path creates a contact today (contacts are born from inbound messages); deferred until outbound compose (#5) needs it (owner decision D7).
-- **Waiting for the backend (second round of 0.23.0):** deleting your own pending reply draft, the ticket-task link tools and `ticket` on `clokio_get_task`, local times on time entries, and days taken in `clokio_get_leave_balances`. Their server shapes do not exist yet, so nothing is stubbed.
 
 ## 0.22.1
 
