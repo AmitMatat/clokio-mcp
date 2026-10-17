@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.22.1
 
 Needs the Clokio backend released on 2026-10-17 (main c0da1a3fc) or later.
 
