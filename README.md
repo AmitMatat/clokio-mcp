@@ -253,7 +253,8 @@ for fewer), oldest first so the latest is last; it pages through the thread
 to reach them and says how many earlier messages it left out and how to read
 them with `clokio_list_ticket_messages` (which pages from the oldest).
 `clokio_reply_ticket` sends a fresh `Idempotency-Key` with every call, so a
-second call is a second reply. CLOKIO_DEFAULT_ACTOR does not apply to
+second call is a second reply; to retry one reply safely, pass the same
+`idempotency_key` (returned in the answer) with the same fields. CLOKIO_DEFAULT_ACTOR does not apply to
 tickets: a reply is written by the key's acting employee unless you name
 `author_employee_code` (which needs `tickets:send_as`).
 

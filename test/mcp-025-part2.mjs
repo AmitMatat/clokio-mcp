@@ -14,6 +14,7 @@ import { OLDER_SERVER_HINT, NEW_ROUTE_HINT, isReplay } from '../dist/tools/ticke
 const { check, has, done } = checker();
 const OK = (data, extra = {}) => ({ status: 201, json: { status: 'success', message: 'ok', data }, ...extra });
 const REPLAYED = { headers: { 'Idempotency-Replayed': 'true' } };
+let rk_count = 0; // the retry test answers fresh first, then replayed
 
 // ── isReplay ────────────────────────────────────────────────────────────
 check('isReplay: header', isReplay(new Headers({ 'Idempotency-Replayed': 'true' }), {}), true);
@@ -58,6 +59,29 @@ const rp = await runTools({
 has('a replayed reply says nothing new was sent', rp.text(0), 'Reply message #70 was already sent on ticket #7 (replayed, nothing new sent).');
 check('a fresh reply has no replay note', rp.text(1).includes('replayed_note'), false);
 check('each reply carries its own key', rp.hits[0].idempotencyKey !== rp.hits[1].idempotencyKey && /^mcp-/.test(rp.hits[0].idempotencyKey), true);
+const rk = await runTools({
+  toolsets: 'tickets',
+  calls: [
+    ['clokio_reply_ticket', { id: 9, body: 'Hello', idempotency_key: 'reply-retry-1' }],
+    ['clokio_reply_ticket', { id: 9, body: 'Hello', idempotency_key: 'reply-retry-1' }],
+    ['clokio_reply_ticket', { id: 9, body: 'Hello', idempotency_key: 'bad key!' }],
+  ],
+  respond: (hit) => {
+    const n = rk_count++;
+    return n === 0
+      ? OK({ message_id: 90, ticket_id: 9, delivery: 'queued', replayed: false })
+      : OK({ message_id: 90, ticket_id: 9, delivery: 'queued', replayed: true }, REPLAYED);
+  },
+});
+check('reply: the supplied key is sent on both calls', rk.hits.map((h) => h.idempotencyKey), ['reply-retry-1', 'reply-retry-1']);
+check('reply: the first answer is fresh and returns the key', [rk.text(0).includes('replayed_note'), JSON.parse(rk.text(0)).idempotency_key], [false, 'reply-retry-1']);
+has('reply: the retry is a replay, nothing new sent', rk.text(1), 'Reply message #90 was already sent on ticket #9 (replayed, nothing new sent).');
+check('reply: a malformed key is refused before any request', [rk.errored(2), rk.hits.length], [true, 2]);
+check('reply: a fresh key is returned when none is given', /^mcp-/.test(JSON.parse(rp.text(1)).idempotency_key), true);
+const rdesc = rk.tools.clokio_reply_ticket?.description ?? '';
+has('reply description explains the safe retry', rdesc, 'To retry SAFELY');
+has('...with the same key and fields', rdesc, 'pass the SAME idempotency_key and the same fields');
+check('reply stays destructive', rk.tools.clokio_reply_ticket?.annotations?.destructiveHint, true);
 
 // ── #5: clokio_create_ticket ────────────────────────────────────────────
 const TICKET = (id, extra = {}) => ({
@@ -129,6 +153,7 @@ for (const i of [4, 5, 6, 7, 9, 12]) check(`refusal ${i} is an error`, ct.errore
 check('only the valid calls reached the server', posts.length, 7);
 
 const desc = ct.tools.clokio_create_ticket?.description ?? '';
+has('create_ticket says no route lists templates', desc, 'no API route lists them yet');
 check('create_ticket is mutating (not read-only)', ct.tools.clokio_create_ticket?.annotations?.readOnlyHint, false);
 check('...and marked destructive (a send reaches a customer)', ct.tools.clokio_create_ticket?.annotations?.destructiveHint, true);
 for (const needle of ['tickets:write', 'tickets:send', "tickets.manage", '10 new tickets per 10 minutes', 'draft: true', 'PENDING DRAFT', 'Use this draft', 'Idempotency-Key']) {

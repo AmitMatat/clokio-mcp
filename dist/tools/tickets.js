@@ -707,25 +707,33 @@ export function registerTicketTools(server, config) {
             'clokio_add_ticket_note instead, and never paste an INTERNAL NOTE into a reply. ' +
             'body is Markdown (converted to HTML; chat and WhatsApp receive its plain text). recipients (email tickets only) ' +
             'override the default To/Cc/Bcc; a new address needs the employee\'s tickets.manage. author_employee_code writes ' +
-            'as another employee and needs tickets:send_as. Each call carries its own fresh Idempotency-Key (generated here, never ' +
-            'reused), so calling the tool again sends again: check the thread before retrying. Refusals come back in the ' +
+            'as another employee and needs tickets:send_as. Every call sends an Idempotency-Key: a fresh one (returned as idempotency_key), or the idempotency_key you pass. ' +
+            'Without a key, calling the tool again sends again. To retry SAFELY after a timeout or a lost answer, pass the SAME idempotency_key and the same fields ' +
+            'within 24 hours: the first answer is replayed (replayed_note says so) and nothing is sent twice; a different body with that key is a 422. ' +
+            'Never reuse a key for a new reply. Refusals come back in the ' +
             'inbox\'s own words (spam, WhatsApp 24-hour window, ...). When your organisation reviews customer messages first, use clokio_create_reply_draft instead.',
         schema: {
             id: ticketId,
             body: z.string().min(1).max(10000),
             recipients: z.object({ to: emails.optional(), cc: emails.optional(), bcc: emails.optional() }).optional(),
             author_employee_code: employeeCode.optional(),
+            idempotency_key: z
+                .string()
+                .regex(IDEMPOTENCY_KEY, 'idempotency_key must be 8-191 of letters, digits, ., _, : or -')
+                .optional()
+                .describe('Reuse the key of an earlier call only to retry THAT reply; omit for a new reply'),
         },
         handler: async (args, cfg) => {
-            const { res, replayed } = await idempotentPost(cfg, `/tickets/${seg(args.id)}/replies`, `mcp-${randomUUID()}`, {
+            const key = args.idempotency_key ?? `mcp-${randomUUID()}`;
+            const { res, replayed } = await idempotentPost(cfg, `/tickets/${seg(args.id)}/replies`, key, {
                 html: markdownToHtml(args.body),
                 recipients: args.recipients,
                 author_employee_code: args.author_employee_code,
             });
-            // E7 (0.25.0): a replay sent nothing. With a fresh key per call it should never happen; if it does, say so.
+            // E7 (0.25.0): a replay sent nothing, and says so.
             return replayed
-                ? { replayed_note: `Reply message #${res?.message_id ?? '-'} was already sent on ticket #${res?.ticket_id ?? args.id} (replayed, nothing new sent).`, ...res }
-                : res;
+                ? { replayed_note: `Reply message #${res?.message_id ?? '-'} was already sent on ticket #${res?.ticket_id ?? args.id} (replayed, nothing new sent).`, ...res, idempotency_key: key }
+                : { ...res, idempotency_key: key };
         },
     });
     registerTool(server, config, {
@@ -737,6 +745,7 @@ export function registerTicketTools(server, config) {
             'EMAIL (channel "email"): inbox_id a connected mailbox the person may send from (clokio_list_inboxes), to (1-20 addresses), optional cc / bcc, subject (max 200, sent as written) ' +
             'and body (Markdown, converted to HTML; at most 20000 characters after conversion). ' +
             'WHATSAPP (channel "whatsapp"): inbox_id a connected number, to ONE number with its country code, and template: an APPROVED template of that number ' +
+            '(its name and language as Clokio shows them under the number\'s WhatsApp templates; no API route lists them yet) ' +
             '{name, language, params (a list for {{1}}, {{2}}... or a map by name), header_text?, buttons? (values by button index)}; body, subject, cc and bcc are refused, and an open ticket of the same customer on that number is reused. ' +
             'contact_id (optional) names the customer: to then defaults to its first address or number. assignee_employee_code (optional, default the acting employee): someone else needs the person\'s tickets.manage. ' +
             'Writing to an address or number that no contact the person can see holds (for email, a colleague\'s address is fine) needs the person\'s tickets.manage, drafts included; otherwise a 422 names them. ' +
