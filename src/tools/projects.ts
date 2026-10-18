@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { ClokioConfig, request } from '../client.js';
 import { registerTool } from './helpers.js';
 import { VERSION } from '../version.js';
+import { FIELD_KEY_PATTERN } from './tasks.js';
 
 /** Projects, clients, and the board-configuration + reference lookups. */
 export function registerProjectTools(server: McpServer, config: ClokioConfig): void {
@@ -114,7 +115,7 @@ export function registerProjectTools(server: McpServer, config: ClokioConfig): v
       'found. Needs the projects:write scope.',
     schema: {
       project_id: z.number().int(),
-      field_key: z.string().regex(/^[A-Za-z0-9_-]{1,50}$/, 'field_key: letters, digits, _ or -'),
+      field_key: z.string().regex(FIELD_KEY_PATTERN, 'field_key: letters, digits, _ or -'),
       name: z.string().min(1).max(50).optional(),
       type: fieldType.optional(),
       options: fieldOptions.optional(),

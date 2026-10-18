@@ -94,7 +94,7 @@ check('assignees in the update', run.hits[7]?.body, {
 check('assignee_mode alone errors locally', run.errored(13), true);
 check('bulk estimate', run.hits[8]?.body, { ids: [1, 2], estimated_hours: 4.5 });
 check('bulk estimate null is a change', run.hits[9]?.body, { ids: [1, 2], estimated_hours: null });
-check('an estimate over 10000 errors before any request', run.errored(16), true);
+check('an estimate over 9999.99 errors before any request', run.errored(16), true);
 check('summary grouping', run.hits[10]?.query, { group_by_custom_field: 'release' });
 check('set assignees credits the actor', run.hits[11]?.body, { employee_codes: ['00080'], mode: 'add', actor_employee_code: '00055' });
 check('exactly twelve requests went out', run.hits.length, 12);

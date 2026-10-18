@@ -8,6 +8,16 @@ const employeeCode = z
     .string()
     .regex(/^[A-Za-z0-9_-]{1,50}$/, 'employee_code must be 1-50 chars of letters, digits, _ or -');
 /**
+ * A custom field's field_key, by the backend's own rule: the route
+ * `->where('fieldKey', '[A-Za-z0-9_-]{1,50}')` and the 50-char `key` column
+ * (keys are generated with Str::slug). Every field_key input uses it, so a
+ * key such as `a]b` or `x&y` never reaches a query string or a path.
+ */
+export const FIELD_KEY_PATTERN = /^[A-Za-z0-9_-]{1,50}$/;
+const fieldKey = z.string().regex(FIELD_KEY_PATTERN, 'field_key must be 1-50 chars of letters, digits, _ or -');
+/** THE estimated_hours ceiling of every Public API write (create, update, bulk): the backend's ESTIMATED_HOURS_MAX. */
+export const ESTIMATED_HOURS_MAX = 9999.99;
+/**
  * One custom field value as the API takes it: text / number / date string,
  * true / false for a checkbox, an option's value OR label for a dropdown, a
  * list of them for a multi-select, null to clear. The server validates it
@@ -18,7 +28,7 @@ const customFieldValue = z
     .describe('The value; a dropdown option by its value or its label; null clears');
 /** field_key -> value, at least one and at most 50 fields (the server's cap). */
 const customFieldsMap = z
-    .record(z.string().min(1).max(50), customFieldValue)
+    .record(fieldKey, customFieldValue)
     .refine((m) => Object.keys(m).length >= 1 && Object.keys(m).length <= 50, {
     message: 'custom_fields must name 1-50 fields',
 })
@@ -345,6 +355,9 @@ export function listFilterQuery(args) {
             throw new Error('custom_field filters need project_id: custom fields belong to one project. Add project_id; clokio_get_project_custom_fields lists its field keys.');
         }
         for (const [key, value] of Object.entries(args.custom_field)) {
+            if (!FIELD_KEY_PATTERN.test(key)) {
+                throw new Error(`custom_field key "${key}" is not a field_key: 1-50 chars of letters, digits, _ or -.`);
+            }
             out[`custom_field[${key}]`] = typeof value === 'boolean' ? (value ? 1 : 0) : value;
         }
     }
@@ -383,7 +396,7 @@ export function registerTaskTools(server, config) {
                 'A client person on a shared board, or a departed employee, still counts as holding a task. ' +
                 'Cannot be combined with assignee_employee_code when true.'),
             custom_field: z
-                .record(z.string().min(1).max(50), z.union([z.string().min(1).max(500), z.number(), z.boolean()]))
+                .record(fieldKey, z.union([z.string().min(1).max(500), z.number(), z.boolean()]))
                 .refine((m) => Object.keys(m).length >= 1 && Object.keys(m).length <= 20, {
                 message: 'custom_field must name 1-20 fields',
             })
@@ -516,10 +529,7 @@ export function registerTaskTools(server, config) {
                 .max(365)
                 .optional()
                 .describe('Days without an update (updated_at) that make an open task stale. Default 14, range 1-365'),
-            group_by_custom_field: z
-                .string()
-                .min(1)
-                .max(50)
+            group_by_custom_field: fieldKey
                 .optional()
                 .describe('The field_key of a PUBLIC dropdown or multi-select field of this project (clokio_get_project_custom_fields). ' +
                 'Adds by_custom_field: tasks per option (value and label) with open / closed / total, plus none for tasks ' +
@@ -610,7 +620,7 @@ export function registerTaskTools(server, config) {
             status: z.string().optional().describe("Status slug valid for THIS project's board"),
             due_date: z.string().optional().describe('YYYY-MM-DD'),
             start_date: z.string().optional().describe('YYYY-MM-DD'),
-            estimated_hours: z.number().min(0).max(9999.99).optional(),
+            estimated_hours: z.number().min(0).max(ESTIMATED_HOURS_MAX).optional(),
             parent_task_id: z.number().int().optional().describe('Makes this a subtask of that task'),
             assignee_employee_codes: z
                 .array(assigneeReference)
@@ -698,8 +708,14 @@ export function registerTaskTools(server, config) {
             status: z.string().optional().describe("Status slug valid for this task's board"),
             due_date: z.string().nullable().optional().describe('YYYY-MM-DD, or null to clear'),
             start_date: z.string().nullable().optional().describe('YYYY-MM-DD, or null to clear'),
-            estimated_hours: z.number().min(0).max(9999.99).nullable().optional(),
-            project_id: z.number().int().optional().describe('Move the task to another project'),
+            estimated_hours: z.number().min(0).max(ESTIMATED_HOURS_MAX).nullable().optional(),
+            project_id: z
+                .number()
+                .int()
+                .optional()
+                .describe('Move the task to another project. Its subtasks move with it, and a status the new board lacks becomes ' +
+                'that board\'s default. A SUBTASK moves only with parent_task_id: null in the same call (it becomes a ' +
+                'top-level task there); otherwise the server refuses it.'),
             actor_employee_code: employeeCode.optional().describe('Who to credit in the activity log; omit to use the key issuer / CLOKIO_DEFAULT_ACTOR'),
             recurrence: recurrenceInput
                 .nullable()
@@ -1151,7 +1167,7 @@ export function registerTaskTools(server, config) {
             'clokio_bulk_set_task_custom_field.',
         schema: {
             id: z.number().int(),
-            field_key: z.string(),
+            field_key: fieldKey,
             value: customFieldValue,
             actor_employee_code: employeeCode.optional().describe('Who to credit in the activity log; omit to use the key issuer / CLOKIO_DEFAULT_ACTOR'),
         },
@@ -1195,7 +1211,7 @@ export function registerTaskTools(server, config) {
             'tasks at once - for cleaning up a board without a call per task. Partial success is normal: the result ' +
             'is {updated, not_found, invalid_status}. not_found lists ids that do not exist in your org (skipped, not ' +
             'fatal); invalid_status lists tasks whose board does not have the given status slug (such a task is ' +
-            'skipped whole, its labels included). estimated_hours (0-10000, null clears) sets one estimate on every ' +
+            'skipped whole, its labels included). estimated_hours (0-9999.99, null clears) sets one estimate on every ' +
             'task; a task already holding it changes nothing. Give at least one of status/priority/due_date/estimated_hours/add_label_names/' +
             'remove_label_names (an empty list does not count). Labels are a change only: add_label_names adds (a missing name is CREATED once in ' +
             'your organisation), remove_label_names removes (never creates); a label a task already carries, or one ' +
@@ -1208,7 +1224,7 @@ export function registerTaskTools(server, config) {
             status: z.string().optional().describe('Status slug - validated per task against its own board'),
             priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
             due_date: z.string().nullable().optional().describe('YYYY-MM-DD, or null to clear'),
-            estimated_hours: z.number().min(0).max(10000).nullable().optional().describe('Hours, 0-10000, set on every task; null clears'),
+            estimated_hours: z.number().min(0).max(ESTIMATED_HOURS_MAX).nullable().optional().describe('Hours, 0-9999.99, set on every task; null clears'),
             actor_employee_code: employeeCode.optional().describe('Who to credit; omit to use the key issuer'),
             add_label_names: labelNames.describe('Labels to ADD to every task. A missing name is CREATED once in your organisation'),
             remove_label_names: labelNames.describe('Labels to REMOVE from every task. An unknown name changes nothing (never created)'),
