@@ -26,6 +26,7 @@ const r = await runTools({
     ['clokio_set_task_custom_field', { id: 5, field_key: 'stage', value: null, actor_employee_code: '00777' }],
     ['clokio_update_task', { id: 6, title: 'New', custom_fields: { stage: 'Design', client_po: 'PO-9', approved: false } }],
     ['clokio_update_task', { id: 7, title: 'No fields' }],
+    ['clokio_update_task', { id: 8, custom_fields: { stage: 'Design' } }],
     ['clokio_bulk_set_task_custom_field', { ids: [1234, 1235, 1240], custom_fields: { stage: 'In build', client_po: 'PO-4471' }, actor_employee_code: '00778' }],
     ['clokio_bulk_set_task_custom_field', { ids: [1], custom_fields: {} }],
     ['clokio_bulk_set_task_custom_field', { ids: [], custom_fields: { a: 1 } }],
@@ -49,11 +50,12 @@ check('update: custom_fields rides in the same body', r.hits[2].body, { title: '
 check('update: no custom_fields key when not given', 'custom_fields' in (r.hits[3].body ?? {}), false);
 
 // clokio_bulk_set_task_custom_field
-check('bulk: PATCH /tasks/bulk/custom-fields', [r.hits[4].method, r.hits[4].path], ['PATCH', '/tasks/bulk/custom-fields']);
-check('bulk: ids, custom_fields and the actor in the body', r.hits[4].body, { ids: [1234, 1235, 1240], custom_fields: { stage: 'In build', client_po: 'PO-4471' }, actor_employee_code: '00778' });
-has('bulk: the partial-success answer reaches the model', r.text(4), 'field_not_on_project');
-check('bulk: an empty custom_fields is refused before any request', r.errored(5), true);
-check('bulk: no ids is refused before any request', r.errored(6), true);
-check('only the five valid calls reached the server', r.hits.length, 5);
+check('update: custom_fields alone is a change, not refused as empty', [r.errored(4), r.hits[4].path, r.hits[4].body], [false, '/tasks/8', { custom_fields: { stage: 'Design' } }]);
+check('bulk: PATCH /tasks/bulk/custom-fields', [r.hits[5].method, r.hits[5].path], ['PATCH', '/tasks/bulk/custom-fields']);
+check('bulk: ids, custom_fields and the actor in the body', r.hits[5].body, { ids: [1234, 1235, 1240], custom_fields: { stage: 'In build', client_po: 'PO-4471' }, actor_employee_code: '00778' });
+has('bulk: the partial-success answer reaches the model', r.text(5), 'field_not_on_project');
+check('bulk: an empty custom_fields is refused before any request', r.errored(6), true);
+check('bulk: no ids is refused before any request', r.errored(7), true);
+check('only the six valid calls reached the server', r.hits.length, 6);
 
 done();
