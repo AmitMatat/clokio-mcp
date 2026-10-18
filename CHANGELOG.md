@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.27.0
+
+List filters and a per-project task summary (Clokio task #5874 part 3), owner approved 2026-10-19. **Backend dependency:** needs the Clokio backend with task #5874 part 3 (`feature/api-task-filters-summary`). On an older server `GET /tasks` refuses the five new filters as unknown query parameters (a 422 naming them) and `clokio_get_project_task_summary` answers 404. After updating, start a NEW session and check that `clokio_whoami` reports `mcp_version` 0.27.0. Before publishing, run `node test/api-conformance.mjs` against the deployed spec (or `CLOKIO_SPEC_FILE` pointing at the backend's `docs/api/openapi.json`): it now checks the new filters and the summary route (122 tools, 128 calls).
+
+- **`clokio_list_tasks` filters** -
+  - `no_due_date` (true: only tasks with no due date; false: only tasks with one). True together with `due_before` / `due_after` is refused before any request, as the server refuses it.
+  - `no_assignee` (true: only tasks nobody holds; false: only held tasks). A client person on a shared board or a departed employee still counts as holding a task. True together with `assignee_employee_code` is refused before any request.
+  - `custom_field`, an object of field_key -> value (1-20 fields, ANDed), sent as `custom_field[<field_key>]=<value>`. Needs `project_id` (refused before any request without it). Dropdown by option value or label (an ambiguous label is the server's 422 asking for the value), multi-select contains the option, checkbox true / false (sent as 1 / 0; false includes an unanswered checkbox), text, url and email exact ignoring case, number and date exact. A key that is not a public field of that project is the server's 422 naming it.
+  - `search_in`: `title` (search the title only) or `all` (title and description, the default).
+  - `updated_before` (exclusive), the other half of `updated_since`.
+- **New: `clokio_get_project_task_summary`** - `project_id`, `include_closed`, `top_level`, `stale_days` (1-365, default 14) over `GET /projects/{projectId}/task-summary` (`tasks:read`). One board's counts by status (with `is_open`), priority, label and assignee (a task with several people counts for each), `unassigned`, `no_due_date`, and `overdue` / `stale` lists of compact rows (at most 50 each, with a `total`), plus a `definitions` block and the echoed `stale_days`. Open tasks only unless `include_closed`; subtasks counted unless `top_level`. Registered in the `tasks` toolset; 122 tools by default (35 with `CLOKIO_TOOLSETS=tasks`).
+
 ## 0.26.0
 
 Labels on an existing task (Clokio task #5874 part 1) and custom fields by option label, inside a task update and on many tasks at once (part 2), owner approved 2026-10-18. **Backend dependency:** needs the Clokio backend with task #5874 part 1 (`feature/api-task-labels-update`) and part 2 (`feature/api-custom-fields-bulk`). On an older server `PATCH /tasks/{id}` refuses the three label fields as unknown body fields (422 naming them), and `PATCH /tasks/bulk` ignores the two diff fields and, when they were the only change, answers "Provide at least one of: status, priority, due_date." After updating, start a NEW session and check that `clokio_whoami` reports `mcp_version` 0.26.0. `node test/api-conformance.mjs` now checks both tools' body keys against the spec's curated request bodies (121 tools, 127 calls).

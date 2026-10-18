@@ -43,7 +43,9 @@ check('tasks toolset DROPS employees', tasksOnly.names?.includes('clokio_list_em
 check('tasks toolset DROPS the time-logging tools', tasksOnly.names?.includes('clokio_log_time'), false);
 const attendanceOnly = listTools({ CLOKIO_TOOLSETS: 'attendance' });
 check('attendance toolset carries the four time-logging tools', ['clokio_log_time', 'clokio_start_timer', 'clokio_stop_timer', 'clokio_get_active_timer'].every((n) => attendanceOnly.names?.includes(n)), true);
-check('default registers 121 tools', all.names?.length, 121);
+check('default registers 122 tools', all.names?.length, 122);
+check('tasks toolset carries the project task summary', tasksOnly.names?.includes('clokio_get_project_task_summary'), true);
+check('tasks toolset registers 35 tools', tasksOnly.names?.length, 35);
 check('tasks toolset is smaller than the full set', (tasksOnly.names?.length ?? 99) < (all.names?.length ?? 0), true);
 
 // Multiple toolsets.

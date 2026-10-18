@@ -94,8 +94,11 @@ const TOOL_CALLS = [
       'project_id', 'status', 'priority', 'assignee_employee_code', 'label', 'search',
       'open', 'recurring', 'series_of', 'parent_task_id', 'created_before', 'created_after', 'due_before', 'due_after', 'updated_since',
       'include_comments', 'per_page', 'page', 'cursor', 'sort', 'compact',
+      // 0.27.0 (backend #5874 part 3). custom_field is sent as custom_field[<key>]=<value>.
+      'no_due_date', 'no_assignee', 'custom_field', 'search_in', 'updated_before',
     ],
   },
+  { tool: 'clokio_get_project_task_summary', method: 'get', path: '/projects/{projectId}/task-summary', query: ['include_closed', 'top_level', 'stale_days'] },
   { tool: 'clokio_get_task', method: 'get', path: '/tasks/{id}', query: ['comments_limit'] },
   { tool: 'clokio_create_task', method: 'post', path: '/tasks', query: [] },
   // 0.26.0 (backend #5874): the spec now curates both bodies, so every key the

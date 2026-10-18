@@ -294,6 +294,36 @@ export function withLinkedTicket(task) {
     }
     return rest;
 }
+/**
+ * The list filters of backend task #5874 part 3, turned into GET /tasks query
+ * keys: `custom_field` (an object) becomes custom_field[<field_key>]=<value>,
+ * a boolean checkbox value 1 / 0. The contradictions the server refuses with a
+ * 422 are refused here first, in the same words, so no request is spent on
+ * them.
+ */
+export function listFilterQuery(args) {
+    if (args.no_due_date === true && (args.due_before !== undefined || args.due_after !== undefined)) {
+        throw new Error('no_due_date=true cannot be combined with due_before or due_after: a task with no due date is never due before or after anything. Drop one of them.');
+    }
+    if (args.no_assignee === true && args.assignee_employee_code !== undefined) {
+        throw new Error('no_assignee=true cannot be combined with assignee_employee_code: a task with no assignee is held by nobody. Drop one of them.');
+    }
+    const out = {
+        no_due_date: args.no_due_date === undefined ? undefined : args.no_due_date ? 1 : 0,
+        no_assignee: args.no_assignee === undefined ? undefined : args.no_assignee ? 1 : 0,
+        search_in: args.search_in,
+        updated_before: args.updated_before,
+    };
+    if (args.custom_field !== undefined) {
+        if (args.project_id === undefined) {
+            throw new Error('custom_field filters need project_id: custom fields belong to one project. Add project_id; clokio_get_project_custom_fields lists its field keys.');
+        }
+        for (const [key, value] of Object.entries(args.custom_field)) {
+            out[`custom_field[${key}]`] = typeof value === 'boolean' ? (value ? 1 : 0) : value;
+        }
+    }
+    return out;
+}
 export function registerTaskTools(server, config) {
     registerTool(server, config, {
         name: 'clokio_list_tasks',
@@ -301,14 +331,44 @@ export function registerTaskTools(server, config) {
             'your own code. An UNKNOWN query parameter is a 422 naming it, so use exactly these names. Paginate ' +
             'with page, or crawl with cursor (preferred past one page). Every task carries a task_url.\n\n' +
             'The response is {data, meta}. meta carries total, per_page, current_page and next_cursor - read ' +
-            'next_cursor and pass it back as `cursor` for the following page; it is null on the last one.',
+            'next_cursor and pass it back as `cursor` for the following page; it is null on the last one. ' +
+            'For counts rather than rows (how many open tasks per status, label or person, what is overdue or ' +
+            'stale on one board), use clokio_get_project_task_summary instead of paging.',
         schema: {
             project_id: z.number().int().optional(),
             status: z.string().optional().describe('Status slug, e.g. "in_progress"'),
             priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
             assignee_employee_code: employeeCode.optional().describe('employee_code, e.g. "00080"'),
             label: z.string().optional(),
-            search: z.string().optional().describe('Free text over title and description'),
+            search: z.string().optional().describe('Free text over title and description (see search_in)'),
+            search_in: z
+                .enum(['title', 'all'])
+                .optional()
+                .describe('Where `search` looks: "title" only, or "all" = title and description (the default)'),
+            no_due_date: z
+                .boolean()
+                .optional()
+                .describe('true = only tasks with NO due date; false = only tasks that have one; omit for no filter. ' +
+                'Cannot be combined with due_before / due_after when true.'),
+            no_assignee: z
+                .boolean()
+                .optional()
+                .describe('true = only tasks nobody is assigned to; false = only tasks somebody holds; omit for no filter. ' +
+                'A client person on a shared board, or a departed employee, still counts as holding a task. ' +
+                'Cannot be combined with assignee_employee_code when true.'),
+            custom_field: z
+                .record(z.string().min(1).max(50), z.union([z.string().min(1).max(500), z.number(), z.boolean()]))
+                .refine((m) => Object.keys(m).length >= 1 && Object.keys(m).length <= 20, {
+                message: 'custom_field must name 1-20 fields',
+            })
+                .optional()
+                .describe('Match custom field values: an object of field_key -> value, e.g. {"stage": "In build", "escalated": true}. ' +
+                'Several fields are ANDed. REQUIRES project_id (fields belong to one project); the keys are the ' +
+                'field_key values clokio_get_project_custom_fields lists, and a key that is not a public field of ' +
+                'that project is refused naming it. Per type: dropdown = the option value or its label (a label ' +
+                'two options share is refused asking for the value); multi-select = the task\'s list CONTAINS that ' +
+                'option; checkbox = true (ticked) or false (not ticked, an unanswered checkbox included); text, ' +
+                'url and email = exact match, ignoring case; number and date (YYYY-MM-DD) = exact.'),
             open: z.boolean().optional().describe('true = only tasks whose status is not a "done" one'),
             recurring: z
                 .boolean()
@@ -338,6 +398,11 @@ export function registerTaskTools(server, config) {
                 .string()
                 .optional()
                 .describe('ISO-8601. Incremental sync: only tasks changed at or after this instant'),
+            updated_before: z
+                .string()
+                .optional()
+                .describe('YYYY-MM-DD or ISO-8601, organization timezone. Only tasks last updated BEFORE this (exclusive); ' +
+                'the other half of updated_since'),
             include_comments: z.boolean().optional(),
             per_page: z.number().int().min(1).max(100).optional(),
             page: z.number().int().optional(),
@@ -371,6 +436,7 @@ export function registerTaskTools(server, config) {
         },
         handler: (args, cfg) => request(cfg, '/tasks', {
             query: {
+                ...listFilterQuery(args),
                 project_id: args.project_id,
                 status: args.status,
                 priority: args.priority,
@@ -392,6 +458,44 @@ export function registerTaskTools(server, config) {
                 cursor: args.cursor,
                 sort: args.sort,
                 compact: args.compact === undefined ? undefined : args.compact ? 1 : 0,
+            },
+        }),
+    });
+    registerTool(server, config, {
+        name: 'clokio_get_project_task_summary',
+        description: "One project's task numbers in one call, counted by the server: tasks by status (the project's own " +
+            'statuses, each with is_open), by priority (low / medium / high / urgent / none), by label name and by ' +
+            'assignee, plus unassigned and no_due_date counts; and two short lists of compact task rows: overdue ' +
+            "(open tasks due before today in the organisation's time zone, oldest due first) and stale (open tasks " +
+            'not updated for stale_days, least recently updated first), each at most 50 rows with a total. ' +
+            'OPEN tasks only unless include_closed is true. Subtasks count as tasks of their own unless top_level ' +
+            'is true. A task held by several people is counted for EACH of them in by_assignee, so those numbers ' +
+            'can sum above total. The answer carries a definitions block naming the rule behind every number, and ' +
+            'echoes stale_days. Use this for "how is project X doing" questions; use clokio_list_tasks for the rows ' +
+            'themselves. Needs tasks:read.',
+        schema: {
+            project_id: z.number().int(),
+            include_closed: z
+                .boolean()
+                .optional()
+                .describe('true also counts closed tasks (status category done). overdue and stale stay open tasks'),
+            top_level: z
+                .boolean()
+                .optional()
+                .describe('true counts top-level tasks only (subtasks excluded), overdue and stale included'),
+            stale_days: z
+                .number()
+                .int()
+                .min(1)
+                .max(365)
+                .optional()
+                .describe('Days without an update (updated_at) that make an open task stale. Default 14, range 1-365'),
+        },
+        handler: (args, cfg) => request(cfg, `/projects/${args.project_id}/task-summary`, {
+            query: {
+                include_closed: args.include_closed === undefined ? undefined : args.include_closed ? 1 : 0,
+                top_level: args.top_level === undefined ? undefined : args.top_level ? 1 : 0,
+                stale_days: args.stale_days,
             },
         }),
     });
