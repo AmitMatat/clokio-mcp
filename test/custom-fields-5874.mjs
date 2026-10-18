@@ -16,6 +16,7 @@ const BULK = {
   not_found: [1240],
   field_not_on_project: [1235],
   invalid_value: [],
+  moved: [1241],
   errors: { 1235: { client_po: 'No custom field with key "client_po" on this task\'s project.' } },
 };
 
@@ -39,6 +40,7 @@ has('set: the description names the option label', r.tools.clokio_set_task_custo
 has('set: the description says null clears', r.tools.clokio_set_task_custom_field?.description, 'null clears');
 has('update: the description names custom_fields', r.tools.clokio_update_task?.description, '`custom_fields` (object field_key -> value)');
 has('bulk: the description names the buckets', r.tools.clokio_bulk_set_task_custom_field?.description, 'field_not_on_project');
+has('bulk: the description names the moved bucket and says to retry', r.tools.clokio_bulk_set_task_custom_field?.description, 'moved = the task moved to another project while the request ran, nothing written: retry those ids');
 check('bulk: the tool is in the tasks toolset', Boolean(r.tools.clokio_bulk_set_task_custom_field), true);
 
 // clokio_set_task_custom_field
@@ -54,6 +56,7 @@ check('update: custom_fields alone is a change, not refused as empty', [r.errore
 check('bulk: PATCH /tasks/bulk/custom-fields', [r.hits[5].method, r.hits[5].path], ['PATCH', '/tasks/bulk/custom-fields']);
 check('bulk: ids, custom_fields and the actor in the body', r.hits[5].body, { ids: [1234, 1235, 1240], custom_fields: { stage: 'In build', client_po: 'PO-4471' }, actor_employee_code: '00778' });
 has('bulk: the partial-success answer reaches the model', r.text(5), 'field_not_on_project');
+has('bulk: the moved bucket reaches the model', r.text(5), '1241');
 check('bulk: an empty custom_fields is refused before any request', r.errored(6), true);
 check('bulk: no ids is refused before any request', r.errored(7), true);
 check('only the six valid calls reached the server', r.hits.length, 6);

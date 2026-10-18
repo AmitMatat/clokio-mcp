@@ -1086,8 +1086,9 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
       'field_key -> value (one or more fields; option labels accepted as on clokio_set_task_custom_field; ' +
       'null clears). Fields are defined PER PROJECT, so each task is judged against its own project. ' +
       'Partial success is normal: the result is {updated, not_found, field_not_on_project, invalid_value, ' +
-      'errors}. not_found = ids not in your org; field_not_on_project = the task\'s project has no such ' +
-      'field (or only a private one); invalid_value = a value refused for that project\'s field; errors ' +
+      'moved, errors}. not_found = ids not in your org; field_not_on_project = the task\'s project has no such ' +
+      'field (or only a private one); invalid_value = a value refused for that project\'s field; moved = ' +
+      'the task moved to another project while the request ran, nothing written: retry those ids; errors ' +
       'says why per task id and field key. Per task it is all or nothing. Attribution follows the key ' +
       'issuer unless actor_employee_code is set.',
     schema: {
