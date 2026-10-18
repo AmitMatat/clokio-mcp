@@ -100,7 +100,7 @@ const TOOL_CALLS = [
   { tool: 'clokio_create_task', method: 'post', path: '/tasks', query: [] },
   // 0.26.0 (backend #5874): the spec now curates both bodies, so every key the
   // tool can send is checked against them.
-  { tool: 'clokio_update_task', method: 'patch', path: '/tasks/{id}', query: [], body: ['title', 'description', 'priority', 'status', 'due_date', 'start_date', 'estimated_hours', 'project_id', 'actor_employee_code', 'is_recurring', 'recurrence_rule', 'label_names', 'add_label_names', 'remove_label_names'] },
+  { tool: 'clokio_update_task', method: 'patch', path: '/tasks/{id}', query: [], body: ['title', 'description', 'priority', 'status', 'due_date', 'start_date', 'estimated_hours', 'project_id', 'actor_employee_code', 'is_recurring', 'recurrence_rule', 'label_names', 'add_label_names', 'remove_label_names', 'custom_fields'] },
   { tool: 'clokio_delete_task', method: 'delete', path: '/tasks/{id}', query: [] },
   { tool: 'clokio_set_task_assignees', method: 'patch', path: '/tasks/{id}/assignees', query: [] },
   { tool: 'clokio_list_project_people', method: 'get', path: '/projects/{projectId}/people', query: [] },
@@ -123,6 +123,8 @@ const TOOL_CALLS = [
   { tool: 'clokio_remove_task_dependency', method: 'delete', path: '/tasks/{id}/dependencies/{depId}', query: [] },
   { tool: 'clokio_set_task_custom_field', method: 'patch', path: '/tasks/{id}/custom-fields', query: [] },
   { tool: 'clokio_bulk_update_tasks', method: 'patch', path: '/tasks/bulk', query: [], body: ['ids', 'status', 'priority', 'due_date', 'actor_employee_code', 'add_label_names', 'remove_label_names'] },
+  // Backend task #5874 part 2: the same custom field values on many tasks.
+  { tool: 'clokio_bulk_set_task_custom_field', method: 'patch', path: '/tasks/bulk/custom-fields', query: [], body: ['ids', 'custom_fields', 'actor_employee_code'] },
 
   // docs.ts - /api/v1/docs, acting as the key's effective actor. Tools that
   // pick a route by argument (member by code vs by id) list BOTH calls.

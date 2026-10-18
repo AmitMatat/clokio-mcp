@@ -19,6 +19,24 @@ const employeeCode = z
   .regex(/^[A-Za-z0-9_-]{1,50}$/, 'employee_code must be 1-50 chars of letters, digits, _ or -');
 
 /**
+ * One custom field value as the API takes it: text / number / date string,
+ * true / false for a checkbox, an option's value OR label for a dropdown, a
+ * list of them for a multi-select, null to clear. The server validates it
+ * against the field's type (backend task #5874 part 2).
+ */
+const customFieldValue = z
+  .union([z.string(), z.number(), z.boolean(), z.array(z.string()), z.null()])
+  .describe('The value; a dropdown option by its value or its label; null clears');
+
+/** field_key -> value, at least one and at most 50 fields (the server's cap). */
+const customFieldsMap = z
+  .record(z.string().min(1).max(50), customFieldValue)
+  .refine((m) => Object.keys(m).length >= 1 && Object.keys(m).length <= 50, {
+    message: 'custom_fields must name 1-50 fields',
+  })
+  .describe('Object of field_key -> value, e.g. {"stage": "In build", "client_po": "PO-1"}');
+
+/**
  * One assignee (Clokio Public API, spec 2026-10-16). A STRING is an
  * employee_code of the key's OWN organisation. On a board shared with a
  * client organisation, a person of THAT organisation is
@@ -554,7 +572,11 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
       'the series ON; `recurrence: null` STOPS it (future copies stop; already-spawned copies are ordinary ' +
       'tasks and stay). To PAUSE while keeping the rule stored, pass `recurrence_active: false`, and ' +
       '`recurrence_active: true` to resume.\n\n' +
-      LABELS_ON_UPDATE_NOTE,
+      LABELS_ON_UPDATE_NOTE +
+      '\n\n' +
+      '`custom_fields` (object field_key -> value) sets several custom fields in the same call, with the ' +
+      'rules of clokio_set_task_custom_field (option labels accepted, null clears). Every field is checked ' +
+      'before anything is written: one bad field refuses the whole update and nothing changes.',
     schema: {
       id: z.number().int(),
       title: z.string().max(255).optional(),
@@ -583,6 +605,7 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
       remove_label_names: labelNames.describe(
         'Labels to REMOVE, keeping the others. A name the task does not carry, or that does not exist, changes nothing (never created)',
       ),
+      custom_fields: customFieldsMap.optional(),
     },
     handler: (args, cfg) => {
       // Only keys the caller actually supplied may go in the body: PATCH
@@ -600,6 +623,7 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
         'project_id',
         'actor_employee_code',
         'label_names',
+        'custom_fields',
       ] as const) {
         if (args[key] !== undefined) body[key] = args[key];
       }
@@ -1033,18 +1057,50 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
     name: 'clokio_set_task_custom_field',
     mutates: true,
     description:
-      'Set one custom field value on a task, identified by field_key (never field_id). An API key sees ' +
-      'PUBLIC fields only.',
+      'Set one custom field value on a task, identified by field_key (never field_id); list a project\'s ' +
+      'keys with clokio_get_project_custom_fields. An API key sees PUBLIC fields only. A dropdown or ' +
+      'multi-select value may be the option\'s stored value OR its label as shown on screen (value first, ' +
+      'then the exact label, then the label ignoring case and surrounding spaces). A label two options ' +
+      'share is refused asking for the value; an unknown one is refused listing the options. null clears ' +
+      'the value. To set several fields on one task use custom_fields on clokio_update_task; on many tasks, ' +
+      'clokio_bulk_set_task_custom_field.',
     schema: {
       id: z.number().int(),
       field_key: z.string(),
-      value: z.union([z.string(), z.number(), z.boolean(), z.array(z.string())]),
+      value: customFieldValue,
+      actor_employee_code: employeeCode.optional().describe('Who to credit in the activity log; omit to use the key issuer / CLOKIO_DEFAULT_ACTOR'),
     },
-    handler: (args, cfg) =>
-      request(cfg, `/tasks/${args.id}/custom-fields`, {
-        method: 'PATCH',
-        body: { field_key: args.field_key, value: args.value },
-      }),
+    handler: (args, cfg) => {
+      const body: Record<string, unknown> = { field_key: args.field_key, value: args.value };
+      const actor = args.actor_employee_code ?? cfg.defaultActor;
+      if (actor) body.actor_employee_code = actor;
+      return request(cfg, `/tasks/${args.id}/custom-fields`, { method: 'PATCH', body });
+    },
+  });
+
+  registerTool(server, config, {
+    name: 'clokio_bulk_set_task_custom_field',
+    mutates: true,
+    description:
+      'Set the same custom field value(s) on up to 200 tasks at once: custom_fields is an object of ' +
+      'field_key -> value (one or more fields; option labels accepted as on clokio_set_task_custom_field; ' +
+      'null clears). Fields are defined PER PROJECT, so each task is judged against its own project. ' +
+      'Partial success is normal: the result is {updated, not_found, field_not_on_project, invalid_value, ' +
+      'errors}. not_found = ids not in your org; field_not_on_project = the task\'s project has no such ' +
+      'field (or only a private one); invalid_value = a value refused for that project\'s field; errors ' +
+      'says why per task id and field key. Per task it is all or nothing. Attribution follows the key ' +
+      'issuer unless actor_employee_code is set.',
+    schema: {
+      ids: z.array(z.number().int()).min(1).max(200),
+      custom_fields: customFieldsMap,
+      actor_employee_code: employeeCode.optional().describe('Who to credit; omit to use the key issuer'),
+    },
+    handler: (args, cfg) => {
+      const body: Record<string, unknown> = { ids: args.ids, custom_fields: args.custom_fields };
+      const actor = args.actor_employee_code ?? cfg.defaultActor;
+      if (actor) body.actor_employee_code = actor;
+      return request(cfg, '/tasks/bulk/custom-fields', { method: 'PATCH', body });
+    },
   });
 
   registerTool(server, config, {

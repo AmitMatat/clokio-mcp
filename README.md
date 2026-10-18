@@ -65,7 +65,7 @@ acting. An explicit code on a tool call always takes precedence.
 
 Optional: set `CLOKIO_TOOLSETS` to register only the tool groups you need, e.g.
 `CLOKIO_TOOLSETS=tasks`. This cuts the per-session tool-list cost - a
-task-focused session drops from 120 tools to 33. Optional groups are `tasks`,
+task-focused session drops from 121 tools to 34. Optional groups are `tasks`,
 `employees`, `attendance` (which includes leave, time entries and logging time), `docs` and
 `tickets`;
 combine them with commas. If your key cannot open documents (no acts-as
@@ -76,12 +76,12 @@ through it.
 
 ## Tools
 
-120 tools across seven areas. Read-only tools carry the MCP `readOnlyHint`; writes
+121 tools across seven areas. Read-only tools carry the MCP `readOnlyHint`; writes
 are marked mutating (deletes are `destructive`).
 
 | Area | Tools |
 |------|-------|
-| **Tasks** | list (with `compact` / `sort` / `updated_since` / `recurring`), get (with `comments_limit`; names the ticket a task was opened from), create, update (incl. recurring series: set a rule, pause/resume, stop; labels: replace, add, remove), delete, bulk update (status, priority, due date, add / remove labels), set assignees (a shared board's client people as `{employee_code, organization_id}`), list a board's people, list/add/edit comments, list attachments (with `is_latest` + `latest_only`), upload, download one (save to disk, or read PDF text / ZIP entries / images / text inline), download all to a folder, read images pasted into descriptions and comments, activity (with organisations, paged), list/add/remove dependencies, set custom field |
+| **Tasks** | list (with `compact` / `sort` / `updated_since` / `recurring`), get (with `comments_limit`; names the ticket a task was opened from), create, update (incl. recurring series: set a rule, pause/resume, stop; labels: replace, add, remove), delete, bulk update (status, priority, due date, add / remove labels), set assignees (a shared board's client people as `{employee_code, organization_id}`), list a board's people, list/add/edit comments, list attachments (with `is_latest` + `latest_only`), upload, download one (save to disk, or read PDF text / ZIP entries / images / text inline), download all to a folder, read images pasted into descriptions and comments, activity (with organisations, paged), list/add/remove dependencies, set custom field (an option by value or label), set custom fields on many tasks (`clokio_bulk_set_task_custom_field`, partial success); `clokio_update_task` takes `custom_fields` too |
 | **Projects & clients** | list projects, project statuses, project custom fields, project contacts, get client, add client contact |
 | **Reference** | task statuses, task labels, locations, list webhooks (read-only), whoami |
 | **Employees** | list (name search), lookup by PIN, task-stats, inbox (mentions, new assignments, others' status changes; with the tickets toolset, also the acting employee's open tickets), create, set status |
@@ -117,7 +117,8 @@ are marked mutating (deletes are `destructive`).
   `recurrence.armed` on a task says whether the series is live, a copy names
   its template as `recurrence.spawned_from`, and `series_of` on the list tool
   returns every occurrence of one series.
-- An API key sees **public custom fields only**.
+- An API key sees **public custom fields only**. A dropdown or multi-select
+  value may be the option's value or its label as shown on screen.
 
 ## Logging time
 
