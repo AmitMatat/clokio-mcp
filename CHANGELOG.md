@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.26.0
+
+Labels on an existing task (Clokio task #5874 part 1, owner approved 2026-10-18). **Backend dependency:** needs the Clokio backend with task #5874 part 1 (`feature/api-task-labels-update`). On an older server `PATCH /tasks/{id}` refuses the three label fields as unknown body fields (422 naming them), and `PATCH /tasks/bulk` ignores the two diff fields and, when they were the only change, answers "Provide at least one of: status, priority, due_date." After updating, start a NEW session and check that `clokio_whoami` reports `mcp_version` 0.26.0. `node test/api-conformance.mjs` now checks both tools' body keys against the spec's curated request bodies (120 tools, 126 calls).
+
+- **`clokio_update_task` takes labels** - `label_names` REPLACES the task's whole label set (an empty list removes every label); `add_label_names` / `remove_label_names` change it, keeping the rest. A name that does not exist in the organisation is CREATED, exactly as on `clokio_create_task`; names match case-insensitively; a remove never creates; adding a label the task carries or removing one it does not carry changes nothing. Each real change is written to the task's activity log (credited like any other edit) and the answer is the updated task with its labels. `label_names` together with a diff field, or one name in both diff lists, is refused before any request.
+- **`clokio_bulk_update_tasks` takes `add_label_names` / `remove_label_names`** - alone or beside status / priority / due_date, which are now "at least one of" five (refused before any request when none is given). A missing name is created once for the whole batch. A task in `invalid_status` is skipped whole, its labels included; the answer is still `{updated, not_found, invalid_status}`. Replacing a whole set is `clokio_update_task`'s `label_names`; the bulk tool has no such field.
+- **Label names are at most 50 characters** (the Clokio column's width), on `clokio_create_task` too (it allowed 100; the server's new rule refuses 51 or more, where it used to fail with a 500). Up to 50 names per field on update and bulk.
+
+### Not in this release
+
+- **Labels on the Employee API's task update**: the server's own Employee API (`PATCH /api/employee/tasks/{id}`) takes no labels; nothing here uses it.
+
 ## 0.25.0
 
 From the QA notes on 0.22.1 + 0.23.0 (Clokio task #5808, "New small notes" N1-N4), plus #5 (a new outbound ticket) and #9 (smaller ticket gaps).

@@ -178,6 +178,38 @@ const RECURRENCE_MODEL_NOTE = 'RECURRING TASKS: pass `recurrence` to make this t
     'the template (title, description, assignees, labels, priority, estimate) early on each matching day, ' +
     'due that day, independent of whether earlier copies were closed. A multi-period cadence ' +
     '(every: N > 1) counts whole periods from the task\'s DUE DATE, so set one.';
+/**
+ * A label name as the API takes it: the task_labels column is 50 characters
+ * (the backend validates max:50 on every label field since 0.26.0's backend,
+ * task #5874).
+ */
+const labelName = z.string().min(1).max(50);
+/** One names field on update / bulk: up to 50 names (the API's cap). */
+const labelNames = z.array(labelName).max(50).optional();
+/** How labels work on clokio_update_task, said once. */
+const LABELS_ON_UPDATE_NOTE = 'LABELS: `label_names` REPLACES the task\'s whole label set (an empty list removes every label). ' +
+    '`add_label_names` / `remove_label_names` change it instead, keeping the rest. Do not combine ' +
+    '`label_names` with either of them, and do not put one name in both. A name that does not exist in ' +
+    'your organisation is CREATED (as on clokio_create_task; check clokio_list_task_labels first to reuse ' +
+    'an existing spelling), names match case-insensitively, a remove never creates, and adding a label the ' +
+    'task already carries or removing one it does not carry changes nothing. Up to 50 names per field, ' +
+    '50 characters each. Each change is written to the task\'s activity log, credited like any other edit.';
+/**
+ * Refuse before any request what the API would refuse anyway: replace with a
+ * diff (update only), and one name in both add and remove (compared
+ * case-insensitively, as the API compares them).
+ */
+export function refuseLabelConflicts(args, allowReplace) {
+    if (allowReplace && args.label_names !== undefined && (args.add_label_names !== undefined || args.remove_label_names !== undefined)) {
+        throw new Error('Pass either label_names (replaces every label) or add_label_names / remove_label_names (a change), not both.');
+    }
+    const fold = (n) => n.trim().toLowerCase();
+    const adding = new Set((args.add_label_names ?? []).map(fold));
+    const both = [...new Set((args.remove_label_names ?? []).filter((n) => adding.has(fold(n))))];
+    if (both.length > 0) {
+        throw new Error(`These names are in both add_label_names and remove_label_names: ${both.join(', ')}. Put each name in one of them.`);
+    }
+}
 /** Task-management tools: the core of the Clokio API surface. */
 /** #5: what clokio_set_task_assignees answers - the id, the link and the people, never the whole task. */
 export function compactAssignees(taskId, t, baseUrl = 'https://app.clokio.io') {
@@ -391,7 +423,7 @@ export function registerTaskTools(server, config) {
                 .optional()
                 .describe('Each a code of your organisation, or {employee_code, organization_id} for a client\'s person on a shared board'),
             label_names: z
-                .array(z.string().max(100))
+                .array(labelName)
                 .max(20)
                 .optional()
                 .describe('Label names. A name that does not exist yet is CREATED - check clokio_list_task_labels first'),
@@ -450,7 +482,8 @@ export function registerTaskTools(server, config) {
             '\n\nManage an existing series here: `recurrence` (an object) sets or retunes the rule and switches ' +
             'the series ON; `recurrence: null` STOPS it (future copies stop; already-spawned copies are ordinary ' +
             'tasks and stay). To PAUSE while keeping the rule stored, pass `recurrence_active: false`, and ' +
-            '`recurrence_active: true` to resume.',
+            '`recurrence_active: true` to resume.\n\n' +
+            LABELS_ON_UPDATE_NOTE,
         schema: {
             id: z.number().int(),
             title: z.string().max(255).optional(),
@@ -470,6 +503,9 @@ export function registerTaskTools(server, config) {
                 .boolean()
                 .optional()
                 .describe('Pause (false) / resume (true) the series without touching its stored rule'),
+            label_names: labelNames.describe('REPLACES every label on the task with exactly these names ([] removes them all). A missing name is CREATED. Cannot be combined with add_label_names / remove_label_names'),
+            add_label_names: labelNames.describe('Labels to ADD, keeping the others. A missing name is CREATED; one the task already carries changes nothing'),
+            remove_label_names: labelNames.describe('Labels to REMOVE, keeping the others. A name the task does not carry, or that does not exist, changes nothing (never created)'),
         },
         handler: (args, cfg) => {
             // Only keys the caller actually supplied may go in the body: PATCH
@@ -486,10 +522,14 @@ export function registerTaskTools(server, config) {
                 'estimated_hours',
                 'project_id',
                 'actor_employee_code',
+                'label_names',
+                'add_label_names',
+                'remove_label_names',
             ]) {
                 if (args[key] !== undefined)
                     body[key] = args[key];
             }
+            refuseLabelConflicts(args, true);
             if (typeof body.description === 'string')
                 body.description = markdownToHtml(body.description);
             // Series management maps onto the API's two columns. `recurrence`
@@ -873,19 +913,33 @@ export function registerTaskTools(server, config) {
     registerTool(server, config, {
         name: 'clokio_bulk_update_tasks',
         mutates: true,
-        description: 'Apply ONE change (any of status, priority, due_date) to up to 200 tasks at once - for cleaning up a ' +
-            'board without a call per task. Partial success is normal: the result is {updated, not_found, ' +
-            'invalid_status}. not_found lists ids that do not exist in your org (skipped, not fatal); ' +
-            'invalid_status lists tasks whose board does not have the given status slug. Give at least one of ' +
-            'status/priority/due_date. Attribution follows the key issuer unless actor_employee_code is set.',
+        description: 'Apply ONE change (any of status, priority, due_date, add_label_names, remove_label_names) to up to 200 ' +
+            'tasks at once - for cleaning up a board without a call per task. Partial success is normal: the result ' +
+            'is {updated, not_found, invalid_status}. not_found lists ids that do not exist in your org (skipped, not ' +
+            'fatal); invalid_status lists tasks whose board does not have the given status slug (such a task is ' +
+            'skipped whole, its labels included). Give at least one of status/priority/due_date/add_label_names/' +
+            'remove_label_names. Labels are a change only: add_label_names adds (a missing name is CREATED once in ' +
+            'your organisation), remove_label_names removes (never creates); a label a task already carries, or one ' +
+            'it does not carry, changes nothing for that task. To REPLACE a task\'s whole label set use ' +
+            'clokio_update_task with label_names. Attribution follows the key issuer unless actor_employee_code is set.',
         schema: {
             ids: z.array(z.number().int()).min(1).max(200),
             status: z.string().optional().describe('Status slug - validated per task against its own board'),
             priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
             due_date: z.string().nullable().optional().describe('YYYY-MM-DD, or null to clear'),
             actor_employee_code: employeeCode.optional().describe('Who to credit; omit to use the key issuer'),
+            add_label_names: labelNames.describe('Labels to ADD to every task. A missing name is CREATED once in your organisation'),
+            remove_label_names: labelNames.describe('Labels to REMOVE from every task. An unknown name changes nothing (never created)'),
         },
         handler: (args, cfg) => {
+            if (args.status === undefined &&
+                args.priority === undefined &&
+                args.due_date === undefined &&
+                args.add_label_names === undefined &&
+                args.remove_label_names === undefined) {
+                throw new Error('Give at least one of: status, priority, due_date, add_label_names, remove_label_names.');
+            }
+            refuseLabelConflicts(args, false);
             const body = { ids: args.ids };
             if (args.status !== undefined)
                 body.status = args.status;
@@ -893,6 +947,10 @@ export function registerTaskTools(server, config) {
                 body.priority = args.priority;
             if (args.due_date !== undefined)
                 body.due_date = args.due_date;
+            if (args.add_label_names !== undefined)
+                body.add_label_names = args.add_label_names;
+            if (args.remove_label_names !== undefined)
+                body.remove_label_names = args.remove_label_names;
             body.actor_employee_code = args.actor_employee_code ?? cfg.defaultActor;
             return request(cfg, '/tasks/bulk', { method: 'PATCH', body });
         },
