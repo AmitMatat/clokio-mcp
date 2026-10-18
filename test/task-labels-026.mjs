@@ -46,6 +46,8 @@ const run = await runTools({
     ['clokio_update_task', { id: 7, add_label_names: ['x'.repeat(51)] }], // 10 over the column
     ['clokio_update_task', { id: 7, label_names: ['a'], add_label_names: [], remove_label_names: [] }], // 11 empty diffs dropped, replace sent
     ['clokio_bulk_update_tasks', { ids: [1], priority: 'low', add_label_names: [] }], // 12 empty list not sent
+    ['clokio_update_task', { id: 7, add_label_names: [], remove_label_names: [] }], // 13 nothing left: refused locally
+    ['clokio_update_task', { id: 7 }], // 14 nothing at all: refused locally
   ],
   respond: () => OK,
 });
@@ -67,6 +69,9 @@ check('label_names never reaches the bulk route', run.hits.filter((h) => h.path 
 check('a 51-character name errors before any request', run.errored(10), true);
 check('replace with empty diffs sends the replace only', run.hits[6]?.body, { label_names: ['a'] });
 check('an empty bulk list is not sent', run.hits[7]?.body, { ids: [1], priority: 'low' });
+check('update with only empty lists errors', run.errored(13), true);
+has('...saying nothing is to change', run.text(13), 'Nothing to change');
+check('update with no field errors', run.errored(14), true);
 check('exactly eight requests went out (3, 7, 8, 10 refused locally; 9 has nothing to change)', run.hits.length, 8);
 check('all of them PATCHes', run.hits.every((h) => h.method === 'PATCH'), true);
 console.log(bodies.join('\n'));

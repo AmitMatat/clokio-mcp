@@ -557,6 +557,12 @@ export function registerTaskTools(server, config) {
             // actor. The API otherwise falls back to the key's issuer on its own,
             // so this only overrides for a shared/service key. An explicit
             // actor_employee_code above already sits in body and is left untouched.
+            // Nothing to change (only empty add/remove lists, or no field at all):
+            // refused here, as the bulk tool refuses, instead of a request that
+            // changes nothing.
+            if (Object.keys(body).filter((k) => k !== 'actor_employee_code').length === 0) {
+                throw new Error('Nothing to change: give at least one field (an empty add_label_names / remove_label_names list is not a change).');
+            }
             if (body.actor_employee_code === undefined && cfg.defaultActor) {
                 body.actor_employee_code = cfg.defaultActor;
             }
