@@ -76,6 +76,11 @@ const TOOL_CALLS = [
   { tool: 'clokio_list_projects', method: 'get', path: '/projects', query: ['search', 'status', 'per_page'] },
   { tool: 'clokio_get_project_statuses', method: 'get', path: '/projects/{projectId}/statuses', query: [] },
   { tool: 'clokio_get_project_custom_fields', method: 'get', path: '/projects/{projectId}/custom-fields', query: [] },
+  // 0.27.0 (backend #5874 part 4): board configuration writes.
+  { tool: 'clokio_create_project_custom_field', method: 'post', path: '/projects/{projectId}/custom-fields', query: [], body: ['name', 'type', 'options', 'is_required', 'actor_employee_code'] },
+  { tool: 'clokio_update_project_custom_field', method: 'patch', path: '/projects/{projectId}/custom-fields/{fieldKey}', query: [], body: ['name', 'type', 'options', 'is_required', 'actor_employee_code'] },
+  { tool: 'clokio_create_project_status', method: 'post', path: '/projects/{projectId}/statuses', query: [], body: ['name', 'color', 'position', 'actor_employee_code'] },
+  { tool: 'clokio_update_project_status', method: 'patch', path: '/projects/{projectId}/statuses/{slug}', query: [], body: ['name', 'color', 'category', 'position', 'actor_employee_code'] },
   { tool: 'clokio_get_project_contacts', method: 'get', path: '/projects/{projectId}/contacts', query: [] },
   { tool: 'clokio_get_client', method: 'get', path: '/clients/{clientId}', query: [] },
   { tool: 'clokio_add_client_contact', method: 'post', path: '/clients/{clientId}/contacts', query: [] },
@@ -98,14 +103,16 @@ const TOOL_CALLS = [
       'no_due_date', 'no_assignee', 'custom_field', 'search_in', 'updated_before',
     ],
   },
-  { tool: 'clokio_get_project_task_summary', method: 'get', path: '/projects/{projectId}/task-summary', query: ['include_closed', 'top_level', 'stale_days'] },
+  { tool: 'clokio_get_project_task_summary', method: 'get', path: '/projects/{projectId}/task-summary', query: ['include_closed', 'top_level', 'stale_days', 'group_by_custom_field'] },
+  // 0.27.0 (backend #5874 part 4). `action` goes out as action[]=...
+  { tool: 'clokio_list_project_activity', method: 'get', path: '/projects/{projectId}/activities', query: ['since', 'until', 'action', 'cursor', 'per_page'] },
   { tool: 'clokio_get_task', method: 'get', path: '/tasks/{id}', query: ['comments_limit'] },
   { tool: 'clokio_create_task', method: 'post', path: '/tasks', query: [] },
   // 0.26.0 (backend #5874): the spec now curates both bodies, so every key the
   // tool can send is checked against them.
-  { tool: 'clokio_update_task', method: 'patch', path: '/tasks/{id}', query: [], body: ['title', 'description', 'priority', 'status', 'due_date', 'start_date', 'estimated_hours', 'project_id', 'actor_employee_code', 'is_recurring', 'recurrence_rule', 'label_names', 'add_label_names', 'remove_label_names', 'custom_fields'] },
+  { tool: 'clokio_update_task', method: 'patch', path: '/tasks/{id}', query: [], body: ['title', 'description', 'priority', 'status', 'due_date', 'start_date', 'estimated_hours', 'project_id', 'actor_employee_code', 'is_recurring', 'recurrence_rule', 'label_names', 'add_label_names', 'remove_label_names', 'custom_fields', 'parent_task_id', 'assignee_employee_codes', 'assignee_mode'] },
   { tool: 'clokio_delete_task', method: 'delete', path: '/tasks/{id}', query: [] },
-  { tool: 'clokio_set_task_assignees', method: 'patch', path: '/tasks/{id}/assignees', query: [] },
+  { tool: 'clokio_set_task_assignees', method: 'patch', path: '/tasks/{id}/assignees', query: [], body: ['employee_codes', 'mode', 'actor_employee_code'] },
   { tool: 'clokio_list_project_people', method: 'get', path: '/projects/{projectId}/people', query: [] },
   { tool: 'clokio_list_task_comments', method: 'get', path: '/tasks/{id}/comments', query: [] },
   { tool: 'clokio_add_task_comment', method: 'post', path: '/tasks/{id}/comments', query: [] },
@@ -125,7 +132,7 @@ const TOOL_CALLS = [
   { tool: 'clokio_add_task_dependency', method: 'post', path: '/tasks/{id}/dependencies', query: [] },
   { tool: 'clokio_remove_task_dependency', method: 'delete', path: '/tasks/{id}/dependencies/{depId}', query: [] },
   { tool: 'clokio_set_task_custom_field', method: 'patch', path: '/tasks/{id}/custom-fields', query: [] },
-  { tool: 'clokio_bulk_update_tasks', method: 'patch', path: '/tasks/bulk', query: [], body: ['ids', 'status', 'priority', 'due_date', 'actor_employee_code', 'add_label_names', 'remove_label_names'] },
+  { tool: 'clokio_bulk_update_tasks', method: 'patch', path: '/tasks/bulk', query: [], body: ['ids', 'status', 'priority', 'due_date', 'estimated_hours', 'actor_employee_code', 'add_label_names', 'remove_label_names'] },
   // Backend task #5874 part 2: the same custom field values on many tasks.
   { tool: 'clokio_bulk_set_task_custom_field', method: 'patch', path: '/tasks/bulk/custom-fields', query: [], body: ['ids', 'custom_fields', 'actor_employee_code'] },
 

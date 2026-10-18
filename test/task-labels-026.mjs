@@ -91,7 +91,7 @@ check('bulk schema has the two diff fields only', [
   'remove_label_names' in (bulk?.inputSchema?.properties ?? {}),
   'label_names' in (bulk?.inputSchema?.properties ?? {}),
 ], [true, true, false]);
-has('bulk names the labels in "at least one of"', bulk?.description, 'status/priority/due_date/add_label_names/remove_label_names');
+has('bulk names the labels in "at least one of"', bulk?.description, 'status/priority/due_date/estimated_hours/add_label_names/remove_label_names');
 has('bulk points at update for a replace', bulk?.description, 'clokio_update_task with label_names');
 check('both stay mutating, not read-only', [upd?.annotations?.readOnlyHint, bulk?.annotations?.readOnlyHint], [false, false]);
 

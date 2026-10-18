@@ -327,6 +327,34 @@ export function renderActivity(res: any): string {
 }
 
 /**
+ * 0.27.0 (backend #5874 part 4): a project's activity feed, one change per
+ * line like renderActivity, each naming its task, then the keyset cursor to
+ * continue with. Values are flattened the same way, so a value cannot print
+ * something that looks like further lines.
+ */
+export function renderProjectActivity(res: any): string {
+  const rows: any[] = Array.isArray(res) ? res : (res?.data ?? []);
+  const meta = res?.meta ?? {};
+  const flat = (v: unknown) => String(v).replace(/\s+/g, ' ').trim();
+  const value = (v: unknown) => {
+    if (v === null || v === undefined) return '-';
+    const f = flat(typeof v === 'object' ? JSON.stringify(v) : v);
+    return f === '' ? '-' : f;
+  };
+  const task = (t: any) =>
+    t ? `task #${flat(t.id)}${t.title ? ` "${flat(t.title)}"` : ''}${t.deleted ? ' (deleted)' : ''}` : 'task -';
+  const line = (a: any) =>
+    `[${flat(a.created_at)}] ${task(a.task)} - ${flat(activityActor(a.employee))}: ${flat(a.action)}${a.field ? ` ${flat(a.field)}` : ''}` +
+    (a.old_value != null || a.new_value != null ? ` (${value(a.old_value)} -> ${value(a.new_value)})` : '');
+  return [
+    ...(rows.length ? rows.map(line) : ['No activity.']),
+    meta.next_cursor
+      ? `More: pass cursor="${flat(meta.next_cursor)}" (with the same filters) for the next page.`
+      : 'End of the log for these filters.',
+  ].join('\n');
+}
+
+/**
  * #4 (0.23.0): the ticket a task was opened from, as `linked_ticket:
  * "ticket #<id> <url>"` first in the answer, replacing the raw `ticket`
  * object. No ticket (`ticket: null`, or an older server without the key): no
@@ -574,6 +602,17 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
         .max(365)
         .optional()
         .describe('Days without an update (updated_at) that make an open task stale. Default 14, range 1-365'),
+      group_by_custom_field: z
+        .string()
+        .min(1)
+        .max(50)
+        .optional()
+        .describe(
+          'The field_key of a PUBLIC dropdown or multi-select field of this project (clokio_get_project_custom_fields). ' +
+            'Adds by_custom_field: tasks per option (value and label) with open / closed / total, plus none for tasks ' +
+            'with no answer; a multi-select task counts under each option it holds. This answers "what is in each ' +
+            'release / sprint". Any other field type, a private field or an unknown key is refused (422).'
+        ),
     },
     handler: (args, cfg) =>
       request(cfg, `/projects/${args.project_id}/task-summary`, {
@@ -581,8 +620,46 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
           include_closed: args.include_closed === undefined ? undefined : args.include_closed ? 1 : 0,
           top_level: args.top_level === undefined ? undefined : args.top_level ? 1 : 0,
           stale_days: args.stale_days,
+          group_by_custom_field: args.group_by_custom_field,
         },
       }),
+  });
+
+  registerTool(server, config, {
+    name: 'clokio_list_project_activity',
+    description:
+      "One project's activity log, newest first: every change on every task of the board (deleted tasks " +
+      'included), one line per change naming the task, who acted (name, code, organisation) and what changed. ' +
+      "since / until narrow it (a plain date or time is read in the organisation's time zone; until is " +
+      'exclusive), action limits it to some actions (e.g. ["status_changed", "assigned"]). Pages of per_page ' +
+      '(1-100, default 25); the answer ends with the cursor to pass back for the next page, with the same ' +
+      "filters. Only PUBLIC custom fields' history appears, and internal comments never do. Use " +
+      'clokio_get_task_activity for one task. Needs tasks:read.',
+    schema: {
+      project_id: z.number().int(),
+      since: z.string().optional().describe('YYYY-MM-DD or ISO-8601: rows at or after this instant'),
+      until: z.string().optional().describe('YYYY-MM-DD or ISO-8601: rows before this instant (exclusive)'),
+      action: z
+        .array(z.string().min(1).max(60))
+        .min(1)
+        .max(30)
+        .optional()
+        .describe('Only these actions, e.g. ["status_changed", "assigned", "custom_field_changed"]'),
+      cursor: z.string().max(500).optional().describe('The cursor the previous page ended with'),
+      per_page: z.number().int().min(1).max(100).optional(),
+    },
+    handler: async (args, cfg) =>
+      renderProjectActivity(
+        await request<any>(cfg, `/projects/${args.project_id}/activities`, {
+          query: {
+            since: args.since,
+            until: args.until,
+            action: args.action,
+            cursor: args.cursor,
+            per_page: args.per_page,
+          },
+        }),
+      ),
   });
 
   registerTool(server, config, {
@@ -708,7 +785,14 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
       '\n\n' +
       '`custom_fields` (object field_key -> value) sets several custom fields in the same call, with the ' +
       'rules of clokio_set_task_custom_field (option labels accepted, null clears). Every field is checked ' +
-      'before anything is written: one bad field refuses the whole update and nothing changes.',
+      'before anything is written: one bad field refuses the whole update and nothing changes.\n\n' +
+      '`parent_task_id` makes the task a subtask of another task on the SAME project (null makes it ' +
+      'top-level again). Subtasks go one level deep: a subtask cannot be a parent, a task that has subtasks ' +
+      'cannot become one, and a task cannot be its own parent.\n\n' +
+      '`assignee_employee_codes` (with `assignee_mode`: replace by default, add, remove) changes the ' +
+      'assignees in the same call, with exactly the rules of clokio_set_task_assignees (a client\'s person ' +
+      'as {employee_code, organization_id}; assigning makes the person a watcher). A refused person refuses ' +
+      'the WHOLE update: nothing in the call is written.',
     schema: {
       id: z.number().int(),
       title: z.string().max(255).optional(),
@@ -738,6 +822,23 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
         'Labels to REMOVE, keeping the others. A name the task does not carry, or that does not exist, changes nothing (never created)',
       ),
       custom_fields: customFieldsMap.optional(),
+      parent_task_id: z
+        .number()
+        .int()
+        .min(1)
+        .nullable()
+        .optional()
+        .describe('Hang the task under this task (same project, one level deep), or null to make it top-level'),
+      assignee_employee_codes: z
+        .array(assigneeReference)
+        .min(1)
+        .max(50)
+        .optional()
+        .describe('Assignees, as on clokio_set_task_assignees: a code of your organisation, or {employee_code, organization_id} for a client\'s person'),
+      assignee_mode: z
+        .enum(['replace', 'add', 'remove'])
+        .optional()
+        .describe('How assignee_employee_codes applies: replace (default) overwrites, add appends, remove takes off'),
     },
     handler: (args, cfg) => {
       // Only keys the caller actually supplied may go in the body: PATCH
@@ -756,8 +857,14 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
         'actor_employee_code',
         'label_names',
         'custom_fields',
+        'parent_task_id',
+        'assignee_employee_codes',
+        'assignee_mode',
       ] as const) {
         if (args[key] !== undefined) body[key] = args[key];
+      }
+      if (args.assignee_mode !== undefined && args.assignee_employee_codes === undefined) {
+        throw new Error('assignee_mode needs assignee_employee_codes.');
       }
       refuseLabelConflicts(args, true);
       // An empty add/remove list is not a change: it is not sent.
@@ -823,16 +930,18 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
         .max(50)
         .describe('Each a code of your organisation, or {employee_code, organization_id} for a client\'s person on a shared board'),
       mode: z.enum(['add', 'replace', 'remove']).describe('Required'),
+      actor_employee_code: employeeCode.optional().describe('Who to credit in the activity log; omit to use the key issuer / CLOKIO_DEFAULT_ACTOR'),
     },
-    handler: async (args, cfg) =>
-      compactAssignees(
+    handler: async (args, cfg) => {
+      const body: Record<string, unknown> = { employee_codes: args.employee_codes, mode: args.mode };
+      const actor = args.actor_employee_code ?? cfg.defaultActor;
+      if (actor) body.actor_employee_code = actor;
+      return compactAssignees(
         args.id,
-        await request<any>(cfg, `/tasks/${args.id}/assignees`, {
-          method: 'PATCH',
-          body: { employee_codes: args.employee_codes, mode: args.mode },
-        }),
+        await request<any>(cfg, `/tasks/${args.id}/assignees`, { method: 'PATCH', body }),
         cfg.baseUrl,
-      ),
+      );
+    },
   });
 
   registerTool(server, config, {
@@ -1240,11 +1349,12 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
     name: 'clokio_bulk_update_tasks',
     mutates: true,
     description:
-      'Apply ONE change (any of status, priority, due_date, add_label_names, remove_label_names) to up to 200 ' +
+      'Apply ONE change (any of status, priority, due_date, estimated_hours, add_label_names, remove_label_names) to up to 200 ' +
       'tasks at once - for cleaning up a board without a call per task. Partial success is normal: the result ' +
       'is {updated, not_found, invalid_status}. not_found lists ids that do not exist in your org (skipped, not ' +
       'fatal); invalid_status lists tasks whose board does not have the given status slug (such a task is ' +
-      'skipped whole, its labels included). Give at least one of status/priority/due_date/add_label_names/' +
+      'skipped whole, its labels included). estimated_hours (0-10000, null clears) sets one estimate on every ' +
+      'task; a task already holding it changes nothing. Give at least one of status/priority/due_date/estimated_hours/add_label_names/' +
       'remove_label_names (an empty list does not count). Labels are a change only: add_label_names adds (a missing name is CREATED once in ' +
       'your organisation), remove_label_names removes (never creates); a label a task already carries, or one ' +
       'it does not carry, changes nothing for that task. To REPLACE a task\'s whole label set use ' +
@@ -1256,6 +1366,7 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
       status: z.string().optional().describe('Status slug - validated per task against its own board'),
       priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
       due_date: z.string().nullable().optional().describe('YYYY-MM-DD, or null to clear'),
+      estimated_hours: z.number().min(0).max(10000).nullable().optional().describe('Hours, 0-10000, set on every task; null clears'),
       actor_employee_code: employeeCode.optional().describe('Who to credit; omit to use the key issuer'),
       add_label_names: labelNames.describe('Labels to ADD to every task. A missing name is CREATED once in your organisation'),
       remove_label_names: labelNames.describe('Labels to REMOVE from every task. An unknown name changes nothing (never created)'),
@@ -1265,16 +1376,18 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
         args.status === undefined &&
         args.priority === undefined &&
         args.due_date === undefined &&
+        args.estimated_hours === undefined &&
         !hasNames(args.add_label_names) &&
         !hasNames(args.remove_label_names)
       ) {
-        throw new Error('Give at least one of: status, priority, due_date, add_label_names, remove_label_names.');
+        throw new Error('Give at least one of: status, priority, due_date, estimated_hours, add_label_names, remove_label_names.');
       }
       refuseLabelConflicts(args, false);
       const body: Record<string, unknown> = { ids: args.ids };
       if (args.status !== undefined) body.status = args.status;
       if (args.priority !== undefined) body.priority = args.priority;
       if (args.due_date !== undefined) body.due_date = args.due_date;
+      if (args.estimated_hours !== undefined) body.estimated_hours = args.estimated_hours;
       if (hasNames(args.add_label_names)) body.add_label_names = args.add_label_names;
       if (hasNames(args.remove_label_names)) body.remove_label_names = args.remove_label_names;
       body.actor_employee_code = args.actor_employee_code ?? cfg.defaultActor;

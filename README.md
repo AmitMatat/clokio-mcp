@@ -65,7 +65,7 @@ acting. An explicit code on a tool call always takes precedence.
 
 Optional: set `CLOKIO_TOOLSETS` to register only the tool groups you need, e.g.
 `CLOKIO_TOOLSETS=tasks`. This cuts the per-session tool-list cost - a
-task-focused session drops from 122 tools to 35. Optional groups are `tasks`,
+task-focused session drops from 127 tools to 40. Optional groups are `tasks`,
 `employees`, `attendance` (which includes leave, time entries and logging time), `docs` and
 `tickets`;
 combine them with commas. If your key cannot open documents (no acts-as
@@ -76,13 +76,13 @@ through it.
 
 ## Tools
 
-122 tools across seven areas. Read-only tools carry the MCP `readOnlyHint`; writes
+127 tools across seven areas. Read-only tools carry the MCP `readOnlyHint`; writes
 are marked mutating (deletes are `destructive`).
 
 | Area | Tools |
 |------|-------|
-| **Tasks** | list (with `compact` / `sort` / `updated_since` / `updated_before` / `recurring`, no due date, no assignee, a custom field value, title-only search), a project's task summary (counts by status / priority / label / assignee, overdue and stale lists: `clokio_get_project_task_summary`), get (with `comments_limit`; names the ticket a task was opened from), create, update (incl. recurring series: set a rule, pause/resume, stop; labels: replace, add, remove), delete, bulk update (status, priority, due date, add / remove labels), set assignees (a shared board's client people as `{employee_code, organization_id}`), list a board's people, list/add/edit comments, list attachments (with `is_latest` + `latest_only`), upload, download one (save to disk, or read PDF text / ZIP entries / images / text inline), download all to a folder, read images pasted into descriptions and comments, activity (with organisations, paged), list/add/remove dependencies, set custom field (an option by value or label), set custom fields on many tasks (`clokio_bulk_set_task_custom_field`, partial success); `clokio_update_task` takes `custom_fields` too |
-| **Projects & clients** | list projects, project statuses, project custom fields, project contacts, get client, add client contact |
+| **Tasks** | list (with `compact` / `sort` / `updated_since` / `updated_before` / `recurring`, no due date, no assignee, a custom field value, title-only search), a project's task summary (counts by status / priority / label / assignee, overdue and stale lists, per option of a release dropdown: `clokio_get_project_task_summary`), a project's activity log (`clokio_list_project_activity`), get (with `comments_limit`; names the ticket a task was opened from), create, update (incl. recurring series: set a rule, pause/resume, stop; labels: replace, add, remove; parent task; assignees in the same call), delete, bulk update (status, priority, due date, estimate, add / remove labels), set assignees (a shared board's client people as `{employee_code, organization_id}`), list a board's people, list/add/edit comments, list attachments (with `is_latest` + `latest_only`), upload, download one (save to disk, or read PDF text / ZIP entries / images / text inline), download all to a folder, read images pasted into descriptions and comments, activity (with organisations, paged), list/add/remove dependencies, set custom field (an option by value or label), set custom fields on many tasks (`clokio_bulk_set_task_custom_field`, partial success); `clokio_update_task` takes `custom_fields` too |
+| **Projects & clients** | list projects, project statuses (and create / edit them), project custom fields (and create / edit them, e.g. a release dropdown), project contacts, get client, add client contact |
 | **Reference** | task statuses, task labels, locations, list webhooks (read-only), whoami |
 | **Employees** | list (name search), lookup by PIN, task-stats, inbox (mentions, new assignments, others' status changes; with the tickets toolset, also the acting employee's open tickets), create, set status |
 | **Attendance** | daily, range, per-employee, monthly summary, clock in/out, break start/end, time entries (local times in the person's zone; edit / delete your own), leaves (with `days`, half days counted 0.5), days of leave taken per type and year (`clokio_get_leave_days_taken`; the old name `clokio_get_leave_balances` still works; Clokio tracks no quota or remaining balance; leave and time-entry lists take `employee_code` and at most 92 days per call), **log time on a task**, start / stop / read the timer (see [Logging time](#logging-time)) |
