@@ -4,7 +4,7 @@
 //
 // Run by hand:  npm run build && node test/task-labels-026.mjs
 import { checker, runTools } from './support/harness.mjs';
-import { refuseLabelConflicts } from '../dist/tools/tasks.js';
+import { refuseLabelConflicts, hasNames } from '../dist/tools/tasks.js';
 
 const { check, has, done } = checker();
 
@@ -21,7 +21,12 @@ has('replace with add is refused', threw(() => refuseLabelConflicts({ label_name
 has('replace with remove is refused', threw(() => refuseLabelConflicts({ label_names: [], remove_label_names: ['b'] }, true)), 'not both');
 check('replace alone is fine', threw(() => refuseLabelConflicts({ label_names: ['a'] }, true)), null);
 check('add and remove of different names is fine', threw(() => refuseLabelConflicts({ add_label_names: ['a'], remove_label_names: ['b'] }, true)), null);
-has('one name in both lists is refused, case-insensitively', threw(() => refuseLabelConflicts({ add_label_names: ['Bug'], remove_label_names: [' bug'] }, false)), 'both add_label_names and remove_label_names');
+// One label in both lists is the SERVER's call (it judges resolved labels,
+// accent variants included), so the client lets it through.
+check('one name in both lists is left to the server', threw(() => refuseLabelConflicts({ add_label_names: ['Bug'], remove_label_names: ['bug'] }, false)), null);
+// An empty diff list is not a change, so it never collides with a replace.
+check('replace with an empty diff is fine', threw(() => refuseLabelConflicts({ label_names: ['a'], add_label_names: [] }, true)), null);
+check('hasNames: empty is nothing', [hasNames([]), hasNames(undefined), hasNames(['a'])], [false, false, true]);
 
 // ── the tools over the wire ────────────────────────────────────────────
 const OK = { json: { status: 'success', data: { id: 7, labels: [{ id: 1, name: 'Bug', color: '#6b7280' }] } } };
@@ -36,9 +41,11 @@ const run = await runTools({
     ['clokio_bulk_update_tasks', { ids: [1, 2], add_label_names: ['Fresh'] }], // 5 labels alone are a change
     ['clokio_bulk_update_tasks', { ids: [1, 2], remove_label_names: ['Old'], priority: 'high' }], // 6
     ['clokio_bulk_update_tasks', { ids: [1, 2] }], // 7 nothing to change: refused
-    ['clokio_bulk_update_tasks', { ids: [1], add_label_names: ['X'], remove_label_names: ['x'] }], // 8 refused
+    ['clokio_bulk_update_tasks', { ids: [1], add_label_names: [], remove_label_names: [] }], // 8 empty lists: nothing to change, refused
     ['clokio_bulk_update_tasks', { ids: [1], label_names: ['x'] }], // 9 not a bulk field: schema refuses or drops it
     ['clokio_update_task', { id: 7, add_label_names: ['x'.repeat(51)] }], // 10 over the column
+    ['clokio_update_task', { id: 7, label_names: ['a'], add_label_names: [], remove_label_names: [] }], // 11 empty diffs dropped, replace sent
+    ['clokio_bulk_update_tasks', { ids: [1], priority: 'low', add_label_names: [] }], // 12 empty list not sent
   ],
   respond: () => OK,
 });
@@ -55,10 +62,12 @@ check('bulk with labels alone is sent', run.hits[4]?.body, { ids: [1, 2], add_la
 check('bulk with labels and a field', run.hits[5]?.body, { ids: [1, 2], priority: 'high', remove_label_names: ['Old'] });
 check('bulk with nothing errors', run.errored(7), true);
 has('...naming the label fields', run.text(7), 'add_label_names, remove_label_names');
-check('bulk add and remove of one name errors', run.errored(8), true);
+check('bulk with only empty lists errors', run.errored(8), true);
 check('label_names never reaches the bulk route', run.hits.filter((h) => h.path === '/tasks/bulk').some((h) => 'label_names' in (h.body ?? {})), false);
 check('a 51-character name errors before any request', run.errored(10), true);
-check('exactly six requests went out (3, 7, 8, 10 refused locally; 9 has nothing to change)', run.hits.length, 6);
+check('replace with empty diffs sends the replace only', run.hits[6]?.body, { label_names: ['a'] });
+check('an empty bulk list is not sent', run.hits[7]?.body, { ids: [1], priority: 'low' });
+check('exactly eight requests went out (3, 7, 8, 10 refused locally; 9 has nothing to change)', run.hits.length, 8);
 check('all of them PATCHes', run.hits.every((h) => h.method === 'PATCH'), true);
 console.log(bodies.join('\n'));
 
@@ -68,6 +77,8 @@ const bulk = run.tools.clokio_bulk_update_tasks;
 has('update says replace', upd?.description, '`label_names` REPLACES');
 has('update says created when missing', upd?.description, 'CREATED');
 has('update says not to combine', upd?.description, 'Do not combine');
+has('update says an empty list is not a change', upd?.description, 'An empty list is not a change');
+has('bulk describes labels_failed', bulk?.description, 'labels_failed');
 check('update schema has the three fields', ['label_names', 'add_label_names', 'remove_label_names'].every((k) => k in (upd?.inputSchema?.properties ?? {})), true);
 check('bulk schema has the two diff fields only', [
   'add_label_names' in (bulk?.inputSchema?.properties ?? {}),

@@ -226,31 +226,32 @@ const labelNames = z.array(labelName).max(50).optional();
 const LABELS_ON_UPDATE_NOTE =
   'LABELS: `label_names` REPLACES the task\'s whole label set (an empty list removes every label). ' +
   '`add_label_names` / `remove_label_names` change it instead, keeping the rest. Do not combine ' +
-  '`label_names` with either of them, and do not put one name in both. A name that does not exist in ' +
+  '`label_names` with either of them, and do not put one label in both (spellings the organisation treats as ' +
+  'one label count; the server refuses it). An empty list is not a change. A name that does not exist in ' +
   'your organisation is CREATED (as on clokio_create_task; check clokio_list_task_labels first to reuse ' +
   'an existing spelling), names match case-insensitively, a remove never creates, and adding a label the ' +
   'task already carries or removing one it does not carry changes nothing. Up to 50 names per field, ' +
   '50 characters each. Each change is written to the task\'s activity log, credited like any other edit.';
 
+/** A diff list that names something; an empty list is not a change (the API ignores it too). */
+export function hasNames(list: string[] | undefined): list is string[] {
+  return Array.isArray(list) && list.length > 0;
+}
+
 /**
  * Refuse before any request what the API would refuse anyway: replace with a
- * diff (update only), and one name in both add and remove (compared
- * case-insensitively, as the API compares them).
+ * non-empty diff (update only). Whether one label sits in both diff lists is
+ * judged by the API on the resolved labels (accent and case variants
+ * included), so the MCP leaves that to the server's own sentence.
  */
 export function refuseLabelConflicts(
   args: { label_names?: string[]; add_label_names?: string[]; remove_label_names?: string[] },
   allowReplace: boolean,
 ): void {
-  if (allowReplace && args.label_names !== undefined && (args.add_label_names !== undefined || args.remove_label_names !== undefined)) {
+  if (allowReplace && args.label_names !== undefined && (hasNames(args.add_label_names) || hasNames(args.remove_label_names))) {
     throw new Error(
       'Pass either label_names (replaces every label) or add_label_names / remove_label_names (a change), not both.',
     );
-  }
-  const fold = (n: string) => n.trim().toLowerCase();
-  const adding = new Set((args.add_label_names ?? []).map(fold));
-  const both = [...new Set((args.remove_label_names ?? []).filter((n) => adding.has(fold(n))))];
-  if (both.length > 0) {
-    throw new Error(`These names are in both add_label_names and remove_label_names: ${both.join(', ')}. Put each name in one of them.`);
   }
 }
 
@@ -592,12 +593,13 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
         'project_id',
         'actor_employee_code',
         'label_names',
-        'add_label_names',
-        'remove_label_names',
       ] as const) {
         if (args[key] !== undefined) body[key] = args[key];
       }
       refuseLabelConflicts(args, true);
+      // An empty add/remove list is not a change: it is not sent.
+      if (hasNames(args.add_label_names)) body.add_label_names = args.add_label_names;
+      if (hasNames(args.remove_label_names)) body.remove_label_names = args.remove_label_names;
       if (typeof body.description === 'string') body.description = markdownToHtml(body.description);
       // Series management maps onto the API's two columns. `recurrence`
       // carries the whole intent (rule + on/off), so combining it with the
@@ -1041,10 +1043,12 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
       'is {updated, not_found, invalid_status}. not_found lists ids that do not exist in your org (skipped, not ' +
       'fatal); invalid_status lists tasks whose board does not have the given status slug (such a task is ' +
       'skipped whole, its labels included). Give at least one of status/priority/due_date/add_label_names/' +
-      'remove_label_names. Labels are a change only: add_label_names adds (a missing name is CREATED once in ' +
+      'remove_label_names (an empty list does not count). Labels are a change only: add_label_names adds (a missing name is CREATED once in ' +
       'your organisation), remove_label_names removes (never creates); a label a task already carries, or one ' +
       'it does not carry, changes nothing for that task. To REPLACE a task\'s whole label set use ' +
-      'clokio_update_task with label_names. Attribution follows the key issuer unless actor_employee_code is set.',
+      'clokio_update_task with label_names. With labels, the result also has labels_failed: ids whose label change ' +
+      'could not be written after their other changes were saved (normally empty; send the labels again). ' +
+      'Attribution follows the key issuer unless actor_employee_code is set.',
     schema: {
       ids: z.array(z.number().int()).min(1).max(200),
       status: z.string().optional().describe('Status slug - validated per task against its own board'),
@@ -1059,8 +1063,8 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
         args.status === undefined &&
         args.priority === undefined &&
         args.due_date === undefined &&
-        args.add_label_names === undefined &&
-        args.remove_label_names === undefined
+        !hasNames(args.add_label_names) &&
+        !hasNames(args.remove_label_names)
       ) {
         throw new Error('Give at least one of: status, priority, due_date, add_label_names, remove_label_names.');
       }
@@ -1069,8 +1073,8 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
       if (args.status !== undefined) body.status = args.status;
       if (args.priority !== undefined) body.priority = args.priority;
       if (args.due_date !== undefined) body.due_date = args.due_date;
-      if (args.add_label_names !== undefined) body.add_label_names = args.add_label_names;
-      if (args.remove_label_names !== undefined) body.remove_label_names = args.remove_label_names;
+      if (hasNames(args.add_label_names)) body.add_label_names = args.add_label_names;
+      if (hasNames(args.remove_label_names)) body.remove_label_names = args.remove_label_names;
       body.actor_employee_code = args.actor_employee_code ?? cfg.defaultActor;
       return request(cfg, '/tasks/bulk', { method: 'PATCH', body });
     },
