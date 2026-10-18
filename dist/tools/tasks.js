@@ -201,13 +201,20 @@ export function hasNames(list) {
 }
 /**
  * Refuse before any request what the API would refuse anyway: replace with a
- * non-empty diff (update only). Whether one label sits in both diff lists is
- * judged by the API on the resolved labels (accent and case variants
- * included), so the MCP leaves that to the server's own sentence.
+ * non-empty diff (update only), and the same name (trimmed, case-folded) in
+ * both diff lists, which the API refuses before any lookup. Accent variants
+ * of an existing label ("Café" / "Cafe") are judged by the API on the
+ * resolved labels, in its own sentence.
  */
 export function refuseLabelConflicts(args, allowReplace) {
     if (allowReplace && args.label_names !== undefined && (hasNames(args.add_label_names) || hasNames(args.remove_label_names))) {
         throw new Error('Pass either label_names (replaces every label) or add_label_names / remove_label_names (a change), not both.');
+    }
+    const fold = (n) => n.trim().toLowerCase();
+    const adding = new Set((args.add_label_names ?? []).map(fold));
+    const both = [...new Set((args.remove_label_names ?? []).filter((n) => adding.has(fold(n))).map((n) => n.trim()))];
+    if (both.length > 0) {
+        throw new Error(`These labels are in both add_label_names and remove_label_names: ${both.join(', ')}. Send each label in one of them.`);
     }
 }
 /** Task-management tools: the core of the Clokio API surface. */
@@ -553,16 +560,16 @@ export function registerTaskTools(server, config) {
             else if (args.recurrence_active !== undefined) {
                 body.is_recurring = args.recurrence_active;
             }
-            // Credit the update to CLOKIO_DEFAULT_ACTOR when the caller named no
-            // actor. The API otherwise falls back to the key's issuer on its own,
-            // so this only overrides for a shared/service key. An explicit
-            // actor_employee_code above already sits in body and is left untouched.
             // Nothing to change (only empty add/remove lists, or no field at all):
             // refused here, as the bulk tool refuses, instead of a request that
             // changes nothing.
             if (Object.keys(body).filter((k) => k !== 'actor_employee_code').length === 0) {
                 throw new Error('Nothing to change: give at least one field (an empty add_label_names / remove_label_names list is not a change).');
             }
+            // Credit the update to CLOKIO_DEFAULT_ACTOR when the caller named no
+            // actor. The API otherwise falls back to the key's issuer on its own,
+            // so this only overrides for a shared/service key. An explicit
+            // actor_employee_code above already sits in body and is left untouched.
             if (body.actor_employee_code === undefined && cfg.defaultActor) {
                 body.actor_employee_code = cfg.defaultActor;
             }

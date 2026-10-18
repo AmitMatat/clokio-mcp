@@ -21,9 +21,10 @@ has('replace with add is refused', threw(() => refuseLabelConflicts({ label_name
 has('replace with remove is refused', threw(() => refuseLabelConflicts({ label_names: [], remove_label_names: ['b'] }, true)), 'not both');
 check('replace alone is fine', threw(() => refuseLabelConflicts({ label_names: ['a'] }, true)), null);
 check('add and remove of different names is fine', threw(() => refuseLabelConflicts({ add_label_names: ['a'], remove_label_names: ['b'] }, true)), null);
-// One label in both lists is the SERVER's call (it judges resolved labels,
-// accent variants included), so the client lets it through.
-check('one name in both lists is left to the server', threw(() => refuseLabelConflicts({ add_label_names: ['Bug'], remove_label_names: ['bug'] }, false)), null);
+// The same name (trimmed, case-folded) in both lists is refused locally, as
+// the API refuses it before any lookup; accent variants stay the server's.
+has('one name in both lists is refused', threw(() => refuseLabelConflicts({ add_label_names: ['Bug '], remove_label_names: [' bug'] }, false)), 'both add_label_names and remove_label_names');
+check('accent variants are left to the server', threw(() => refuseLabelConflicts({ add_label_names: ['Cafe'], remove_label_names: ['Café'] }, false)), null);
 // An empty diff list is not a change, so it never collides with a replace.
 check('replace with an empty diff is fine', threw(() => refuseLabelConflicts({ label_names: ['a'], add_label_names: [] }, true)), null);
 check('hasNames: empty is nothing', [hasNames([]), hasNames(undefined), hasNames(['a'])], [false, false, true]);
