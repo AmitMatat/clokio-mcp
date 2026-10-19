@@ -337,6 +337,25 @@ export function withLinkedTicket(task) {
  * 422 are refused here first, in the same words, so no request is spent on
  * them.
  */
+/**
+ * The keys `fields` may name on GET /tasks (0.27.1, backend #5874 QA round 1):
+ * the compact row's keys plus custom_fields. The server's own list is
+ * PublicTaskResource::SELECTABLE_FIELDS; an unknown name is its 422.
+ */
+export const TASK_LIST_FIELDS = [
+    'id',
+    'title',
+    'status',
+    'priority',
+    'due_date',
+    'parent_id',
+    'project_id',
+    'assignee_codes',
+    'external_assignees',
+    'labels',
+    'updated_at',
+    'custom_fields',
+];
 export function listFilterQuery(args) {
     if (args.no_due_date === true && (args.due_before !== undefined || args.due_after !== undefined)) {
         throw new Error('no_due_date=true cannot be combined with due_before or due_after: a task with no due date is never due before or after anything. Drop one of them.');
@@ -456,6 +475,14 @@ export function registerTaskTools(server, config) {
                 'and updated_at - dropping the HTML description and flattening the nested project/assignee ' +
                 'objects to ids. Resolve a project_id with clokio_list_projects, and fetch the one task you ' +
                 'actually need in full with clokio_get_task (its URL is /tasks/{id}/view).'),
+            fields: z
+                .array(z.enum(TASK_LIST_FIELDS))
+                .min(1)
+                .max(TASK_LIST_FIELDS.length)
+                .optional()
+                .describe('Return ONLY these keys per row, in this order (implies compact), e.g. ["id", "title", "status"]. ' +
+                'Allowed: ' + TASK_LIST_FIELDS.join(', ') + '. custom_fields is the full row\'s object of public ' +
+                'field values. The smallest scan there is.'),
             sort: z
                 .enum([
                 'due_date',
@@ -497,6 +524,7 @@ export function registerTaskTools(server, config) {
                 cursor: args.cursor,
                 sort: args.sort,
                 compact: args.compact === undefined ? undefined : args.compact ? 1 : 0,
+                fields: args.fields === undefined ? undefined : [...new Set(args.fields)].join(','),
             },
         }),
     });

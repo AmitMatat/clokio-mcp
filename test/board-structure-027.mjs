@@ -107,7 +107,7 @@ has('create field names the scope', tool('clokio_create_project_custom_field')?.
 has('update field says the whole list', tool('clokio_update_project_custom_field')?.description, 'WHOLE new list');
 has('update field says removing a held option is refused', tool('clokio_update_project_custom_field')?.description, 'Removing an option tasks still hold is refused');
 has('create status says active only', tool('clokio_create_project_status')?.description, 'always ACTIVE');
-has('update status says no delete', tool('clokio_update_project_status')?.description, 'cannot be deleted');
+has('update status points at the delete tool (0.27.1)', tool('clokio_update_project_status')?.description, 'clokio_delete_project_status');
 has('update_task explains one level', tool('clokio_update_task')?.description, 'one level deep');
 has('update_task says a refused person refuses the whole update', tool('clokio_update_task')?.description, 'nothing in the call is written');
 has('summary grouping explains releases', prop('clokio_get_project_task_summary', 'group_by_custom_field'), 'what is in each');

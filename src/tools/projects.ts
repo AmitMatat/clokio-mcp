@@ -39,7 +39,8 @@ export function registerProjectTools(server: McpServer, config: ClokioConfig): v
 
   // ── Board configuration writes (0.27.0, backend #5874 part 4) ──
   // projects:write. Every rule is the web editor's own copy on the server;
-  // nothing is judged here beyond the shapes. No delete in this version.
+  // nothing is judged here beyond the shapes. Delete since 0.27.1 (backend
+  // #5874 QA round 1), with the web's delete rules on the server.
 
   const fieldOptions = z
     .array(
@@ -168,8 +169,8 @@ export function registerProjectTools(server: McpServer, config: ClokioConfig): v
     description:
       'Edit a project status by its slug (clokio_get_project_statuses): rename (the slug stays), recolour, ' +
       'move (position, 0-based; the completed status stays last) or change category. A status cannot become ' +
-      'a second completed one, and the completed one cannot become active. Statuses cannot be deleted ' +
-      'through the API. Needs the projects:write scope.',
+      'a second completed one, and the completed one cannot become active. To remove a status use ' +
+      'clokio_delete_project_status. Needs the projects:write scope.',
     schema: {
       project_id: z.number().int(),
       slug: z.string().regex(/^[A-Za-z0-9_-]{1,100}$/, 'slug: letters, digits, _ or -'),
@@ -190,6 +191,62 @@ export function registerProjectTools(server: McpServer, config: ClokioConfig): v
       const actor = args.actor_employee_code ?? cfg.defaultActor;
       if (actor) body.actor_employee_code = actor;
       return request(cfg, `/projects/${args.project_id}/statuses/${args.slug}`, { method: 'PATCH', body });
+    },
+  });
+
+  registerTool(server, config, {
+    name: 'clokio_delete_project_status',
+    mutates: 'destructive',
+    description:
+      'Delete a project status by its slug (clokio_get_project_statuses), with the web editor\'s rules. The ' +
+      'DEFAULT status (where new tasks start) and the COMPLETED status cannot be deleted. When tasks still use ' +
+      'the status, move_to is REQUIRED: another slug of the same project; every task on the deleted status ' +
+      '(deleted tasks included) moves there in the same step, and each move is written to that task\'s ' +
+      'activity log, credited to the actor. Without move_to the server answers how many tasks use it and ' +
+      'deletes nothing. A project still using the organisation\'s statuses gets its own copy only when the ' +
+      'delete happens, so no other project changes. Needs the projects:write scope.',
+    schema: {
+      project_id: z.number().int(),
+      slug: z.string().regex(/^[A-Za-z0-9_-]{1,100}$/, 'slug: letters, digits, _ or -'),
+      move_to: z
+        .string()
+        .regex(/^[A-Za-z0-9_-]{1,100}$/, 'move_to: a status slug')
+        .optional()
+        .describe('Where the tasks on this status go: another slug of the same project. Required when any task uses it'),
+      actor_employee_code: actorCode,
+    },
+    handler: (args, cfg) => {
+      if (args.move_to !== undefined && args.move_to === args.slug) {
+        throw new Error('move_to must be another status, not the one being deleted.');
+      }
+      const body: Record<string, unknown> = {};
+      if (args.move_to !== undefined) body.move_to = args.move_to;
+      const actor = args.actor_employee_code ?? cfg.defaultActor;
+      if (actor) body.actor_employee_code = actor;
+      return request(cfg, `/projects/${args.project_id}/statuses/${args.slug}`, { method: 'DELETE', body });
+    },
+  });
+
+  registerTool(server, config, {
+    name: 'clokio_delete_project_custom_field',
+    mutates: 'destructive',
+    description:
+      'Delete a project custom field by its field_key, with the web editor\'s rule: the field is removed ' +
+      'TOGETHER WITH every value stored for it on every task, and this cannot be undone. A field in use is ' +
+      'not refused (the web does not refuse it either) and there is no archive; the answer says how many ' +
+      'tasks held a value (affected_task_count). Check usage first with clokio_list_tasks custom_field or ' +
+      'clokio_get_project_task_summary group_by_custom_field when that matters. A private field answers not ' +
+      'found. Needs the projects:write scope.',
+    schema: {
+      project_id: z.number().int(),
+      field_key: z.string().regex(FIELD_KEY_PATTERN, 'field_key: letters, digits, _ or -'),
+      actor_employee_code: actorCode,
+    },
+    handler: (args, cfg) => {
+      const body: Record<string, unknown> = {};
+      const actor = args.actor_employee_code ?? cfg.defaultActor;
+      if (actor) body.actor_employee_code = actor;
+      return request(cfg, `/projects/${args.project_id}/custom-fields/${args.field_key}`, { method: 'DELETE', body });
     },
   });
 
