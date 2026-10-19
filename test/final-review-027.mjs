@@ -57,6 +57,6 @@ check('update: 10000 is refused', run.errored(9), true);
 check('set custom field: a good key goes out', run.hits[2]?.body?.field_key, 'client_po');
 check('exactly three requests went out', run.hits.length, 3);
 has('bulk says 9999.99', run.tools.clokio_bulk_update_tasks?.description, '0-9999.99');
-has('update_task says how a subtask moves', run.tools.clokio_update_task?.inputSchema?.properties?.project_id?.description, 'parent_task_id: null');
+has('update_task says how a subtask moves', run.tools.clokio_update_task?.inputSchema?.properties?.project_id?.description, 'or the id of a task on the new project');
 
 done();

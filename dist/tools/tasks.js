@@ -714,8 +714,9 @@ export function registerTaskTools(server, config) {
                 .int()
                 .optional()
                 .describe('Move the task to another project. Its subtasks move with it, and a status the new board lacks becomes ' +
-                'that board\'s default. A SUBTASK moves only with parent_task_id: null in the same call (it becomes a ' +
-                'top-level task there); otherwise the server refuses it.'),
+                'that board\'s default. A SUBTASK moves only when the same call sends parent_task_id: null (it ' +
+                'becomes a top-level task there) or the id of a task on the new project (it moves under it); ' +
+                'otherwise the server refuses it.'),
             actor_employee_code: employeeCode.optional().describe('Who to credit in the activity log; omit to use the key issuer / CLOKIO_DEFAULT_ACTOR'),
             recurrence: recurrenceInput
                 .nullable()
