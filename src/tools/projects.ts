@@ -200,7 +200,8 @@ export function registerProjectTools(server: McpServer, config: ClokioConfig): v
     description:
       'Delete a project status by its slug (clokio_get_project_statuses), with the web editor\'s rules. The ' +
       'DEFAULT status (where new tasks start) and the COMPLETED status cannot be deleted. When tasks still use ' +
-      'the status, move_to is REQUIRED: another slug of the same project; every task on the deleted status ' +
+      'the status, move_to is REQUIRED: another slug of the same project, of the SAME kind (an active status ' +
+      'for an active one); every task on the deleted status ' +
       '(deleted tasks included) moves there in the same step, and each move is written to that task\'s ' +
       'activity log, credited to the actor. Without move_to the server answers how many tasks use it and ' +
       'deletes nothing. A project still using the organisation\'s statuses gets its own copy only when the ' +
