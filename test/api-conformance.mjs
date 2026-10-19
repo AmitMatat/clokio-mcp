@@ -83,7 +83,7 @@ const TOOL_CALLS = [
   { tool: 'clokio_update_project_status', method: 'patch', path: '/projects/{projectId}/statuses/{slug}', query: [], body: ['name', 'color', 'category', 'position', 'actor_employee_code'] },
   // 0.27.1 (backend #5874 QA round 1): deletes with the web's rules.
   { tool: 'clokio_delete_project_status', method: 'delete', path: '/projects/{projectId}/statuses/{slug}', query: [], body: ['move_to', 'actor_employee_code'] },
-  { tool: 'clokio_delete_project_custom_field', method: 'delete', path: '/projects/{projectId}/custom-fields/{fieldKey}', query: [], body: ['actor_employee_code'] },
+  { tool: 'clokio_delete_project_custom_field', method: 'delete', path: '/projects/{projectId}/custom-fields/{fieldKey}', query: [], body: ['confirm', 'actor_employee_code'] },
   { tool: 'clokio_get_project_contacts', method: 'get', path: '/projects/{projectId}/contacts', query: [] },
   { tool: 'clokio_get_client', method: 'get', path: '/clients/{clientId}', query: [] },
   { tool: 'clokio_add_client_contact', method: 'post', path: '/clients/{clientId}/contacts', query: [] },

@@ -6,7 +6,8 @@
 // -> "move_to equal to slug is refused" fails (the request goes out); the
 // `fields` join removed (sent as an array) -> "fields goes out as a comma
 // list" fails; `mutates: 'destructive'` on the field delete set to true ->
-// "the field delete is marked destructive" fails.
+// "the field delete is marked destructive" fails; confirm not copied into
+// the body -> "confirm rides in the body" fails.
 //
 // Run by hand:  npm run build && node test/qa-0271.mjs
 import { checker, runTools } from './support/harness.mjs';
@@ -31,6 +32,7 @@ const run = await runTools({
     ['clokio_list_tasks', { project_id: 3, fields: ['id', 'title', 'status', 'title'] }], // 6 ok
     ['clokio_list_tasks', { fields: ['id', 'description'] }], // 7 refused
     ['clokio_list_tasks', { fields: [] }], // 8 refused
+    ['clokio_delete_project_custom_field', { project_id: 3, field_key: 'client_po', confirm: true }], // 9 ok
   ],
 });
 
@@ -46,7 +48,10 @@ check('a bad field_key is refused', run.errored(5), true);
 check('fields goes out as a comma list, duplicates once', run.hits[3]?.query?.fields, 'id,title,status');
 check('an unknown field name is refused', run.errored(7), true);
 check('an empty fields list is refused', run.errored(8), true);
-check('exactly four requests went out', run.hits.length, 4);
+check('confirm rides in the body', run.hits[4]?.body, { confirm: true });
+check('no confirm, no confirm key', run.hits[2]?.body, {});
+check('exactly five requests went out', run.hits.length, 5);
+has('the field delete describes confirm', run.tools.clokio_delete_project_custom_field?.inputSchema?.properties?.confirm?.description, 'Required when the field holds any value');
 
 check('the field delete is marked destructive', run.tools.clokio_delete_project_custom_field?.annotations?.destructiveHint, true);
 check('the status delete is marked destructive', run.tools.clokio_delete_project_status?.annotations?.destructiveHint, true);

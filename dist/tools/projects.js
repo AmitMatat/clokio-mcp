@@ -222,18 +222,26 @@ export function registerProjectTools(server, config) {
         name: 'clokio_delete_project_custom_field',
         mutates: 'destructive',
         description: 'Delete a project custom field by its field_key, with the web editor\'s rule: the field is removed ' +
-            'TOGETHER WITH every value stored for it on every task, and this cannot be undone. A field in use is ' +
-            'not refused (the web does not refuse it either) and there is no archive; the answer says how many ' +
+            'TOGETHER WITH every value stored for it on every task, and this cannot be undone; there is no archive. ' +
+            'A field that holds any value needs confirm: true: without it the server answers how many tasks hold a ' +
+            'value and deletes nothing. A field with no values deletes without confirm. The answer says how many ' +
             'tasks held a value (affected_task_count). Check usage first with clokio_list_tasks custom_field or ' +
             'clokio_get_project_task_summary group_by_custom_field when that matters. A private field answers not ' +
             'found. Needs the projects:write scope.',
         schema: {
             project_id: z.number().int(),
             field_key: z.string().regex(FIELD_KEY_PATTERN, 'field_key: letters, digits, _ or -'),
+            confirm: z
+                .boolean()
+                .optional()
+                .describe('true = delete the field AND every value stored for it. Required when the field holds any value; ' +
+                'omit it first to learn how many tasks hold one'),
             actor_employee_code: actorCode,
         },
         handler: (args, cfg) => {
             const body = {};
+            if (args.confirm !== undefined)
+                body.confirm = args.confirm;
             const actor = args.actor_employee_code ?? cfg.defaultActor;
             if (actor)
                 body.actor_employee_code = actor;
