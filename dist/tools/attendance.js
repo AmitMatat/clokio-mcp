@@ -466,6 +466,8 @@ export function registerAttendanceTools(server, config) {
         description: 'Start a running timer on a task, a project, or neither (a personal timer). ' + actingPerson + ' ' + targetRule + ' ' +
             'If a timer is already running the call is refused (409) and the running entry is returned; ' +
             'pass force: true to stop that timer and start this one. The description defaults to the task title (empty without a task). ' +
+            'clokio_stop_timer stops any timer; the web Timer page asks for a project and a description before its own Stop, ' +
+            'so give a personal timer a description (and stop it here) if the person may stop it on the web. ' +
             ENTRY_LINE_NOTE,
         schema: {
             task_id: z.number().int().positive().optional().describe('Optional. The task the timer is on'),

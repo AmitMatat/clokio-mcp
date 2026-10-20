@@ -7,6 +7,8 @@ Time without a task (Clokio task #5775, Erez 2026-10-19, owner approved 2026-10-
 - **`clokio_log_time` and `clokio_start_timer`**: `task_id` is optional and `project_id` is new (optional), like the web Timer page. Neither = a personal entry or timer with no project (not billable); `project_id` alone = on that project with no task (billable as the project is); both = the task decides and `project_id` must be the task's own project (the server's 422 otherwise). A project is an active project of your organisation (another organisation's is "Not found."); entries hold no client, so time for a client goes on one of the client's projects. The description defaults to the task title, empty without a task.
 - **`clokio_update_time_entry`**: `project_id` (a project, or null to clear it) and `task_id: null` (unlinks the task, the project stays). On an entry that is on a task, `project_id` must be the task's own project; to move it elsewhere send `task_id: null` with it. Billable follows the resulting project.
 - The entry line names the project when there is no task (`no task, project Website`).
+- `clokio_start_timer` says how a personal timer is stopped: `clokio_stop_timer` stops any timer, while the web Timer page asks for a project and a description before its own Stop.
+- **Server-side, no tool change:** `clokio_list_project_activity` names every status move `status_changed` and `action: ["status_changed"]` now also finds the moves a status template applied and older rows logged as `updated` (Liron's #5874 QA). Re-sending an entry's own project with `clokio_update_time_entry` no longer resets a billable override made on the web.
 - Tests: `test/time-tools.mjs` (the no-task bodies and the explicit null, both break-verified), conformance.
 
 ## 0.27.1
