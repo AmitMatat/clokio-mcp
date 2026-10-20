@@ -56,7 +56,10 @@ export function entryClock(e, opts = {}) {
  */
 export function timeEntryLine(e, opts = {}) {
     const id = e?.id === undefined || e?.id === null ? '(no id: server older than 2026-10-16)' : `#${e.id}`;
-    const task = e?.task ? `task #${e.task.id} ${e.task.title}` : 'no task';
+    // An entry may be on a project with no task (task #5775): name the project then.
+    const task = e?.task
+        ? `task #${e.task.id} ${e.task.title}`
+        : e?.project?.name ? `no task, project ${e.project.name}` : 'no task';
     return `${id} ${e?.date ?? '-'} ${entryClock(e, opts)} ${e?.work_hour ?? 0}h | ${e?.employee_code ?? '-'} | ${task} | ${e?.description ?? ''}`;
 }
 const ZONE_NOTE = "the person's CURRENT location zone, which clokio_update_time_entry reads date/start/end in (after a location change it may differ from where the entry was logged)";
@@ -405,19 +408,26 @@ export function registerAttendanceTools(server, config) {
         'Needs the time_entries:write scope: Full access includes it; a key with chosen permissions must list it.';
     const taskRule = 'The task must be one that person can view in your organisation, on an active project; a board another organisation ' +
         'shared with you is refused (404).';
+    const targetRule = 'WHAT THE TIME IS ON, like the web Timer page (both optional): task_id, project_id, both, or neither. ' +
+        'Neither = a personal entry with no project (not billable). project_id alone = on that project with no task. ' +
+        "Both = the task decides and project_id must be the task's own project (refused otherwise). " +
+        "A project must be an active project of your organisation (clokio_list_projects). Entries hold no client: to log time for a client, use one of the client's projects. " +
+        taskRule;
     registerTool(server, config, {
         name: 'clokio_log_time',
-        description: 'Log a finished time entry on a task. ' + actingPerson + ' ' +
+        description: 'Log a finished time entry, on a task, a project, or neither. ' + actingPerson + ' ' +
             'Times are local to that person (their location timezone, else UTC). Give EITHER date + start + end ' +
             '(an end at or before start runs past midnight), OR date + start + duration_minutes, OR duration_minutes alone ' +
             '(the entry then ENDS NOW and started that many minutes ago; date must be today or omitted). ' +
             'At most 12 hours (720 minutes) per entry; nothing may start or end more than 10 minutes in the future; ' +
             'an entry overlapping another time entry of the same person (including their running timer, and an overnight entry from the day before) is refused. ' +
-            'A duration counts real minutes across a DST change. ' + taskRule + ' ' +
-            "The project's billable flag is inherited and the description defaults to the task title. " +
+            'A duration counts real minutes across a DST change. ' + targetRule + ' ' +
+            "The project's billable flag is inherited (no project: not billable) and the description defaults to the task title (empty without a task). " +
             ENTRY_LINE_NOTE,
         schema: {
-            task_id: z.number().int().positive(),
+            task_id: z.number().int().positive().optional().describe('Optional. The task the time is on'),
+            project_id: z.number().int().positive().optional()
+                .describe("Optional. A project of your organisation; with task_id it must be the task's project"),
             date: calendarDate('date').optional()
                 .describe('YYYY-MM-DD, the day the entry STARTS. Required with start'),
             start: z.string().regex(/^\d{2}:\d{2}$/, 'start must be HH:MM').optional().describe('HH:MM, local time'),
@@ -441,6 +451,7 @@ export function registerAttendanceTools(server, config) {
                 method: 'POST',
                 body: {
                     task_id: args.task_id,
+                    project_id: args.project_id,
                     date: args.date,
                     start: args.start,
                     end: args.end,
@@ -452,12 +463,14 @@ export function registerAttendanceTools(server, config) {
     });
     registerTool(server, config, {
         name: 'clokio_start_timer',
-        description: "Start a running timer on a task. " + actingPerson + ' ' + taskRule + ' ' +
+        description: 'Start a running timer on a task, a project, or neither (a personal timer). ' + actingPerson + ' ' + targetRule + ' ' +
             'If a timer is already running the call is refused (409) and the running entry is returned; ' +
-            'pass force: true to stop that timer and start this one. The description defaults to the task title. ' +
+            'pass force: true to stop that timer and start this one. The description defaults to the task title (empty without a task). ' +
             ENTRY_LINE_NOTE,
         schema: {
-            task_id: z.number().int().positive(),
+            task_id: z.number().int().positive().optional().describe('Optional. The task the timer is on'),
+            project_id: z.number().int().positive().optional()
+                .describe("Optional. A project of your organisation; with task_id it must be the task's project"),
             description: z.string().max(255).optional(),
             force: z.boolean().optional().describe('Stop a running timer first instead of being refused'),
         },
@@ -466,7 +479,7 @@ export function registerAttendanceTools(server, config) {
             try {
                 return withEntryLine(await request(cfg, '/timer/start', {
                     method: 'POST',
-                    body: { task_id: args.task_id, description: args.description, force: args.force },
+                    body: { task_id: args.task_id, project_id: args.project_id, description: args.description, force: args.force },
                 }));
             }
             catch (e) {
@@ -502,7 +515,10 @@ export function registerAttendanceTools(server, config) {
     registerTool(server, config, {
         name: 'clokio_update_time_entry',
         description: "Correct one of the time entries of the API key's ACTING person (another person's entry is \"Not found\"). " +
-            "Send only what changes: task_id (the entry moves to that task's project), description (null or empty resets it to the task title), " +
+            "Send only what changes: task_id (the entry moves to that task's project; null unlinks the task and keeps the project), " +
+            'project_id (an active project of your organisation, or null to clear it; billable follows the project). ' +
+            "On an entry that is on a task, project_id must be the task's own project: to move it elsewhere send task_id: null with it. " +
+            'description (null or empty resets it to the task title, empty without a task), ' +
             'and/or the time: date (YYYY-MM-DD), start, end (HH:MM, LOCAL to that person) or duration_minutes (alone it keeps the start and sets the length; start alone moves the entry and keeps its length). ' +
             'Parts you leave out keep their current values. The same checks as clokio_log_time: at most 12 hours, nothing in the future, ' +
             'no overlap with another entry of that person (their running timer included); an entry on an inactive project cannot change its time. ' +
@@ -510,7 +526,8 @@ export function registerAttendanceTools(server, config) {
             'Needs time_entries:write.',
         schema: {
             id: z.number().int().positive().describe('The entry id (clokio_list_time_entries)'),
-            task_id: z.number().int().positive().optional(),
+            task_id: z.number().int().positive().nullable().optional().describe('A task to link, or null to unlink the task'),
+            project_id: z.number().int().positive().nullable().optional().describe('A project of your organisation, or null to clear it'),
             date: calendarDate('date').optional(),
             start: z.string().regex(/^\d{2}:\d{2}$/, 'start must be HH:MM').optional().describe('HH:MM, local time'),
             end: z.string().regex(/^\d{2}:\d{2}$/, 'end must be HH:MM').optional().describe('HH:MM, local time. Not with duration_minutes'),

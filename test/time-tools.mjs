@@ -49,6 +49,11 @@ const calls = [
   ['clokio_log_time', { task_id: 731, duration_minutes: 721 }],
   // An employee is not an argument at all: unknown keys are stripped, never sent.
   ['clokio_start_timer', { task_id: 731, employee_code: '00080' }],
+  // Task #5775: no task (ids 110-113).
+  ['clokio_log_time', { duration_minutes: 3, description: 'Updated plugin Y on site X' }],
+  ['clokio_log_time', { project_id: 45, duration_minutes: 3 }],
+  ['clokio_start_timer', {}],
+  ['clokio_update_time_entry', { id: 9, task_id: null, project_id: 45 }],
 ];
 
 const lines = [
@@ -88,10 +93,16 @@ check('start without date is refused', errored(106), true);
 check('neither end nor duration is refused', errored(107), true);
 check('721 minutes is refused', errored(108), true);
 check('an employee_code argument never fails the call', errored(109), false);
+check('the no-task calls succeed', [110, 111, 112, 113].map(errored), [false, false, false, false]);
 
 check('the HTTP calls, in order', hits.map((h) => [h.method, h.path]), [
   ['POST', '/time-entries'], ['POST', '/time-entries'], ['POST', '/timer/start'], ['POST', '/timer/stop'], ['GET', '/timer/active'], ['POST', '/timer/start'],
+  ['POST', '/time-entries'], ['POST', '/time-entries'], ['POST', '/timer/start'], ['PATCH', '/time-entries/9'],
 ]);
+check('a personal entry sends no task and no project', hits[6]?.body, { duration_minutes: 3, description: 'Updated plugin Y on site X' });
+check('a project-only entry sends project_id', hits[7]?.body, { project_id: 45, duration_minutes: 3 });
+check('a personal timer sends nothing to link', hits[8]?.body === null || Object.keys(hits[8].body).length === 0, true);
+check('an update keeps the explicit null that unlinks the task', hits[9]?.body, { task_id: null, project_id: 45 });
 check('manual body', hits[0]?.body, { task_id: 731, date: '2026-10-16', start: '09:00', end: '10:30', description: 'Header' });
 check('duration-only body', hits[1]?.body, { task_id: 731, duration_minutes: 45 });
 check('start body', hits[2]?.body, { task_id: 731, force: true });
@@ -108,6 +119,8 @@ const logDesc = tools.clokio_log_time?.description ?? '';
 check('log_time names the scope and how it is granted', /time_entries:write/.test(logDesc) && /Full access includes it/.test(logDesc), true);
 check('log_time says overlap is refused', /overlapping .* refused/.test(logDesc), true);
 check('log_time says 12 hours at most', /12 hours/.test(logDesc), true);
+check('log_time says a task is optional and how a project works', /task_id, project_id, both, or neither/.test(logDesc) && /client's projects/.test(logDesc), true);
+check('start_timer takes a project too', Boolean(tools.clokio_start_timer?.inputSchema?.properties?.project_id), true);
 check('the writes are marked mutating', ['clokio_log_time', 'clokio_start_timer', 'clokio_stop_timer'].map((n) => tools[n]?.annotations?.readOnlyHint), [false, false, false]);
 check('the active read is read-only', tools.clokio_get_active_timer?.annotations?.readOnlyHint, true);
 

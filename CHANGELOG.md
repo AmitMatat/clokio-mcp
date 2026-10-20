@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.28.0
+
+Time without a task (Clokio task #5775, Erez 2026-10-19, owner approved 2026-10-20). **Backend dependency:** needs the Clokio backend with `feat/api-time-without-task`. On an older server a call without `task_id` is the server's 422 ("The task id field is required"), `project_id` is refused as an unknown field, and `task_id: null` on an update is a 422. After updating, start a NEW session and check that `clokio_whoami` reports `mcp_version` 0.28.0. Before publishing, run `node test/api-conformance.mjs` against the deployed spec (or `CLOKIO_SPEC_FILE` pointing at the backend's `docs/api/openapi.json`): 129 tools, 135 calls.
+
+- **`clokio_log_time` and `clokio_start_timer`**: `task_id` is optional and `project_id` is new (optional), like the web Timer page. Neither = a personal entry or timer with no project (not billable); `project_id` alone = on that project with no task (billable as the project is); both = the task decides and `project_id` must be the task's own project (the server's 422 otherwise). A project is an active project of your organisation (another organisation's is "Not found."); entries hold no client, so time for a client goes on one of the client's projects. The description defaults to the task title, empty without a task.
+- **`clokio_update_time_entry`**: `project_id` (a project, or null to clear it) and `task_id: null` (unlinks the task, the project stays). On an entry that is on a task, `project_id` must be the task's own project; to move it elsewhere send `task_id: null` with it. Billable follows the resulting project.
+- The entry line names the project when there is no task (`no task, project Website`).
+- Tests: `test/time-tools.mjs` (the no-task bodies and the explicit null, both break-verified), conformance.
+
 ## 0.27.1
 
 QA round 1 for Clokio task #5874 (owner rulings 2026-10-19). **Backend dependency:** needs the Clokio backend with the #5874 QA round (`fix/api-5874-qa`). On an older server the two delete tools answer 405 (or 404), and `fields` on `clokio_list_tasks` is refused as an unknown query parameter (a 422 naming it). After updating, start a NEW session and check that `clokio_whoami` reports `mcp_version` 0.27.1. Before publishing, run `node test/api-conformance.mjs` against the deployed spec (or `CLOKIO_SPEC_FILE` pointing at the backend's `docs/api/openapi.json`): 129 tools, 135 calls.
