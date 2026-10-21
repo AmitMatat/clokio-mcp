@@ -54,12 +54,20 @@ export function entryClock(e, opts = {}) {
  * The zone is the entry's `timezone` (local times) or UTC (an older server).
  * `zone: false` drops a local entry's zone, for a page whose header names it once.
  */
+/**
+ * What an entry is on, in words: its task, else its project (task #5775: an
+ * entry may be on a project with no task), else nothing. ONE copy for every
+ * line that names it (timeEntryLine, clokio_delete_time_entry), so they
+ * cannot drift (MCP QA 0.28.0).
+ */
+export function entryTarget(e) {
+    if (e?.task)
+        return `task #${e.task.id} ${e.task.title}`;
+    return e?.project?.name ? `no task, project ${e.project.name}` : 'no task';
+}
 export function timeEntryLine(e, opts = {}) {
     const id = e?.id === undefined || e?.id === null ? '(no id: server older than 2026-10-16)' : `#${e.id}`;
-    // An entry may be on a project with no task (task #5775): name the project then.
-    const task = e?.task
-        ? `task #${e.task.id} ${e.task.title}`
-        : e?.project?.name ? `no task, project ${e.project.name}` : 'no task';
+    const task = entryTarget(e);
     return `${id} ${e?.date ?? '-'} ${entryClock(e, opts)} ${e?.work_hour ?? 0}h | ${e?.employee_code ?? '-'} | ${task} | ${e?.description ?? ''}`;
 }
 const ZONE_NOTE = "the person's CURRENT location zone, which clokio_update_time_entry reads date/start/end in (after a location change it may differ from where the entry was logged)";
@@ -211,6 +219,21 @@ export function withShortEntryWarning(res) {
     return { ...res, warning };
 }
 /** #3: the line clokio_stop_timer adds when the stopped entry lasted under a minute, else null. */
+/**
+ * clokio_start_timer's answer: the entry line, and when force: true stopped a
+ * running timer (the server's `stopped_entry`, backend 2026-10-21), a
+ * "Stopped first" line naming it and, for one under a minute, the same
+ * warning clokio_stop_timer gives (MCP QA 0.28.0). An older server sends no
+ * stopped_entry and the answer is as before.
+ */
+export function withStoppedFirst(res) {
+    const out = withEntryLine(res);
+    const stopped = res?.stopped_entry;
+    if (!stopped || typeof stopped !== 'object' || out === null || typeof out !== 'object' || Array.isArray(out))
+        return out;
+    const warning = shortEntryWarning(stopped);
+    return { ...out, stopped_first: `Stopped first: ${timeEntryLine(stopped)}`, ...(warning ? { warning } : {}) };
+}
 export function shortEntryWarning(entry) {
     const a = Date.parse(entry?.check_in ?? '');
     const b = Date.parse(entry?.check_out ?? '');
@@ -465,7 +488,8 @@ export function registerAttendanceTools(server, config) {
         name: 'clokio_start_timer',
         description: 'Start a running timer on a task, a project, or neither (a personal timer). ' + actingPerson + ' ' + targetRule + ' ' +
             'If a timer is already running the call is refused (409) and the running entry is returned; ' +
-            'pass force: true to stop that timer and start this one. The description defaults to the task title (empty without a task). ' +
+            'pass force: true to stop that timer and start this one (the answer then names the stopped entry under stopped_first, ' +
+            'with a warning when it lasted under a minute). The description defaults to the task title (empty without a task). ' +
             'clokio_stop_timer stops any timer; the web Timer page asks for a project and a description before its own Stop, ' +
             'so give a personal timer a description (and stop it here) if the person may stop it on the web. ' +
             ENTRY_LINE_NOTE,
@@ -479,7 +503,7 @@ export function registerAttendanceTools(server, config) {
         mutates: true,
         handler: async (args, cfg) => {
             try {
-                return withEntryLine(await request(cfg, '/timer/start', {
+                return withStoppedFirst(await request(cfg, '/timer/start', {
                     method: 'POST',
                     body: { task_id: args.task_id, project_id: args.project_id, description: args.description, force: args.force },
                 }));
@@ -558,8 +582,7 @@ export function registerAttendanceTools(server, config) {
         handler: async (args, cfg) => {
             const res = await request(cfg, `/time-entries/${seg(args.id)}`, { method: 'DELETE' });
             const e = res?.entry ?? {};
-            const task = e.task ? `task #${e.task.id} ${e.task.title}` : 'no task';
-            return `Deleted entry ${e.id ?? args.id}: ${e.date ?? '-'} ${entryClock(e)}, ${task}`;
+            return `Deleted entry ${e.id ?? args.id}: ${e.date ?? '-'} ${entryClock(e)}, ${entryTarget(e)}`;
         },
     });
     registerTool(server, config, {

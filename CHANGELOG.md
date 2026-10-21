@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.28.1
+
+QA of 0.28.0 (2026-10-21). **Backend dependency (for item 2 only):** the backend that answers `stopped_entry` on `POST /timer/start` (`fix/timer-start-stopped-entry`); on an older server a forced start answers as before, with no `stopped_first`. After updating, start a NEW session and check that `clokio_whoami` reports `mcp_version` 0.28.1.
+
+- `clokio_delete_time_entry` names a project-only entry like every other line (`no task, project <name>`). The task / project / nothing wording is ONE helper, `entryTarget()`, used by the entry line and the delete answer.
+- `clokio_start_timer` with `force: true` names the entry it stopped: `stopped_first: "Stopped first: <entry line>"`, and the same under-a-minute `warning` as `clokio_stop_timer` (so a mistaken few-second entry can be deleted).
+- Tests: `test/qa-0281.mjs` (both items, break-verified).
+
 ## 0.28.0
 
 Time without a task (Clokio task #5775, Erez 2026-10-19, owner approved 2026-10-20). **Backend dependency:** needs the Clokio backend with `feat/api-time-without-task`. On an older server a call without `task_id` is the server's 422 ("The task id field is required"), `project_id` is refused as an unknown field, and `task_id: null` on an update is a 422. After updating, start a NEW session and check that `clokio_whoami` reports `mcp_version` 0.28.0. Before publishing, run `node test/api-conformance.mjs` against the deployed spec (or `CLOKIO_SPEC_FILE` pointing at the backend's `docs/api/openapi.json`): 129 tools, 135 calls.
