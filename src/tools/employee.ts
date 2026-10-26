@@ -2,6 +2,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { markdownToHtml } from '../markdown.js';
 import { ClokioConfig, request, requestUpload, seg } from '../client.js';
+import { VERSION } from '../version.js';
+import { ESTIMATED_HOURS_MAX } from './tasks.js';
 import { downloadAttachment } from '../attachments.js';
 import { registerTool } from './helpers.js';
 
@@ -17,25 +19,37 @@ import { registerTool } from './helpers.js';
  * The docs tools are the admin ones unchanged: that surface is identical for
  * both keys, only the identity differs.
  */
-export function registerEmployeeModeTools(server: McpServer, config: ClokioConfig): void {
-  const ACTS = 'Acting as the key\'s employee, with their own permissions.';
-
+/**
+ * Always registered in employee mode, whatever CLOKIO_TOOLSETS names, like the
+ * admin `projects` group: a session is told to call clokio_whoami first, and
+ * without it a docs-only session could not learn who it acts as or which
+ * build it runs (review of PR #2, 2026-10-26).
+ */
+export function registerEmployeeIdentityTools(server: McpServer, config: ClokioConfig): void {
   registerTool(server, config, {
     name: 'clokio_whoami',
     description:
       'Who this employee key acts as: the person (employee_code, name, role, position, department), their ' +
       'organisation, and the key\'s name and expiry. Every write this session makes carries that name. ' +
+      'Also `mcp_version`, the running clokio-mcp build: if it is older than the current release, start a NEW session. ' +
       'CALL THIS FIRST in a session.',
     schema: {},
-    handler: (_args, cfg) => request(cfg, '/me'),
+    // mcp_version is added client-side, as the admin whoami does: `npx -y
+    // clokio-mcp` can serve a cached old build, and only the running package
+    // knows which one it is.
+    handler: async (_args, cfg) => ({ ...((await request(cfg, '/me')) as Record<string, unknown>), mcp_version: VERSION }),
   });
 
   registerTool(server, config, {
     name: 'clokio_list_projects',
-    description: `Projects this person can create tasks in, with ids. ${ACTS}`,
+    description: 'Projects this person can create tasks in, with ids. Acting as the key\'s employee, with their own permissions.',
     schema: {},
     handler: (_args, cfg) => request(cfg, '/projects'),
   });
+}
+
+export function registerEmployeeModeTools(server: McpServer, config: ClokioConfig): void {
+  const ACTS = 'Acting as the key\'s employee, with their own permissions.';
 
   registerTool(server, config, {
     name: 'clokio_list_tasks',
@@ -49,7 +63,12 @@ export function registerEmployeeModeTools(server: McpServer, config: ClokioConfi
       include_done: z.boolean().optional().describe('Include completed tasks (default false)'),
       limit: z.number().int().min(1).max(100).optional(),
     },
-    handler: (args, cfg) => request(cfg, '/tasks', { query: args }),
+    // include_done as 1/0: the server's `boolean` rule refuses the strings
+    // "true"/"false" a query would otherwise carry (a 422 on every call).
+    handler: (args, cfg) =>
+      request(cfg, '/tasks', {
+        query: { ...args, include_done: args.include_done === undefined ? undefined : args.include_done ? 1 : 0 },
+      }),
   });
 
   registerTool(server, config, {
@@ -59,13 +78,15 @@ export function registerEmployeeModeTools(server: McpServer, config: ClokioConfi
     handler: (args, cfg) => request(cfg, `/tasks/${seg(args.id)}`),
   });
 
+  // description, dates and estimate take null to CLEAR them, as the server
+  // allows (`nullable`) and as the admin update_task does.
   const taskFields = {
-    description: z.string().optional().describe('Markdown, HTML or plain text (Markdown is converted to HTML)'),
+    description: z.string().nullable().optional().describe('Markdown, HTML or plain text (Markdown is converted to HTML); null clears it'),
     status: z.string().max(60).optional().describe("Status slug valid for THIS project's board"),
     priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
-    due_date: z.string().optional().describe('YYYY-MM-DD'),
-    start_date: z.string().optional().describe('YYYY-MM-DD'),
-    estimated_hours: z.number().min(0).max(9999.99).optional(),
+    due_date: z.string().nullable().optional().describe('YYYY-MM-DD, or null to clear'),
+    start_date: z.string().nullable().optional().describe('YYYY-MM-DD, or null to clear'),
+    estimated_hours: z.number().min(0).max(ESTIMATED_HOURS_MAX).nullable().optional().describe('null clears it'),
   };
 
   registerTool(server, config, {
@@ -78,7 +99,7 @@ export function registerEmployeeModeTools(server: McpServer, config: ClokioConfi
     handler: (args, cfg) =>
       request(cfg, '/tasks', {
         method: 'POST',
-        body: strip({ ...args, description: args.description === undefined ? undefined : markdownToHtml(args.description) }),
+        body: strip({ ...args, description: htmlField(args.description, 'description', false) }),
       }),
   });
 
@@ -89,7 +110,7 @@ export function registerEmployeeModeTools(server: McpServer, config: ClokioConfi
     schema: { id: z.number().int(), title: z.string().min(1).max(255).optional(), ...taskFields },
     handler: (args, cfg) => {
       const { id, ...rest } = args;
-      const body = strip({ ...rest, description: rest.description === undefined ? undefined : markdownToHtml(rest.description) });
+      const body = strip({ ...rest, description: htmlField(rest.description, 'description', false) });
       return request(cfg, `/tasks/${seg(id)}`, { method: 'PATCH', body });
     },
   });
@@ -102,7 +123,7 @@ export function registerEmployeeModeTools(server: McpServer, config: ClokioConfi
       'TO MENTION SOMEONE, write @ followed by their full name as Clokio spells it; it becomes a real mention and notifies them.',
     schema: { id: z.number().int(), body: z.string().min(1).max(65535) },
     handler: (args, cfg) =>
-      request(cfg, `/tasks/${seg(args.id)}/comments`, { method: 'POST', body: { body: markdownToHtml(args.body) } }),
+      request(cfg, `/tasks/${seg(args.id)}/comments`, { method: 'POST', body: { body: htmlField(args.body, 'body', true) } }),
   });
 
   registerTool(server, config, {
@@ -148,6 +169,28 @@ export function registerEmployeeModeTools(server: McpServer, config: ClokioConfi
       return request(cfg, `/tasks/${seg(id)}/time`, { method: 'POST', body: strip(body) });
     },
   });
+}
+
+/** The server's cap on a description or a comment body, measured AFTER the Markdown conversion. */
+const HTML_MAX = 65535;
+
+/**
+ * Markdown to the HTML Clokio stores, checked the way the server will check
+ * it: the conversion can turn whitespace into '' and grow long Markdown past
+ * the cap, so the limits are judged on the result, with a sentence the model
+ * can act on instead of the server's bare 422 (review of PR #2). undefined
+ * stays undefined (not sent) and null stays null (clears the field).
+ */
+function htmlField(value: string | null | undefined, field: string, required: boolean): string | null | undefined {
+  if (value === undefined || value === null) return value;
+  const html = markdownToHtml(value);
+  if (html.trim() === '' && (required || value.trim() !== '')) {
+    throw new Error(`The ${field} is empty once converted to HTML. Write some text, or ${required ? 'leave the comment out' : 'pass null to clear it'}.`);
+  }
+  if (html.length > HTML_MAX) {
+    throw new Error(`The ${field} is ${html.length} characters once converted to HTML; the limit is ${HTML_MAX}. Shorten it.`);
+  }
+  return html;
 }
 
 /** Drop undefined entries so a PATCH changes only what was named. */

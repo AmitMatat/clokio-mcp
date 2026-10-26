@@ -68,7 +68,10 @@ registers only what that surface allows: your assigned-task queue, reading and c
 tasks where you may, updating, commenting, attachments, logging time, and the whole Docs
 module. Nothing takes an `employee_code` to credit a writer: the key is the identity, and a
 `403` from Clokio means you may not do that in that project. `CLOKIO_TOOLSETS` may name
-`tasks` and/or `docs`; `CLOKIO_DEFAULT_ACTOR` is refused.
+`tasks` and/or `docs` (`clokio_whoami` and `clokio_list_projects` are always on);
+`CLOKIO_DEFAULT_ACTOR` is refused. Employee mode needs a Clokio server with
+`GET /api/employee/me` (app.clokio.io has it since 2026-10-26). If the startup check cannot
+reach Clokio, the server says so and does not blame the key.
 
 ### Cursor / Cline / Zed / any MCP client
 

@@ -14,14 +14,14 @@
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { loadConfig, request } from './client.js';
+import { ClokioApiError, loadConfig, request } from './client.js';
 import { VERSION } from './version.js';
 import { registerTaskTools } from './tools/tasks.js';
 import { registerProjectTools } from './tools/projects.js';
 import { registerEmployeeTools } from './tools/employees.js';
 import { registerAttendanceTools } from './tools/attendance.js';
 import { registerDocTools } from './tools/docs.js';
-import { registerEmployeeModeTools } from './tools/employee.js';
+import { registerEmployeeIdentityTools, registerEmployeeModeTools } from './tools/employee.js';
 import { registerTicketTools } from './tools/tickets.js';
 
 
@@ -73,16 +73,21 @@ const EMPLOYEE_TOOLSETS = ['tasks', 'docs'] as const;
 function selectedEmployeeToolsets(): Set<Toolset> {
   const raw = process.env.CLOKIO_TOOLSETS?.trim();
   if (!raw) return new Set(EMPLOYEE_TOOLSETS);
-  const requested = selectedToolsets();
-  const unsupported = [...requested].filter((t) => !(EMPLOYEE_TOOLSETS as readonly string[]).includes(t));
+  // Its own check, never the admin one: that error lists the admin toolsets
+  // and says "projects is always on", neither of which is true here.
+  const requested = raw.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+  const unsupported = requested.filter((t) => !(EMPLOYEE_TOOLSETS as readonly string[]).includes(t));
   if (unsupported.length) {
     throw new Error(
       `CLOKIO_TOOLSETS names toolset(s) the employee surface does not have: ${unsupported.join(', ')}. ` +
-        `With CLOKIO_EMPLOYEE_KEY the choices are: ${EMPLOYEE_TOOLSETS.join(', ')}.`
+        `With CLOKIO_EMPLOYEE_KEY the choices are: ${EMPLOYEE_TOOLSETS.join(', ')} (clokio_whoami and clokio_list_projects are always on).`
     );
   }
-  return requested;
+  return new Set(requested as Toolset[]);
 }
+
+/** How long the startup /me check may take before the server says so and stops. */
+const STARTUP_TIMEOUT_MS = 15_000;
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -99,13 +104,25 @@ async function main(): Promise<void> {
     const employeeToolsets = selectedEmployeeToolsets();
     let me: { employee_code?: string; name?: string } = {};
     try {
-      me = (await request(config, '/me')) as typeof me;
+      me = (await request(config, '/me', { timeoutMs: STARTUP_TIMEOUT_MS })) as typeof me;
     } catch (e) {
+      // Only a 401/403 means the KEY is bad. A network failure, a timeout, a
+      // 5xx during a deploy, a 429 or a server without /me (404) must not send
+      // the person to rotate a key that works (review of PR #2).
+      const status = e instanceof ClokioApiError ? e.status : 0;
+      if (status === 401 || status === 403) {
+        throw new Error(
+          `CLOKIO_EMPLOYEE_KEY was refused by ${config.baseUrl} (${(e as Error).message}). The key may be revoked or expired - ` +
+            'issue a new one at Profile -> API keys.'
+        );
+      }
       throw new Error(
-        `CLOKIO_EMPLOYEE_KEY was refused by ${config.baseUrl} (${(e as Error).message}). The key may be revoked or expired - ` +
-          'issue a new one at Profile -> API keys.'
+        `Could not check CLOKIO_EMPLOYEE_KEY with ${config.baseUrl}: ${(e as Error).message}` +
+          (status === 404 ? ' (this Clokio server has no /api/employee/me yet: it needs a newer Clokio).' : '') +
+          ' The key itself was not refused; try again once Clokio answers.'
       );
     }
+    registerEmployeeIdentityTools(server, config);
     if (employeeToolsets.has('tasks')) registerEmployeeModeTools(server, config);
     if (employeeToolsets.has('docs')) registerDocTools(server, config);
     await server.connect(new StdioServerTransport());

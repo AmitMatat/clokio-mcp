@@ -347,7 +347,7 @@ export class ClokioApiError extends Error {
  * the server's own message.
  */
 export async function request(config, path, options = {}) {
-    const { method = 'GET', query, body, headers: extra, onHeaders } = options;
+    const { method = 'GET', query, body, headers: extra, onHeaders, timeoutMs } = options;
     const url = buildUrl(config, path);
     applyQuery(url, query);
     const headers = {
@@ -367,7 +367,13 @@ export async function request(config, path, options = {}) {
         // any origin. The API never redirects a JSON /api/v1 call, so a redirect
         // here means something between us and it is not the API, and the key
         // must not be handed over. Failing closed costs nothing on the happy path.
-        res = await fetch(url, { method, headers, body: payload, redirect: 'error' });
+        res = await fetch(url, {
+            method,
+            headers,
+            body: payload,
+            redirect: 'error',
+            signal: timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined,
+        });
     }
     catch (e) {
         throw new ClokioApiError(0, `Network error reaching Clokio: ${e.message}`);

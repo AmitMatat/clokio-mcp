@@ -439,6 +439,12 @@ export interface RequestOptions {
    * idempotent write). Never called for an error answer.
    */
   onHeaders?: (headers: Headers) => void;
+  /**
+   * Abort the call after this many milliseconds (a ClokioApiError with
+   * status 0). Used by the employee-mode startup check, so a stalled network
+   * cannot hold the MCP handshake forever.
+   */
+  timeoutMs?: number;
 }
 
 /**
@@ -452,7 +458,7 @@ export async function request<T = unknown>(
   path: string,
   options: RequestOptions = {}
 ): Promise<T> {
-  const { method = 'GET', query, body, headers: extra, onHeaders } = options;
+  const { method = 'GET', query, body, headers: extra, onHeaders, timeoutMs } = options;
 
   const url = buildUrl(config, path);
   applyQuery(url, query);
@@ -475,7 +481,13 @@ export async function request<T = unknown>(
     // any origin. The API never redirects a JSON /api/v1 call, so a redirect
     // here means something between us and it is not the API, and the key
     // must not be handed over. Failing closed costs nothing on the happy path.
-    res = await fetch(url, { method, headers, body: payload, redirect: 'error' });
+    res = await fetch(url, {
+      method,
+      headers,
+      body: payload,
+      redirect: 'error',
+      signal: timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined,
+    });
   } catch (e) {
     throw new ClokioApiError(0, `Network error reaching Clokio: ${(e as Error).message}`);
   }

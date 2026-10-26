@@ -64,6 +64,10 @@ export async function runTools({ toolsets, calls, respond, env: envOverride }) {
   ];
 
   const env = { ...process.env, CLOKIO_BASE_URL: base, CLOKIO_API_KEY: 'clk_test' };
+  // A developer's own shell may export these (the README suggests the employee
+  // key); with both keys set every admin-mode run would refuse to start.
+  delete env.CLOKIO_EMPLOYEE_KEY;
+  delete env.CLOKIO_DEFAULT_ACTOR;
   if (toolsets) env.CLOKIO_TOOLSETS = toolsets;
   // An override may UNSET a default by passing undefined (employee mode runs with no admin key).
   for (const [k, v] of Object.entries(envOverride ?? {})) {

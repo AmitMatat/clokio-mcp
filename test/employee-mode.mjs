@@ -90,4 +90,58 @@ const dead = await runTools({ env: employeeEnv, calls: [], respond: (hit) => (hi
 check('a revoked key leaves no tools', Object.keys(dead.tools).length, 0);
 has('and says the key was refused', dead.stderr(), 'revoked');
 
+// ---- review of PR #2 (2026-10-26), each break-verified: put the old line
+// back and the named check fails.
+const meOk = (hit) => (hit.path === '/me' ? { status: 200, json: { status: 'success', data: me } } : undefined);
+const fix = await runTools({
+  env: employeeEnv,
+  calls: [
+    ['clokio_list_tasks', { include_done: true }],
+    ['clokio_list_tasks', { include_done: false }],
+    ['clokio_whoami', {}],
+    ['clokio_update_task', { id: 12, due_date: null, estimated_hours: null, description: null }],
+    ['clokio_add_task_comment', { id: 12, body: '   \n  ' }],
+    ['clokio_add_task_comment', { id: 12, body: '- x\n'.repeat(14000) }],
+  ],
+  respond: meOk,
+});
+const lists = fix.hits.filter((h) => h.method === 'GET' && h.path === '/tasks');
+// 1. include_done as 1/0: the server's boolean rule refuses "true"/"false".
+check('include_done true is sent as 1', lists[0]?.query?.include_done, '1');
+check('include_done false is sent as 0', lists[1]?.query?.include_done, '0');
+// 2. whoami reports the running build, like the admin whoami.
+has('whoami carries mcp_version', fix.text(2), 'mcp_version');
+// 6. null clears a date, the estimate and the description.
+const clear = fix.hits.find((h) => h.method === 'PATCH' && h.path === '/tasks/12');
+check('update_task sends null to clear', clear?.body, { description: null, due_date: null, estimated_hours: null });
+// 7. limits judged after the Markdown conversion, before any request.
+check('a whitespace-only comment is refused before sending', fix.errored(4), true);
+check('a comment past 65535 once converted is refused before sending', fix.errored(5), true);
+check('neither reached the server', fix.hits.filter((h) => h.path === '/tasks/12/comments').length, 0);
+
+// 3. whoami is always there, even when only docs are named.
+const docsOnly = await runTools({ env: { ...employeeEnv, CLOKIO_TOOLSETS: 'docs' }, calls: [], respond: meOk });
+check('docs-only employee mode still has clokio_whoami', 'clokio_whoami' in docsOnly.tools, true);
+check('docs-only employee mode has no task tools', 'clokio_create_task' in docsOnly.tools, false);
+
+// 8. its own toolset message: never the admin list or "projects is always on".
+const projectsSet = start({ CLOKIO_EMPLOYEE_KEY: 'ek_x', CLOKIO_TOOLSETS: 'projects' });
+check('an unknown employee toolset is refused', projectsSet.code !== 0, true);
+check('and the message does not list the admin toolsets', /attendance|tickets|employees/.test(projectsSet.stderr), false);
+
+// 4. only a 401/403 blames the key; a server error or a missing /me does not.
+const down = await runTools({ env: employeeEnv, calls: [], respond: (hit) => (hit.path === '/me' ? { status: 503, json: { status: 'error', message: 'Down for a deploy' } } : undefined) });
+check('a 503 at startup leaves no tools', Object.keys(down.tools).length, 0);
+check('and does not tell the person to replace the key', /revoked|issue a new one/.test(down.stderr()), false);
+has('and says the key was not refused', down.stderr(), 'not refused');
+const noMe = await runTools({ env: employeeEnv, calls: [], respond: (hit) => (hit.path === '/me' ? { status: 404, json: { status: 'error', message: 'Not found.' } } : undefined) });
+has('a server without /me is named as such', noMe.stderr(), 'newer Clokio');
+
+// 9. the harness never leaks an employee key from the shell into admin runs.
+const leaked = await runTools({ env: { CLOKIO_EMPLOYEE_KEY: undefined }, calls: [] });
+process.env.CLOKIO_EMPLOYEE_KEY = 'ek_from_shell';
+const admin = await runTools({ calls: [] });
+delete process.env.CLOKIO_EMPLOYEE_KEY;
+check('an admin run starts even with CLOKIO_EMPLOYEE_KEY in the shell', Object.keys(admin.tools).length, Object.keys(leaked.tools).length);
+
 done();

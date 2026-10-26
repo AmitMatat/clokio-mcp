@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.29.0
+
+**Employee mode** (Kamal Raj Silwal, PR #2): `CLOKIO_EMPLOYEE_KEY` instead of `CLOKIO_API_KEY` runs the server with a personal `X-Employee-Key`, acting as that one person within their own roles and project permissions. Any employee issues one at Profile -> API keys. **Backend dependency:** `GET /api/employee/me` (Clokio, PR #62, live on app.clokio.io since 2026-10-26); on an older server employee mode stops at startup saying the server needs a newer Clokio. Admin mode (`CLOKIO_API_KEY`) is unchanged: 129 tools, same names. After updating, start a NEW session and check that `clokio_whoami` reports `mcp_version` 0.29.0.
+
+- Exactly one of the two keys; both or neither refuses to start and names them. `CLOKIO_DEFAULT_ACTOR` is refused in employee mode (the key is the actor).
+- Startup calls `GET /me` (15 s limit) and announces `acting as <name> (<code>)`. Only a 401/403 says the key was refused; a network failure, a timeout, a 5xx, a 429 or a server without `/me` says so without telling the person to replace a working key.
+- Tools, under the admin names where the contract is a subset: `clokio_whoami` (with `mcp_version`) and `clokio_list_projects` always on; with `tasks`: `clokio_list_tasks` (the assigned queue), `clokio_get_task`, `clokio_create_task`, `clokio_update_task`, `clokio_add_task_comment`, `clokio_upload_task_attachment`, `clokio_download_task_attachment`, `clokio_log_time`; with `docs`: the Docs tools unchanged. `CLOKIO_TOOLSETS` may name `tasks` and/or `docs`.
+- `clokio_list_tasks` sends `include_done` as 1/0 (the server refuses the strings "true"/"false"). `clokio_update_task` takes `null` to clear the description, the dates and the estimate. A description or comment that is empty, or longer than 65535 characters, once converted from Markdown is refused before sending, in words.
+- Tests: `test/employee-mode.mjs` (tool list per mode, headers and prefix, bodies, startup, and every review fix, break-verified). The test harness no longer lets a `CLOKIO_EMPLOYEE_KEY` exported in the shell break admin-mode runs.
+
 ## 0.28.1
 
 QA of 0.28.0 (2026-10-21). **Backend dependency (for item 2 only):** the backend that answers `stopped_entry` on `POST /timer/start` (`fix/timer-start-stopped-entry`); on an older server a forced start answers as before, with no `stopped_first`. After updating, start a NEW session and check that `clokio_whoami` reports `mcp_version` 0.28.1.
