@@ -22,7 +22,7 @@ export function checker() {
   return { check, has, done };
 }
 
-export async function runTools({ toolsets, calls, respond }) {
+export async function runTools({ toolsets, calls, respond, env: envOverride }) {
   const hits = [];
   const srv = createServer((req, res) => {
     const chunks = [];
@@ -32,11 +32,13 @@ export async function runTools({ toolsets, calls, respond }) {
       const u = new URL(req.url, 'http://x');
       const hit = {
         method: req.method,
-        path: u.pathname.replace('/api/v1', ''),
+        prefix: u.pathname.startsWith('/api/employee') ? '/api/employee' : '/api/v1',
+        path: u.pathname.replace(/^\/api\/(v1|employee)/, ''),
         query: Object.fromEntries(u.searchParams),
         search: u.search,
         body: raw ? JSON.parse(raw) : null,
         key: req.headers['x-api-key'] ?? null,
+        employeeKey: req.headers['x-employee-key'] ?? null,
         idempotencyKey: req.headers['idempotency-key'] ?? null,
       };
       hits.push(hit);
@@ -63,8 +65,15 @@ export async function runTools({ toolsets, calls, respond }) {
 
   const env = { ...process.env, CLOKIO_BASE_URL: base, CLOKIO_API_KEY: 'clk_test' };
   if (toolsets) env.CLOKIO_TOOLSETS = toolsets;
+  // An override may UNSET a default by passing undefined (employee mode runs with no admin key).
+  for (const [k, v] of Object.entries(envOverride ?? {})) {
+    if (v === undefined) delete env[k];
+    else env[k] = v;
+  }
   const child = spawn('node', ['dist/index.js'], { env });
   const results = {};
+  let stderr = '';
+  child.stderr.on('data', (d) => { stderr += d; });
   let buf = '';
   child.stdout.on('data', (d) => {
     buf += d;
@@ -92,6 +101,7 @@ export async function runTools({ toolsets, calls, respond }) {
     hits,
     tools,
     out,
+    stderr: () => stderr,
     text: (i) => out[i]?.result?.content?.[0]?.text ?? '',
     content: (i) => out[i]?.result?.content ?? [],
     errored: (i) => Boolean(out[i]?.result?.isError || out[i]?.error),
