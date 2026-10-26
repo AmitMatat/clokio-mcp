@@ -8,8 +8,18 @@
  * a 403/404/422 from the API is surfaced verbatim.
  */
 
+export type ClokioMode = 'admin' | 'employee';
+
 export interface ClokioConfig {
   baseUrl: string;
+  /**
+   * admin: CLOKIO_API_KEY (clk_...) sent as X-API-Key to /api/v1 - the
+   * organisation-wide Public API, scoped by the key's own scopes.
+   * employee: CLOKIO_EMPLOYEE_KEY sent as X-Employee-Key to /api/employee -
+   * acts AS that person, bound by their roles and project permissions, which
+   * the server judges on every call. Any employee issues one from their profile.
+   */
+  mode: ClokioMode;
   apiKey: string;
   /**
    * The employee_code to attribute writes to when a tool does not name one.
@@ -25,25 +35,50 @@ export interface ClokioConfig {
 }
 
 export function loadConfig(): ClokioConfig {
-  const apiKey = process.env.CLOKIO_API_KEY?.trim();
-  if (!apiKey) {
+  const adminKey = process.env.CLOKIO_API_KEY?.trim();
+  const employeeKey = process.env.CLOKIO_EMPLOYEE_KEY?.trim();
+  if (adminKey && employeeKey) {
     throw new Error(
-      'CLOKIO_API_KEY is not set. Provide your Clokio API key (clk_...) via the ' +
-        'CLOKIO_API_KEY environment variable.'
+      'Both CLOKIO_API_KEY and CLOKIO_EMPLOYEE_KEY are set. Set exactly one: CLOKIO_API_KEY for the ' +
+        'organisation-wide Public API (admin, clk_...), or CLOKIO_EMPLOYEE_KEY to act as one person with ' +
+        'their own permissions.'
     );
   }
+  if (!adminKey && !employeeKey) {
+    throw new Error(
+      'No Clokio key is set. Provide CLOKIO_API_KEY (an admin Public API key, clk_...) or ' +
+        'CLOKIO_EMPLOYEE_KEY (a personal key from Profile -> API keys, acts as you with your own permissions).'
+    );
+  }
+  const mode: ClokioMode = employeeKey ? 'employee' : 'admin';
+  const apiKey = (employeeKey ?? adminKey) as string;
   const baseUrl = (process.env.CLOKIO_BASE_URL?.trim() || 'https://app.clokio.io').replace(/\/+$/, '');
 
   const defaultActor = process.env.CLOKIO_DEFAULT_ACTOR?.trim() || undefined;
   // Validate the same way the API constrains an employee_code, so a
   // misconfigured value fails at startup rather than silently on every write.
+  if (defaultActor && mode === 'employee') {
+    throw new Error(
+      'CLOKIO_DEFAULT_ACTOR has no meaning with CLOKIO_EMPLOYEE_KEY: the key already IS the actor. Unset it.'
+    );
+  }
   if (defaultActor && !/^[A-Za-z0-9_-]{1,50}$/.test(defaultActor)) {
     throw new Error(
       'CLOKIO_DEFAULT_ACTOR must be an employee_code (1-50 chars of letters, digits, _ or -).'
     );
   }
 
-  return { baseUrl, apiKey, defaultActor };
+  return { baseUrl, mode, apiKey, defaultActor };
+}
+
+/** The URL prefix the mode talks to. */
+export function apiPrefix(config: ClokioConfig): string {
+  return config.mode === 'employee' ? '/api/employee' : '/api/v1';
+}
+
+/** The one header that authenticates the mode's key. */
+export function authHeaders(config: ClokioConfig): Record<string, string> {
+  return config.mode === 'employee' ? { 'X-Employee-Key': config.apiKey } : { 'X-API-Key': config.apiKey };
 }
 
 /**
@@ -59,12 +94,13 @@ export function loadConfig(): ClokioConfig {
  * in seg(), but this is the invariant that holds even if one forgets.
  */
 export function buildUrl(config: ClokioConfig, path: string): URL {
-  const url = new URL(`${config.baseUrl}/api/v1${path.startsWith('/') ? path : `/${path}`}`);
-  const expectedPrefix = new URL(config.baseUrl).pathname.replace(/\/+$/, '') + '/api/v1/';
+  const prefix = apiPrefix(config);
+  const url = new URL(`${config.baseUrl}${prefix}${path.startsWith('/') ? path : `/${path}`}`);
+  const expectedPrefix = new URL(config.baseUrl).pathname.replace(/\/+$/, '') + prefix + '/';
   if (!url.pathname.startsWith(expectedPrefix)) {
     throw new ClokioApiError(
       0,
-      'Refusing to send a request outside /api/v1 - a path argument tried to change the endpoint.'
+      `Refusing to send a request outside ${prefix} - a path argument tried to change the endpoint.`
     );
   }
   return url;
@@ -140,7 +176,7 @@ export async function requestRawBytes(
   path: string,
   query?: RequestOptions['query']
 ): Promise<{ buffer: Buffer; contentType: string; fileName?: string }> {
-  const auth = { 'X-API-Key': config.apiKey };
+  const auth = authHeaders(config);
   const url = buildUrl(config, path);
   applyQuery(url, query);
 
@@ -219,7 +255,7 @@ export async function requestRaw(
   path: string,
   fileName?: string
 ): Promise<string> {
-  const auth = { 'X-API-Key': config.apiKey };
+  const auth = authHeaders(config);
   const url = buildUrl(config, path);
 
   let res: Response;
@@ -339,7 +375,7 @@ export async function requestUpload<T = unknown>(
   const { readFile } = await import('node:fs/promises');
   const { basename } = await import('node:path');
 
-  const auth = { 'X-API-Key': config.apiKey };
+  const auth = authHeaders(config);
   const url = buildUrl(config, path);
 
   let bytes: Buffer;
@@ -423,7 +459,7 @@ export async function request<T = unknown>(
 
   const headers: Record<string, string> = {
     ...(extra ?? {}),
-    'X-API-Key': config.apiKey,
+    ...authHeaders(config),
     Accept: 'application/json',
   };
   let payload: string | undefined;

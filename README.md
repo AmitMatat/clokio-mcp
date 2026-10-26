@@ -49,6 +49,27 @@ Add to `claude_desktop_config.json`:
 }
 ```
 
+### Acting as yourself: an employee key
+
+An admin `clk_` key reaches the whole organisation. If you are not an admin, or you want
+every write bound by **your own** roles and project permissions, use a personal employee key
+instead - any employee can issue one at **Profile → API keys**:
+
+```bash
+claude mcp add clokio \
+  --env CLOKIO_EMPLOYEE_KEY=your_personal_key \
+  -- npx -y clokio-mcp@latest
+```
+
+Set exactly one of `CLOKIO_API_KEY` / `CLOKIO_EMPLOYEE_KEY`. In employee mode the server
+talks to `/api/employee` with `X-Employee-Key`, announces who it is acting as at startup
+(`acting as Anil Pujara (00081)`), and fails there if the key is revoked or expired. It
+registers only what that surface allows: your assigned-task queue, reading and creating
+tasks where you may, updating, commenting, attachments, logging time, and the whole Docs
+module. Nothing takes an `employee_code` to credit a writer: the key is the identity, and a
+`403` from Clokio means you may not do that in that project. `CLOKIO_TOOLSETS` may name
+`tasks` and/or `docs`; `CLOKIO_DEFAULT_ACTOR` is refused.
+
 ### Cursor / Cline / Zed / any MCP client
 
 Use the same command - `npx -y clokio-mcp@latest` with `CLOKIO_API_KEY` in the env.

@@ -14,13 +14,14 @@
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { loadConfig } from './client.js';
+import { loadConfig, request } from './client.js';
 import { VERSION } from './version.js';
 import { registerTaskTools } from './tools/tasks.js';
 import { registerProjectTools } from './tools/projects.js';
 import { registerEmployeeTools } from './tools/employees.js';
 import { registerAttendanceTools } from './tools/attendance.js';
 import { registerDocTools } from './tools/docs.js';
+import { registerEmployeeModeTools } from './tools/employee.js';
 import { registerTicketTools } from './tools/tickets.js';
 
 
@@ -63,17 +64,59 @@ function selectedToolsets(): Set<Toolset> {
   return new Set(requested as Toolset[]);
 }
 
+const EMPLOYEE_TOOLSETS = ['tasks', 'docs'] as const;
+
+/**
+ * Employee mode: the personal X-Employee-Key surface. Only tasks and docs
+ * exist there, so CLOKIO_TOOLSETS may name those two and nothing else.
+ */
+function selectedEmployeeToolsets(): Set<Toolset> {
+  const raw = process.env.CLOKIO_TOOLSETS?.trim();
+  if (!raw) return new Set(EMPLOYEE_TOOLSETS);
+  const requested = selectedToolsets();
+  const unsupported = [...requested].filter((t) => !(EMPLOYEE_TOOLSETS as readonly string[]).includes(t));
+  if (unsupported.length) {
+    throw new Error(
+      `CLOKIO_TOOLSETS names toolset(s) the employee surface does not have: ${unsupported.join(', ')}. ` +
+        `With CLOKIO_EMPLOYEE_KEY the choices are: ${EMPLOYEE_TOOLSETS.join(', ')}.`
+    );
+  }
+  return requested;
+}
+
 async function main(): Promise<void> {
   const config = loadConfig();
-  const toolsets = selectedToolsets();
 
   const server = new McpServer({
     name: 'clokio-mcp',
     version: VERSION,
   });
 
-  // Always on: whoami plus the reference lookups the task tools resolve
-  // names against.
+  if (config.mode === 'employee') {
+    // Fail at startup, not on the first write: a revoked or expired key is
+    // 401 here, and the person the key acts as is announced so a session
+    // never has to guess whose name its writes will carry.
+    const employeeToolsets = selectedEmployeeToolsets();
+    let me: { employee_code?: string; name?: string } = {};
+    try {
+      me = (await request(config, '/me')) as typeof me;
+    } catch (e) {
+      throw new Error(
+        `CLOKIO_EMPLOYEE_KEY was refused by ${config.baseUrl} (${(e as Error).message}). The key may be revoked or expired - ` +
+          'issue a new one at Profile -> API keys.'
+      );
+    }
+    if (employeeToolsets.has('tasks')) registerEmployeeModeTools(server, config);
+    if (employeeToolsets.has('docs')) registerDocTools(server, config);
+    await server.connect(new StdioServerTransport());
+    process.stderr.write(
+      `clokio-mcp ${VERSION} connected in employee mode, acting as ${me.name ?? '?'} (${me.employee_code ?? '?'}) ` +
+        `(base: ${config.baseUrl}, toolsets: ${[...employeeToolsets].join(', ')})\n`
+    );
+    return;
+  }
+
+  const toolsets = selectedToolsets();
   registerProjectTools(server, config);
 
   if (toolsets.has('tasks')) registerTaskTools(server, config);
