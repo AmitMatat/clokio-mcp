@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.29.1
+
+Dependency security update. No tool or behaviour changes; `dist/` is byte-identical to 0.29.0.
+
+- `npm audit fix` (no `--force`): `hono` and `ip-address` (transitive, through the MCP SDK) move to their patched releases, clearing the moderate and high advisories they carried (GHSA-5r4p-p66f-jhc7 and related, GHSA-rxp7-6hxx-x8q5).
+- Left on purpose: `zod` stays on 3.x. The fix for GHSA-mrhx-c7xc-m3w5 (memory use when validating oversized constrained collections) exists only in zod 4, a breaking major the MCP SDK's schema layer is not on. Exposure here is low: zod validates tool arguments sent by the local MCP client over stdio, so the only party who can send an oversized collection is the user's own client. Revisit when the SDK moves to zod 4.
+
 ## 0.29.0
 
 **Employee mode** (Kamal Raj Silwal, PR #2): `CLOKIO_EMPLOYEE_KEY` instead of `CLOKIO_API_KEY` runs the server with a personal `X-Employee-Key`, acting as that one person within their own roles and project permissions. Any employee issues one at Profile -> API keys. **Backend dependency:** `GET /api/employee/me` (Clokio, PR #62, live on app.clokio.io since 2026-10-26); on an older server employee mode stops at startup saying the server needs a newer Clokio. Admin mode (`CLOKIO_API_KEY`) is unchanged: 129 tools, same names. After updating, start a NEW session and check that `clokio_whoami` reports `mcp_version` 0.29.0.
