@@ -637,10 +637,16 @@ export interface CreateTicketArgs {
  * nothing. (A retry after this process restarted should pass the
  * attachment_ids the first answer listed, or a new key.)
  */
-const uploadedForKey = new Map<string, number[]>();
+const uploadedForKey = new Map<string, Map<string, { id: number; expiresAt: number }>>();
 
 export const MAX_EMAIL_FILES = 5;
 
+/**
+ * The ids for one call: the given ones, then each local file uploaded. Each
+ * upload is remembered AS IT SUCCEEDS (a retry after the third of five failed
+ * uploads only the rest) and until the server's expires_at; a retry with the
+ * same key reuses what is still valid.
+ */
 export async function emailAttachmentIds(
   cfg: ClokioConfig,
   key: string,
@@ -654,18 +660,38 @@ export async function emailAttachmentIds(
   }
   if (paths.length === 0) return given.length ? given : undefined;
 
-  const cacheKey = `${key}\u0000${paths.join('\u0000')}`;
-  let uploaded = uploadedForKey.get(cacheKey);
-  if (!uploaded) {
-    uploaded = [];
-    for (const path of paths) {
-      const res = await requestUpload<any>(cfg, '/tickets/attachments', path);
-      uploaded.push(Number(res?.attachment_id));
+  let known = uploadedForKey.get(key);
+  if (!known) {
+    known = new Map();
+    uploadedForKey.set(key, known);
+  }
+  const uploaded: number[] = [];
+  for (const path of paths) {
+    const hit = known.get(path);
+    if (hit && hit.expiresAt > Date.now()) {
+      uploaded.push(hit.id);
+      continue;
     }
-    uploadedForKey.set(cacheKey, uploaded);
+    const res = await requestUpload<any>(cfg, '/tickets/attachments', path);
+    const id = Number(res?.attachment_id);
+    const expiresAt = Date.parse(String(res?.expires_at ?? '')) || Date.now() + 23 * 3600 * 1000;
+    known.set(path, { id, expiresAt });
+    uploaded.push(id);
   }
 
   return [...given, ...uploaded];
+}
+
+/**
+ * The server refused the ids (expired, used, or another person's): forget
+ * what this key uploaded, so the next retry uploads afresh instead of sending
+ * the same refused ids again.
+ */
+export function forgetUploadsOnRefusal(key: string, e: unknown): unknown {
+  if (e instanceof ClokioApiError && e.status === 422 && (e.body as any)?.errors?.attachment_ids) {
+    uploadedForKey.delete(key);
+  }
+  return e;
 }
 
 /**
@@ -934,13 +960,27 @@ export function registerTicketTools(server: McpServer, config: ClokioConfig): vo
     },
     handler: async (args, cfg) => {
       const key = args.idempotency_key ?? `mcp-${randomUUID()}`;
+      // Files ride on an email ticket only: asked BEFORE uploading anything.
+      if (args.file_paths?.length) {
+        const t = await request<any>(cfg, `/tickets/${seg(args.id)}`);
+        const type = t?.ticket?.channel?.type;
+        if (type !== undefined && type !== 'email') {
+          throw new Error(`Files go on an email ticket only; ticket #${args.id} is ${type}.`);
+        }
+      }
       const attachmentIds = await emailAttachmentIds(cfg, key, args.attachment_ids, args.file_paths);
-      const { res, replayed } = await idempotentPost(cfg, `/tickets/${seg(args.id)}/replies`, key, {
-        html: markdownToHtml(args.body),
-        recipients: args.recipients,
-        author_employee_code: args.author_employee_code,
-        attachment_ids: attachmentIds,
-      });
+      let sent;
+      try {
+        sent = await idempotentPost(cfg, `/tickets/${seg(args.id)}/replies`, key, {
+          html: markdownToHtml(args.body),
+          recipients: args.recipients,
+          author_employee_code: args.author_employee_code,
+          attachment_ids: attachmentIds,
+        });
+      } catch (e) {
+        throw forgetUploadsOnRefusal(key, e);
+      }
+      const { res, replayed } = sent;
       // E7 (0.25.0): a replay sent nothing, and says so.
       return replayed
         ? { replayed_note: `Reply message #${res?.message_id ?? '-'} was already sent on ticket #${res?.ticket_id ?? args.id} (replayed, nothing new sent).`, ...res, idempotency_key: key }
@@ -1010,13 +1050,21 @@ export function registerTicketTools(server: McpServer, config: ClokioConfig): vo
       if (args.draft && args.file_paths?.length) {
         throw new Error('A draft carries no files. Attach them to the reply that sends it.');
       }
+      // The body's own checks (subject, body, recipient) BEFORE any upload.
+      createTicketBody({ ...args, attachment_ids: args.attachment_ids });
       const attachmentIds = args.channel === 'email' ? await emailAttachmentIds(cfg, key, args.attachment_ids, args.file_paths) : undefined;
       const body = createTicketBody({ ...args, attachment_ids: attachmentIds });
-      const { res, replayed } = await withOlderServerHint(
-        () => idempotentPost(cfg, '/tickets', key, body),
-        'The mailbox or number (inbox_id), the contact or the assignee is not one the acting employee can see, or the inbox module is off.',
-        NEW_ROUTE_HINT,
-      );
+      let sent;
+      try {
+        sent = await withOlderServerHint(
+          () => idempotentPost(cfg, '/tickets', key, body),
+          'The mailbox or number (inbox_id), the contact or the assignee is not one the acting employee can see, or the inbox module is off.',
+          NEW_ROUTE_HINT,
+        );
+      } catch (e) {
+        throw forgetUploadsOnRefusal(key, e);
+      }
+      const { res, replayed } = sent;
       return renderCreatedTicket(res, key, replayed, args.channel);
     },
   });
