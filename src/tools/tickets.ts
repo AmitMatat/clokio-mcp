@@ -430,7 +430,11 @@ export function renderContactClient(res: any, contactIdArg: number, all = false)
     lines.push(head);
     for (const t of open) {
       const due = t?.due_date ? `due ${t.due_date}${t?.overdue ? ' OVERDUE' : ''}` : 'no due date';
-      const people = Array.isArray(t?.assignees) && t.assignees.length ? t.assignees.map(plain).join(', ') : 'nobody';
+      // {employee_code, name} per person (the API's own shape); a bare
+      // string is still read as a name.
+      const person = (a: any) =>
+        a && typeof a === 'object' ? `${plain(a.name)}${a.employee_code ? ` (${plain(a.employee_code)})` : ''}` : plain(a);
+      const people = Array.isArray(t?.assignees) && t.assignees.length ? t.assignees.map(person).join(', ') : 'nobody';
       lines.push(
         `- #${t?.id ?? '-'} ${plain(t?.title)} ${status(t?.status)} | ${due} | ${projectOf(t?.project)} | assignees: ${people}` +
           `${t?.is_subtask ? ' | subtask' : ''}${t?.url ? ` | ${t.url}` : ''}`,

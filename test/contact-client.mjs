@@ -26,7 +26,7 @@ const PANEL = {
     { id: 11, name: 'App', color: '#00ff00', url: 'https://app.example/projects/11/tasks', open_count: 1 },
   ],
   open_tasks: [
-    { id: 55, title: 'Fix header', url: 'https://app.example/tasks/55/view', project: { id: 10, name: 'Website' }, status: { slug: 'in_progress', name: 'In progress', color: '#00f' }, due_date: '2026-10-20', overdue: true, assignees: ['Dana', 'Amit'], is_subtask: false },
+    { id: 55, title: 'Fix header', url: 'https://app.example/tasks/55/view', project: { id: 10, name: 'Website' }, status: { slug: 'in_progress', name: 'In progress', color: '#00f' }, due_date: '2026-10-20', overdue: true, assignees: [{ employee_code: '00080', name: 'Dana' }, { employee_code: '00055', name: 'Amit' }], is_subtask: false },
     { id: 56, title: 'Footer copy', url: 'https://app.example/tasks/56/view', project: { id: 10, name: 'Website' }, status: { slug: 'todo', name: 'To do', color: '#999' }, due_date: '2026-11-02', overdue: false, assignees: [], is_subtask: true },
     { id: 57, title: 'Store listing', url: 'https://app.example/tasks/57/view', project: null, status: { slug: 'todo', name: 'To do', color: '#999' }, due_date: null, overdue: false, assignees: ['Kamal'], is_subtask: false },
   ],
@@ -79,9 +79,10 @@ const full = r.text(0);
 has('the client is named', full, "Contact 9's client: Acme Ltd (client #5).");
 has('the projects carry open counts', full, '- #10 Website: 3 open tasks | https://app.example/projects/10/tasks');
 has('a single open task is singular', full, '- #11 App: 1 open task |');
-has('an overdue task is marked', full, '- #55 Fix header [In progress / in_progress] | due 2026-10-20 OVERDUE | project #10 Website | assignees: Dana, Amit | https://app.example/tasks/55/view');
+has('an overdue task is marked', full, '- #55 Fix header [In progress / in_progress] | due 2026-10-20 OVERDUE | project #10 Website | assignees: Dana (00080), Amit (00055) | https://app.example/tasks/55/view');
 has('a task due later is not overdue', full, '| due 2026-11-02 | project #10 Website | assignees: nobody | subtask | https://app.example/tasks/56/view');
 has('no due date and no project say so', full, '| no due date | no project | assignees: Kamal |');
+has('a bare name (older server) is still printed', full, 'assignees: Kamal |');
 has('more open than listed points at all', full, 'Open tasks (3 of 12, nearest due first); pass all=true for up to 100:');
 has('recently done is listed', full, '- #40 Logo swap [Done / done] | project #10 Website | updated 2026-10-25T09:00:00Z | https://app.example/tasks/40/view');
 check('the envelope is not printed', full.includes('"status"'), false);
