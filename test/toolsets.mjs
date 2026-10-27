@@ -43,7 +43,7 @@ check('tasks toolset DROPS employees', tasksOnly.names?.includes('clokio_list_em
 check('tasks toolset DROPS the time-logging tools', tasksOnly.names?.includes('clokio_log_time'), false);
 const attendanceOnly = listTools({ CLOKIO_TOOLSETS: 'attendance' });
 check('attendance toolset carries the four time-logging tools', ['clokio_log_time', 'clokio_start_timer', 'clokio_stop_timer', 'clokio_get_active_timer'].every((n) => attendanceOnly.names?.includes(n)), true);
-check('default registers 129 tools', all.names?.length, 129);
+check('default registers 130 tools', all.names?.length, 130);
 check('tasks toolset carries the project task summary', tasksOnly.names?.includes('clokio_get_project_task_summary'), true);
 check('tasks toolset registers 42 tools', tasksOnly.names?.length, 42);
 check('tasks toolset carries the project activity feed', tasksOnly.names?.includes('clokio_list_project_activity'), true);
@@ -62,6 +62,8 @@ check('and says which value was unknown', bad.stderr.includes('nonsense'), true)
 
 const ticketsOnly = listTools({ CLOKIO_TOOLSETS: 'tickets' });
 check('tickets toolset keeps clokio_reply_ticket', ticketsOnly.names?.includes('clokio_reply_ticket'), true);
+check('tickets toolset carries clokio_get_contact_client', ticketsOnly.names?.includes('clokio_get_contact_client'), true);
+check('tasks toolset DROPS clokio_get_contact_client', tasksOnly.names?.includes('clokio_get_contact_client'), false);
 check('attendance toolset carries the edit and delete tools', ['clokio_update_time_entry', 'clokio_delete_time_entry'].every((n) => attendanceOnly.names?.includes(n)), true);
 check('tickets toolset carries the download and draft tools', ['clokio_download_ticket_attachment', 'clokio_create_reply_draft'].every((n) => ticketsOnly.names?.includes(n)), true);
 check('tasks toolset carries the inline media tool', tasksOnly.names?.includes('clokio_download_task_media'), true);

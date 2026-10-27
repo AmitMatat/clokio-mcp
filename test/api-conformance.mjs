@@ -205,6 +205,8 @@ const TOOL_CALLS = [
   { tool: 'clokio_remove_ticket_label', method: 'delete', path: '/tickets/{id}/labels/{labelId}', query: [] },
   { tool: 'clokio_list_contacts', method: 'get', path: '/contacts', query: ['q', 'page'] },
   { tool: 'clokio_get_contact', method: 'get', path: '/contacts/{id}', query: [] },
+  // 0.30.0 (task #6204): the contact's client, projects and tasks (tickets:read + tasks:read).
+  { tool: 'clokio_get_contact_client', method: 'get', path: '/contacts/{id}/client', query: ['all'] },
   { tool: 'clokio_update_contact', method: 'patch', path: '/contacts/{id}', query: [] },
   { tool: 'clokio_create_contact', method: 'post', path: '/contacts', query: [], body: ['name', 'email', 'phone'] },
   { tool: 'clokio_list_inboxes', method: 'get', path: '/inboxes', query: [] },

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.30.0
+
+A support contact's client and its work (Clokio task #6204). **Backend dependency:** the Clokio backend with `feature/ticket-client-panel`. On an older server the contact has no `client` line, and `clokio_get_contact_client` answers "Not found." with a hint that the server lacks the route. After updating, start a NEW session and check that `clokio_whoami` reports `mcp_version` 0.30.0. Before publishing, run `node test/api-conformance.mjs` against the deployed spec (or `CLOKIO_SPEC_FILE` pointing at the backend's `docs/api/openapi.json`): 130 tools, 136 calls.
+
+- **`clokio_get_contact`** (and the answers of `clokio_create_contact` / `clokio_update_contact`) print `Client: <name> (client #id ...)`, or `Client: none linked`. The name renders beside customer text, so it is wrapped as untrusted like a label. A server that sends no `client` prints no line.
+- **New: `clokio_get_contact_client`** (`id`, optional `all`; `tickets` toolset, read-only) over `GET /contacts/{id}/client`, needing `tickets:read` AND `tasks:read` (and the acting employee's `tickets.view_all`). Answers "what is the status of my task?" for a customer: the client, its active projects with open task counts, its open tasks nearest due first (status, due date, OVERDUE, assignees, subtask, link), and the last 5 tasks done within 60 days. At most 8 open tasks; `all: true` sends `all=1` for up to 100 (the query carries nothing otherwise). Says so when the contact has no client, and when a section is empty. Only what the acting employee may see is listed.
+- 130 tools by default (42 with `CLOKIO_TOOLSETS=tasks`; the new tool is in the tickets group). Tests: `test/contact-client.mjs`, toolsets counts, a conformance entry.
+
 ## 0.29.1
 
 Dependency security update. No tool or behaviour changes; `dist/` is byte-identical to 0.29.0.
