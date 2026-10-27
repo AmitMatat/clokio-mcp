@@ -1,12 +1,23 @@
 # Changelog
 
-## 0.30.0
+## 0.31.0
 
-A support contact's client and its work (Clokio task #6204). **Backend dependency:** the Clokio backend with `feature/ticket-client-panel`. On an older server the contact has no `client` line, and `clokio_get_contact_client` answers "Not found." with a hint that the server lacks the route. After updating, start a NEW session and check that `clokio_whoami` reports `mcp_version` 0.30.0. Before publishing, run `node test/api-conformance.mjs` against the deployed spec (or `CLOKIO_SPEC_FILE` pointing at the backend's `docs/api/openapi.json`): 130 tools, 136 calls.
+A support contact's client and its work (Clokio task #6204). **Backend dependency:** the Clokio backend with `feature/ticket-client-panel`. On an older server the contact has no `client` line, and `clokio_get_contact_client` answers "Not found." with a hint that the server lacks the route. After updating, start a NEW session and check that `clokio_whoami` reports `mcp_version` 0.31.0. Before publishing, run `node test/api-conformance.mjs` against the deployed spec (or `CLOKIO_SPEC_FILE` pointing at the backend's `docs/api/openapi.json`): 131 tools, the conformance count printed by the test.
 
 - **`clokio_get_contact`** (and the answers of `clokio_create_contact` / `clokio_update_contact`) print `Client: <name> (client #id ...)`, or `Client: none linked`. The name renders beside customer text, so it is wrapped as untrusted like a label. A server that sends no `client` prints no line.
 - **New: `clokio_get_contact_client`** (`id`, optional `all`; `tickets` toolset, read-only) over `GET /contacts/{id}/client`, needing `tickets:read` AND `tasks:read` (and the acting employee's `tickets.view_all`). Answers "what is the status of my task?" for a customer: the client, its active projects with open task counts, its open tasks nearest due first (status, due date, OVERDUE, assignees, subtask, link), and the 5 done tasks most recently updated in the last 60 days. At most 8 open tasks; `all: true` sends `all=1` for up to 100 (the query carries nothing otherwise). Says so when the contact has no client, and when a section is empty. Only what the acting employee may see is listed.
-- 130 tools by default (42 with `CLOKIO_TOOLSETS=tasks`; the new tool is in the tickets group). Tests: `test/contact-client.mjs`, toolsets counts, a conformance entry.
+- 131 tools by default (42 with `CLOKIO_TOOLSETS=tasks`; the new tool is in the tickets group). Tests: `test/contact-client.mjs`, toolsets counts, a conformance entry.
+
+## 0.30.0
+
+Files on outgoing emails, and closing a ticket without a survey. **Backend dependency:** the Clokio backend with `POST /tickets/attachments`, `attachment_ids` on `POST /tickets` and `POST /tickets/{id}/replies`, and `send_survey` on `PATCH /tickets/{id}` (branch `feature/api-ticket-attachments`). On an older server the upload is a 404 and `attachment_ids` / `send_survey` are refused as unknown fields. After updating, start a NEW session and check that `clokio_whoami` reports `mcp_version` 0.30.0. Before publishing, run `node test/api-conformance.mjs` against the deployed spec: 130 tools, 136 calls.
+
+- `clokio_create_ticket` (email, not a draft) and `clokio_reply_ticket` take `file_paths` (local files, uploaded through `POST /tickets/attachments`) and / or `attachment_ids`: up to 5 files, together within 10 MB. They go out as real attachments; the create answer names them.
+- A retry with the same `idempotency_key` reuses the ids its first call uploaded (each remembered as it succeeds, until the server's `expires_at`, for the life of the process), so the server sees the same body and replays instead of refusing it; a retry after a failed upload uploads only the files still missing. When the server refuses the ids (expired, used), they are forgotten and the next retry uploads afresh. After a restart, pass the `attachment_ids` the first answer listed.
+- Nothing is uploaded before the call's own checks pass: an email without a subject or body, files on a draft or on WhatsApp, and (for a reply) a ticket that is not email are refused first.
+- New tool `clokio_upload_ticket_attachment` (130 tools).
+- `clokio_update_ticket` takes `send_survey` (false with `state: "resolved"` closes without the satisfaction survey or rating card).
+- Tests: `test/ticket-email-files.mjs`; `test/api-conformance.mjs` and `test/toolsets.mjs` updated.
 
 ## 0.29.1
 

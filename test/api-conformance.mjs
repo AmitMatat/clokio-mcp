@@ -185,7 +185,9 @@ const TOOL_CALLS = [
   // 0.25.0 #9: label_ids go out as repeated label_ids[] (applyQuery), the name the spec lists.
   { tool: 'clokio_list_tickets', method: 'get', path: '/tickets', query: ['state', 'inbox_id', 'assignee', 'label_id', 'label_ids[]', 'contact_id', 'updated_since', 'created_after', 'created_before', 'needs_reply', 'sort', 'q', 'per_page', 'cursor'] },
   // 0.25.0 #5: a new outbound ticket (sent or draft).
-  { tool: 'clokio_create_ticket', method: 'post', path: '/tickets', query: [], body: ['channel', 'inbox_id', 'to', 'cc', 'bcc', 'subject', 'body', 'body_format', 'template', 'contact_id', 'assignee_employee_code', 'draft'] },
+  { tool: 'clokio_create_ticket', method: 'post', path: '/tickets', query: [], body: ['channel', 'inbox_id', 'to', 'cc', 'bcc', 'subject', 'body', 'body_format', 'template', 'contact_id', 'assignee_employee_code', 'draft', 'attachment_ids'] },
+  // 0.30.0: files for an outgoing email, uploaded ahead (multipart `file`).
+  { tool: 'clokio_upload_ticket_attachment', method: 'post', path: '/tickets/attachments', query: [] },
   { tool: 'clokio_get_ticket', method: 'get', path: '/tickets/{id}', query: [] },
   { tool: 'clokio_get_ticket', method: 'get', path: '/tickets/{id}/messages', query: ['per_page'] },
   { tool: 'clokio_list_ticket_messages', method: 'get', path: '/tickets/{id}/messages', query: ['cursor', 'per_page'] },
