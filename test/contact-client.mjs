@@ -83,13 +83,16 @@ has('an overdue task is marked', full, '- #55 Fix header [In progress / in_progr
 has('a task due later is not overdue', full, '| due 2026-11-02 | project #10 Website | assignees: nobody | subtask | https://app.example/tasks/56/view');
 has('no due date and no project say so', full, '| no due date | no project | assignees: Kamal |');
 has('a bare name (older server) is still printed', full, 'assignees: Kamal |');
+const odd = renderContactClient({ ...PANEL, open_tasks: [{ ...PANEL.open_tasks[0], assignees: [{ employee_code: '00099', name: '' }], status: { slug: 'todo', name: 'todo' } }] }, 9);
+has('a person with no name is shown by code alone', odd, 'assignees: 00099 |');
+has('a status whose name is its slug is printed once', odd, '[todo]');
 has('more open than listed points at all', full, 'Open tasks (3 of 12, nearest due first); pass all=true for up to 100:');
 has('recently done is listed', full, '- #40 Logo swap [Done / done] | project #10 Website | updated 2026-10-25T09:00:00Z | https://app.example/tasks/40/view');
 check('the envelope is not printed', full.includes('"status"'), false);
 has('all=true does not point at all again', r.text(1), '; at most 100 are listed:');
-has('no client says so', r.text(2), 'Contact 8 is not linked to a client');
+has('no client says so', r.text(2), 'No client to show for contact 8: it is not linked to one, or its client could not be read.');
 const empty = r.text(3);
-has('no projects says so', empty, 'Projects: none active that the acting employee can see.');
+has('no projects says so', empty, 'Projects: none active that the acting employee can see (or the Projects module is switched off).');
 has('no open tasks says so', empty, 'Open tasks: none that the acting employee can see.');
 has('nothing done says so', empty, 'Recently done: nothing in the last 60 days.');
 check('the not-found answer is an error', r.errored(6), true);

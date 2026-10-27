@@ -392,7 +392,7 @@ export function renderContactClient(res: any, contactIdArg: number, all = false)
   const client = res?.client;
   if (!client) {
     return (
-      `Contact ${contactIdArg} is not linked to a client, so there are no projects or tasks to show. ` +
+      `No client to show for contact ${contactIdArg}: it is not linked to one, or its client could not be read. ` +
       'A person links the contact to a client on the contact pane of the Tickets screen.'
     );
   }
@@ -402,7 +402,11 @@ export function renderContactClient(res: any, contactIdArg: number, all = false)
   const done: any[] = Array.isArray(res?.done_tasks) ? res.done_tasks : [];
   const openTotal = typeof res?.open_total === 'number' ? res.open_total : open.length;
   const projectOf = (p: any) => (p ? `project #${p.id ?? '-'} ${plain(p.name)}` : 'no project');
-  const status = (s: any) => `[${plain(s?.name ?? '-')} / ${plain(s?.slug ?? '-')}]`;
+  const status = (s: any) => {
+    const name = plain(s?.name ?? '-');
+    const slug = plain(s?.slug ?? '-');
+    return name === slug ? `[${slug}]` : `[${name} / ${slug}]`;
+  };
 
   const lines: string[] = [
     `Contact ${contactIdArg}'s client: ${plain(client.name)} (client #${client.id ?? '-'}). ` +
@@ -417,7 +421,7 @@ export function renderContactClient(res: any, contactIdArg: number, all = false)
       lines.push(`- #${p?.id ?? '-'} ${plain(p?.name)}: ${n} open task${n === 1 ? '' : 's'}${p?.url ? ` | ${p.url}` : ''}`);
     }
   } else {
-    lines.push('Projects: none active that the acting employee can see.');
+    lines.push('Projects: none active that the acting employee can see (or the Projects module is switched off).');
   }
   lines.push('');
 
@@ -433,7 +437,11 @@ export function renderContactClient(res: any, contactIdArg: number, all = false)
       // {employee_code, name} per person (the API's own shape); a bare
       // string is still read as a name.
       const person = (a: any) =>
-        a && typeof a === 'object' ? `${plain(a.name)}${a.employee_code ? ` (${plain(a.employee_code)})` : ''}` : plain(a);
+        a && typeof a === 'object'
+          ? plain(a.name) !== ''
+            ? `${plain(a.name)}${a.employee_code ? ` (${plain(a.employee_code)})` : ''}`
+            : plain(a.employee_code ?? '-')
+          : plain(a);
       const people = Array.isArray(t?.assignees) && t.assignees.length ? t.assignees.map(person).join(', ') : 'nobody';
       lines.push(
         `- #${t?.id ?? '-'} ${plain(t?.title)} ${status(t?.status)} | ${due} | ${projectOf(t?.project)} | assignees: ${people}` +
