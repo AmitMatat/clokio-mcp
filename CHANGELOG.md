@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.30.0
+
+Files on outgoing emails, and closing a ticket without a survey. **Backend dependency:** the Clokio backend with `POST /tickets/attachments`, `attachment_ids` on `POST /tickets` and `POST /tickets/{id}/replies`, and `send_survey` on `PATCH /tickets/{id}` (branch `feature/api-ticket-attachments`). On an older server the upload is a 404 and `attachment_ids` / `send_survey` are refused as unknown fields. After updating, start a NEW session and check that `clokio_whoami` reports `mcp_version` 0.30.0. Before publishing, run `node test/api-conformance.mjs` against the deployed spec: 130 tools, 136 calls.
+
+- `clokio_create_ticket` (email, not a draft) and `clokio_reply_ticket` take `file_paths` (local files, uploaded through `POST /tickets/attachments`) and / or `attachment_ids`: up to 5 files, together within 10 MB. They go out as real attachments; the create answer names them.
+- A retry with the same `idempotency_key` reuses the ids its first call uploaded (remembered for the life of the process), so the server sees the same body and replays instead of refusing it. After a restart, pass the `attachment_ids` the first answer listed.
+- Files on WhatsApp, or on a draft, are refused before any request, in words.
+- New tool `clokio_upload_ticket_attachment` (130 tools).
+- `clokio_update_ticket` takes `send_survey` (false with `state: "resolved"` closes without the satisfaction survey or rating card).
+- Tests: `test/ticket-email-files.mjs`; `test/api-conformance.mjs` and `test/toolsets.mjs` updated.
+
 ## 0.29.1
 
 Dependency security update. No tool or behaviour changes; `dist/` is byte-identical to 0.29.0.
