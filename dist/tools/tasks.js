@@ -344,6 +344,7 @@ export function withLinkedTicket(task) {
  */
 export const TASK_LIST_FIELDS = [
     'id',
+    'task_url',
     'title',
     'status',
     'priority',
@@ -400,9 +401,11 @@ export function registerTaskTools(server, config) {
             label: z.string().optional(),
             search: z.string().optional().describe('Free text over title and description (see search_in)'),
             search_in: z
-                .enum(['title', 'all'])
+                .enum(['title', 'description', 'all'])
                 .optional()
-                .describe('Where `search` looks: "title" only, or "all" = title and description (the default)'),
+                .describe('Where `search` looks: "title" only, "description" only (matched as stored, HTML included), or ' +
+                '"all" = both (the default). Looking for a task by name: use "title", or sort: "relevance"; a word ' +
+                'used as a heading in many descriptions otherwise floods the results.'),
             no_due_date: z
                 .boolean()
                 .optional()
@@ -468,13 +471,13 @@ export function registerTaskTools(server, config) {
             compact: z
                 .boolean()
                 .optional()
-                .describe('STRONGLY PREFERRED when scanning. Returns a slim row - id, title, status, priority, ' +
+                .describe('STRONGLY PREFERRED when scanning. Returns a slim row - id, task_url, title, status, priority, ' +
                 'due_date, parent_id, project_id, assignee_codes (employee_code strings of YOUR organisation), ' +
                 'external_assignees ([{employee_code, organization_id}] for a client organisation\'s people on a ' +
                 'shared board, [] when none; organization_id null when that organisation is hidden), labels (names) ' +
                 'and updated_at - dropping the HTML description and flattening the nested project/assignee ' +
                 'objects to ids. Resolve a project_id with clokio_list_projects, and fetch the one task you ' +
-                'actually need in full with clokio_get_task (its URL is /tasks/{id}/view).'),
+                'actually need in full with clokio_get_task.'),
             fields: z
                 .array(z.enum(TASK_LIST_FIELDS))
                 .min(1)
@@ -495,10 +498,13 @@ export function registerTaskTools(server, config) {
                 'title_desc',
                 'priority',
                 'priority_desc',
+                'relevance',
             ])
                 .optional()
-                .describe('Order the page. `priority` ascends low -> urgent. CANNOT be combined with cursor or ' +
-                'updated_since - that is a 422, because re-ordering a crawl silently skips rows.'),
+                .describe('Order the page. `priority` ascends low -> urgent. `relevance` needs `search`: exact title, title ' +
+                'starting with the term, title holding it, then a match in the description alone. Use it when ' +
+                'looking for a task by name, and read further pages with `page` (next_cursor is null). CANNOT be ' +
+                'combined with cursor or updated_since - that is a 422, because re-ordering a crawl silently skips rows.'),
         },
         handler: (args, cfg) => request(cfg, '/tasks', {
             query: {
@@ -711,6 +717,12 @@ export function registerTaskTools(server, config) {
         description: 'Update a task. ONLY the fields you pass are changed; omitted fields are left alone. Pass null to ' +
             'due_date / start_date / estimated_hours / description to CLEAR them. Set actor_employee_code so the ' +
             'activity log names the person rather than the API key.\n\n' +
+            'EDITING A DESCRIPTION: `description` REPLACES THE WHOLE TEXT, including edits people made in the app since ' +
+            'you read it. So: (1) read the task with clokio_get_task right before editing; (2) send its `updated_at` as ' +
+            '`if_updated_at`; (3) prefer `description_append` or `description_replace` over sending the whole text. If the ' +
+            'task changed since, the answer is a 409 TASK_CHANGED naming who and when, and NOTHING in the call is saved: ' +
+            'read it again and re-apply your change to the current text; do not resend without if_updated_at. Any change ' +
+            'to the task counts, a new comment too. Every version is kept: clokio_list_task_description_versions.\n\n' +
             RECURRENCE_MODEL_NOTE +
             '\n\nManage an existing series here: `recurrence` (an object) sets or retunes the rule and switches ' +
             'the series ON; `recurrence: null` STOPS it (future copies stop; already-spawned copies are ordinary ' +
@@ -731,7 +743,27 @@ export function registerTaskTools(server, config) {
         schema: {
             id: z.number().int(),
             title: z.string().max(255).optional(),
-            description: z.string().nullable().optional(),
+            description: z
+                .string()
+                .nullable()
+                .optional()
+                .describe('Markdown, HTML or plain text. Replaces the whole text; pair it with if_updated_at'),
+            if_updated_at: z
+                .string()
+                .optional()
+                .describe('The updated_at from clokio_get_task. If the task changed since, the call fails with a 409 and nothing is saved'),
+            description_append: z
+                .string()
+                .min(1)
+                .optional()
+                .describe('Added to the end of the current text, without sending the rest. Markdown, HTML or plain text. Not with description or description_replace'),
+            description_replace: z
+                .object({
+                find: z.string().min(1).describe('Exact text in the STORED HTML, as clokio_get_task returns it. Must occur exactly once, or the call is a 422 and nothing changes'),
+                replace: z.string().describe('The replacement, as HTML. Sent as written, not converted from Markdown. An empty string deletes the text'),
+            })
+                .optional()
+                .describe('Change one part of the text without sending the rest. Not with description or description_append'),
             priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
             status: z.string().optional().describe("Status slug valid for this task's board"),
             due_date: z.string().nullable().optional().describe('YYYY-MM-DD, or null to clear'),
@@ -784,6 +816,9 @@ export function registerTaskTools(server, config) {
             for (const key of [
                 'title',
                 'description',
+                'if_updated_at',
+                'description_append',
+                'description_replace',
                 'priority',
                 'status',
                 'due_date',
@@ -811,6 +846,8 @@ export function registerTaskTools(server, config) {
                 body.remove_label_names = args.remove_label_names;
             if (typeof body.description === 'string')
                 body.description = markdownToHtml(body.description);
+            if (typeof body.description_append === 'string')
+                body.description_append = markdownToHtml(body.description_append);
             // Series management maps onto the API's two columns. `recurrence`
             // carries the whole intent (rule + on/off), so combining it with the
             // bare pause/resume switch is ambiguous and refused rather than
@@ -832,7 +869,7 @@ export function registerTaskTools(server, config) {
             // Nothing to change (only empty add/remove lists, or no field at all):
             // refused here, as the bulk tool refuses, instead of a request that
             // changes nothing.
-            if (Object.keys(body).filter((k) => k !== 'actor_employee_code').length === 0) {
+            if (Object.keys(body).filter((k) => k !== 'actor_employee_code' && k !== 'if_updated_at').length === 0) {
                 throw new Error('Nothing to change: give at least one field (an empty add_label_names / remove_label_names list is not a change).');
             }
             // Credit the update to CLOKIO_DEFAULT_ACTOR when the caller named no
@@ -930,8 +967,7 @@ export function registerTaskTools(server, config) {
         description: 'Correct a comment YOUR integration published - a wrong number, a dead link, a mistaken finding. ' +
             'Two conditions, both required: the comment was created through this API, and author_employee_code ' +
             "names its own author. You cannot edit what a person wrote in the web or mobile app (403), and you " +
-            'cannot edit someone else\'s comment (403). There is no delete: correcting leaves an audit entry, ' +
-            'destroying would leave nothing.',
+            'cannot edit someone else\'s comment (403). To remove something sensitive, see clokio_delete_task_comment.',
         schema: {
             id: z.number().int().describe('The task id'),
             comment_id: z.number().int(),
@@ -942,6 +978,86 @@ export function registerTaskTools(server, config) {
             method: 'PATCH',
             body: { body: markdownToHtml(args.body), author_employee_code: args.author_employee_code ?? cfg.defaultActor },
         }),
+    });
+    registerTool(server, config, {
+        name: 'clokio_delete_task_comment',
+        mutates: 'destructive',
+        description: 'PERMANENTLY delete a comment, whoever wrote it, to remove something sensitive such as a pasted password. ' +
+            'Not for correcting a mistake: use clokio_update_task_comment. Do this only when a person asks for this ' +
+            'specific comment to go. Needs the tasks:comments:delete permission, which Full access does NOT include: only ' +
+            'an administrator can tick it on a key, and no key has it by default (403 otherwise). Also removes the text from ' +
+            'the activity log and the bell, unsent digests, and files only this comment used. The log keeps who deleted it ' +
+            'and when, never the text. TELL THE PERSON: emails and notifications already sent, copies people made and ' +
+            'backups (up to 28 days) cannot be reached, so an exposed password must still be changed. The deletion is ' +
+            'credited to the key\'s acting employee; it cannot be credited to someone else. An internal comment answers 404.',
+        schema: {
+            id: z.number().int().describe('The task id'),
+            comment_id: z.number().int(),
+        },
+        handler: (args, cfg) => request(cfg, `/tasks/${args.id}/comments/${args.comment_id}`, { method: 'DELETE' }),
+    });
+    registerTool(server, config, {
+        name: 'clokio_list_task_description_versions',
+        description: "A task description's history, newest first, without the text: version, is_current, is_baseline (the text before " +
+            'the first recorded change, author unknown), restored_from_version, changed_by, via (web, mobile, public_api), ' +
+            'length and created_at. Every change is kept in full, so text that was overwritten can be read back with ' +
+            'clokio_get_task_description_version. Empty until the description first changes after this feature shipped. ' +
+            'meta.updated_at is the value clokio_restore_task_description_version needs.',
+        schema: { id: z.number().int() },
+        handler: (args, cfg) => request(cfg, `/tasks/${args.id}/description-versions`),
+    });
+    registerTool(server, config, {
+        name: 'clokio_get_task_description_version',
+        description: 'One version of a task description, with its full HTML.',
+        schema: { id: z.number().int(), version: z.number().int().min(1) },
+        handler: (args, cfg) => request(cfg, `/tasks/${args.id}/description-versions/${args.version}`),
+    });
+    registerTool(server, config, {
+        name: 'clokio_restore_task_description_version',
+        mutates: true,
+        description: 'Put an earlier version of a description back. Adds a NEW version holding that text and keeps every later one, ' +
+            'so a restore can itself be undone. Needs `if_updated_at` (the meta.updated_at from ' +
+            'clokio_list_task_description_versions, or updated_at from clokio_get_task): if the task changed since, the ' +
+            'answer is a 409 and nothing is written.',
+        schema: {
+            id: z.number().int(),
+            version: z.number().int().min(1),
+            if_updated_at: z.string(),
+            actor_employee_code: employeeCode.optional().describe('Who to credit in the activity log; omit to use the key issuer / CLOKIO_DEFAULT_ACTOR'),
+        },
+        handler: (args, cfg) => request(cfg, `/tasks/${args.id}/description-versions/${args.version}/restore`, {
+            method: 'POST',
+            body: { if_updated_at: args.if_updated_at, actor_employee_code: args.actor_employee_code ?? cfg.defaultActor },
+        }),
+    });
+    registerTool(server, config, {
+        name: 'clokio_purge_task_description_versions',
+        mutates: 'destructive',
+        description: 'PERMANENTLY delete versions of a description, to remove something sensitive. Text stays in EVERY version from ' +
+            'the one that added it to the one that removed it, so name them all, as `versions` and/or the inclusive range ' +
+            '`from_version` + `to_version`. First edit the description so the text is gone: the current version is refused. ' +
+            'Also clears copies of the text from the activity log; the log rows stay. An unknown version refuses the whole ' +
+            'call. Needs tasks:comments:delete, which Full access does NOT include. Do this only when a person asks. TELL THE ' +
+            'PERSON: text already sent elsewhere and backups (up to 28 days) cannot be reached, so an exposed password must ' +
+            'still be changed.',
+        schema: {
+            id: z.number().int(),
+            versions: z.array(z.number().int().min(1)).min(1).max(500).optional(),
+            from_version: z.number().int().min(1).optional(),
+            to_version: z.number().int().min(1).optional(),
+        },
+        handler: (args, cfg) => {
+            if (args.versions === undefined && args.from_version === undefined) {
+                throw new Error('Name the versions: versions and/or from_version + to_version.');
+            }
+            if ((args.from_version === undefined) !== (args.to_version === undefined)) {
+                throw new Error('from_version and to_version go together.');
+            }
+            return request(cfg, `/tasks/${args.id}/description-versions/purge`, {
+                method: 'POST',
+                body: { versions: args.versions, from_version: args.from_version, to_version: args.to_version },
+            });
+        },
     });
     registerTool(server, config, {
         name: 'clokio_list_task_attachments',

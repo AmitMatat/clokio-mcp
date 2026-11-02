@@ -16,7 +16,7 @@ import { TASK_LIST_FIELDS } from '../dist/tools/tasks.js';
 const { check, has, done } = checker();
 
 check('the selectable keys are the backend list', [...TASK_LIST_FIELDS], [
-  'id', 'title', 'status', 'priority', 'due_date', 'parent_id', 'project_id',
+  'id', 'task_url', 'title', 'status', 'priority', 'due_date', 'parent_id', 'project_id',
   'assignee_codes', 'external_assignees', 'labels', 'updated_at', 'custom_fields',
 ]);
 

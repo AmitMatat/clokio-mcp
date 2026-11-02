@@ -43,9 +43,9 @@ check('tasks toolset DROPS employees', tasksOnly.names?.includes('clokio_list_em
 check('tasks toolset DROPS the time-logging tools', tasksOnly.names?.includes('clokio_log_time'), false);
 const attendanceOnly = listTools({ CLOKIO_TOOLSETS: 'attendance' });
 check('attendance toolset carries the four time-logging tools', ['clokio_log_time', 'clokio_start_timer', 'clokio_stop_timer', 'clokio_get_active_timer'].every((n) => attendanceOnly.names?.includes(n)), true);
-check('default registers 131 tools', all.names?.length, 131);
+check('default registers 137 tools', all.names?.length, 137);
 check('tasks toolset carries the project task summary', tasksOnly.names?.includes('clokio_get_project_task_summary'), true);
-check('tasks toolset registers 42 tools', tasksOnly.names?.length, 42);
+check('tasks toolset registers 48 tools', tasksOnly.names?.length, 48);
 check('tasks toolset carries the project activity feed', tasksOnly.names?.includes('clokio_list_project_activity'), true);
 check('the board configuration tools are always on (projects)', ['clokio_create_project_custom_field', 'clokio_update_project_custom_field', 'clokio_create_project_status', 'clokio_update_project_status', 'clokio_delete_project_status', 'clokio_delete_project_custom_field'].every((n) => attendanceOnly.names?.includes(n)), true);
 check('tasks toolset is smaller than the full set', (tasksOnly.names?.length ?? 99) < (all.names?.length ?? 0), true);

@@ -10,10 +10,12 @@ export function registerProjectTools(server: McpServer, config: ClokioConfig): v
   registerTool(server, config, {
     name: 'clokio_list_projects',
     description:
-      'List projects, optionally filtered by a search term (name / client) or status. Use this to resolve a ' +
-      'project NAME to the project_id every task tool needs. Paginated: {data, meta}.',
+      'List projects, optionally filtered by a search term or status. Use this to resolve a project NAME to the ' +
+      'project_id every task tool needs. The search covers the project name, the client name and the project\'s ' +
+      'aliases, and ignores spaces, dots and hyphens: "the store" finds "thestore-il.com". Each row lists its aliases. ' +
+      'Paginated: {data, meta}.',
     schema: {
-      search: z.string().max(200).optional(),
+      search: z.string().max(200).optional().describe('Name, client or alias. Spaces, dots and hyphens are ignored'),
       status: z.enum(['active', 'archived']).optional(),
       per_page: z.number().int().min(1).max(100).optional(),
     },
@@ -21,6 +23,21 @@ export function registerProjectTools(server: McpServer, config: ClokioConfig): v
       request(cfg, '/projects', {
         query: { search: args.search, status: args.status, per_page: args.per_page },
       }),
+  });
+
+  registerTool(server, config, {
+    name: 'clokio_set_project_aliases',
+    mutates: true,
+    description:
+      'Replace a project\'s aliases: other names clokio_list_projects finds it by, such as "שורש" and "Source". Send ' +
+      'the whole list; an empty list removes them. Up to 20, 100 characters each. Needs projects:write. Aliases work ' +
+      'in search through the MCP and the API; the search boxes in the app do not read them yet.',
+    schema: {
+      project_id: z.number().int(),
+      aliases: z.array(z.string().min(1).max(100)).max(20),
+    },
+    handler: (args, cfg) =>
+      request(cfg, `/projects/${args.project_id}/aliases`, { method: 'PUT', body: { aliases: args.aliases } }),
   });
 
   registerTool(server, config, {

@@ -118,13 +118,16 @@ export function registerEmployeeTools(server, config, opts = {}) {
     });
     registerTool(server, config, {
         name: 'clokio_get_inbox',
-        description: 'What needs one person\'s attention, in three lists: mentions_waiting (comments that @-mention them and ' +
+        description: 'What needs one person\'s attention, in four lists: mentions_waiting (comments that @-mention them and ' +
             'that they have NOT replied to yet; mentions on closed tasks are excluded), newly_assigned (tasks ' +
             'assigned to them in the window), and status_changes (status moves on tasks they hold or created, made ' +
-            'by SOMEONE ELSE - their own moves and task-creation rows are excluded). This is how you find that ' +
+            'by SOMEONE ELSE - their own moves and task-creation rows are excluded), and field_changes (assignee and ' +
+            'due date changes on tasks they OPENED, made by someone else: task_id, task_title, field, change, old_value, ' +
+            'new_value, changed_at, by; a replaced assignee is two rows, unassigned and assigned). This is how you find that ' +
             'someone asked a question or moved your work, without scanning the board. `since` defaults to 14 days ' +
             '(max 90). status_changes is capped by `limit` (default 100, max 500); the response sets ' +
-            'status_changes_truncated=true when more exist past the cap. To answer for the KEY OWNER, pass their ' +
+            'status_changes_truncated=true when more exist past the cap; field_changes likewise, with field_changes_limit ' +
+            'and field_changes_truncated. To answer for the KEY OWNER, pass their ' +
             'own employee_code (from clokio_whoami).' +
             (opts.tickets
                 ? ' When the code is the key\'s acting employee (clokio_whoami: acting_as, else issued_by), a `tickets` part is added: ' +
@@ -139,10 +142,17 @@ export function registerEmployeeTools(server, config, opts = {}) {
                 .int()
                 .optional()
                 .describe('Max status_changes to return (default 100, max 500). status_changes_truncated flags overflow'),
+            field_changes_limit: z
+                .number()
+                .int()
+                .min(1)
+                .max(500)
+                .optional()
+                .describe('Max field_changes to return (default 100, max 500). field_changes_truncated flags overflow'),
         },
         handler: async (args, cfg) => {
             const inbox = await request(cfg, `/employees/${seg(args.employee_code)}/inbox`, {
-                query: { since: args.since, limit: args.limit },
+                query: { since: args.since, limit: args.limit, field_changes_limit: args.field_changes_limit },
             });
             if (!opts.tickets || inbox === null || typeof inbox !== 'object' || Array.isArray(inbox))
                 return inbox;

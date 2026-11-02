@@ -89,7 +89,7 @@ acting. An explicit code on a tool call always takes precedence.
 
 Optional: set `CLOKIO_TOOLSETS` to register only the tool groups you need, e.g.
 `CLOKIO_TOOLSETS=tasks`. This cuts the per-session tool-list cost - a
-task-focused session drops from 131 tools to 42. Optional groups are `tasks`,
+task-focused session drops from 137 tools to 48. Optional groups are `tasks`,
 `employees`, `attendance` (which includes leave, time entries and logging time), `docs` and
 `tickets`;
 combine them with commas. If your key cannot open documents (no acts-as
@@ -100,7 +100,7 @@ through it.
 
 ## Tools
 
-131 tools across seven areas. Read-only tools carry the MCP `readOnlyHint`; writes
+137 tools across seven areas. Read-only tools carry the MCP `readOnlyHint`; writes
 are marked mutating (deletes are `destructive`).
 
 | Area | Tools |

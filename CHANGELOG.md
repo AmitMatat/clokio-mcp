@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.32.0
+
+Safer description edits, description history, and smaller field reports (2026-11-02). **Backend dependency:** the Clokio backend with branch `feature/mcp-task-safety`, deployed FIRST: on an older server `if_updated_at` and the partial writes are refused as unknown fields (a 422, never a silent overwrite), and the new tools answer 404. After updating, start a NEW session and check that `clokio_whoami` reports `mcp_version` 0.32.0. Before publishing, run `node test/api-conformance.mjs` against the deployed spec (or `CLOKIO_SPEC_FILE`): 137 tools.
+
+- **`clokio_update_task`** takes `if_updated_at` (a task changed since is a 409 `TASK_CHANGED` naming who and when, and nothing is saved), `description_append` and `description_replace {find, replace}` (applied to the current text under a lock; `find` must occur exactly once in the stored HTML, and `replace` is sent as written). Its description tells agents to read first and use them. Existing calls behave as before.
+- **New: description history.** `clokio_list_task_description_versions`, `clokio_get_task_description_version`, `clokio_restore_task_description_version` (adds a version, keeps later ones, requires `if_updated_at`) and `clokio_purge_task_description_versions` (several versions or a range; needs `tasks:comments:delete`).
+- **New: `clokio_delete_task_comment`**, behind `tasks:comments:delete`, a permission Full access does not include and no existing key holds.
+- **`clokio_get_inbox`** adds `field_changes` and `field_changes_truncated`, with optional `field_changes_limit`: assignee and due date changes by others on tasks the person opened.
+- **`clokio_list_tasks`**: `search_in: "description"`, `sort: "relevance"`, and `task_url` on compact rows and in `fields`.
+- **`clokio_list_projects`** finds by client name and aliases and ignores spaces, dots and hyphens; rows list `aliases`. **New: `clokio_set_project_aliases`** (`projects:write`).
+- 137 tools by default (48 with `CLOKIO_TOOLSETS=tasks`). Tests: `test/task-safety-032.mjs`, toolsets counts, conformance entries.
+
 ## 0.31.0
 
 A support contact's client and its work (Clokio task #6204). **Backend dependency:** the Clokio backend with `feature/ticket-client-panel`. On an older server the contact has no `client` line, and `clokio_get_contact_client` answers "Not found." with a hint that the server lacks the route. After updating, start a NEW session and check that `clokio_whoami` reports `mcp_version` 0.31.0. Before publishing, run `node test/api-conformance.mjs` against the deployed spec (or `CLOKIO_SPEC_FILE` pointing at the backend's `docs/api/openapi.json`): 131 tools, the conformance count printed by the test.
