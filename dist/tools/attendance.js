@@ -546,8 +546,8 @@ export function registerAttendanceTools(server, config) {
             "On an entry that is on a task, project_id must be the task's own project: to move it elsewhere send task_id: null with it. " +
             'description (null or empty resets it to the task title, empty without a task), ' +
             'and/or the time: date (YYYY-MM-DD), start, end (HH:MM, LOCAL to that person) or duration_minutes (alone it keeps the start and sets the length; start alone moves the entry and keeps its length). ' +
-            'Parts you leave out keep their current values. The same checks as clokio_log_time: at most 12 hours, nothing in the future, ' +
-            'no overlap with another entry of that person (their running timer included); an entry on an inactive project cannot change its time. ' +
+            'Parts you leave out keep their current values. Checks: at most 16 hours, nothing in the future, never inside that person\'s RUNNING timer; ' +
+            'unlike clokio_log_time, an edit MAY overlap their finished entries (since 2026-11-03: undocumented time is recorded by lengthening an entry, so lengthen freely); an entry on an inactive project cannot change its time. ' +
             'A RUNNING entry takes only task_id and description: stop it before changing its times. Entry ids come from clokio_list_time_entries. ' +
             'Needs time_entries:write.',
         schema: {
