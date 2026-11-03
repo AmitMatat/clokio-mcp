@@ -205,6 +205,9 @@ const TOOL_CALLS = [
   // 0.23.0 (task #5808, backend feature/mcp-5808-api): delete your own pending
   // draft, and the ticket-task link (both POST scopes: tickets:write + tasks:write).
   { tool: 'clokio_delete_reply_draft', method: 'delete', path: '/tickets/{id}/drafts/{messageId}', query: [] },
+  // 0.33.0 (ticket #6567): edit a draft in place, move an email ticket to another mailbox.
+  { tool: 'clokio_update_reply_draft', method: 'patch', path: '/tickets/{id}/drafts/{messageId}', query: [], body: ['html', 'subject', 'recipients'] },
+  { tool: 'clokio_move_ticket', method: 'post', path: '/tickets/{id}/move', query: [], body: ['inbox_id'] },
   { tool: 'clokio_list_ticket_tasks', method: 'get', path: '/tickets/{id}/tasks', query: [] },
   { tool: 'clokio_create_task_from_ticket', method: 'post', path: '/tickets/{id}/tasks', query: [], body: ['project_id', 'title', 'description', 'priority', 'status', 'due_date', 'assignee_employee_codes', 'attachment_ids'] },
   { tool: 'clokio_download_ticket_attachment', method: 'get', path: '/tickets/{id}/attachments/{attachmentId}', query: [] },

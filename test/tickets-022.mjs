@@ -96,7 +96,8 @@ has('files print their id, size and the tool', withFiles, '[files: #771 <untrust
 has('an older server row names no id', renderMessage(msg({ text: 'x', attachments: [{ name: 'a.pdf', size: 1, mime: 'application/pdf' }] })), '(no id: server older than 2026-10-16)');
 
 const draft = renderMessage({ ...msg({ kind: 'note', direction: 'outbound', internal: true, author: { type: 'employee', name: 'Amit', employee_code: '00055' }, text: 'Your order ships today.' }), draft: { state: 'pending', used_at: null } });
-has('a draft is labelled, with its message id and an unwrapped colleague (0.23.0 #2b, #3)', draft, 'message #1 REPLY DRAFT (pending) - not sent; a person reviews and sends it - by Amit (00055):');
+// 0.33.0: a pending draft also says how to send and edit it, between "sends it" and "by".
+has('a draft is labelled, with its message id and an unwrapped colleague (0.23.0 #2b, #3)', draft, 'message #1 REPLY DRAFT (pending) - not sent; a person reviews and sends it (send it: clokio_reply_ticket draft_message_id=1; edit it: clokio_update_reply_draft message_id=1) - by Amit (00055):');
 has('a colleague\'s draft text is printed as is', draft, '\nYour order ships today.');
 check('a draft is never printed as INTERNAL NOTE', draft.includes('INTERNAL NOTE'), false);
 
