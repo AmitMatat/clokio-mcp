@@ -55,6 +55,10 @@ const run = await runTools({
     ['clokio_get_billing_month', { month: '2026-10', client_ids: [-1] }], // 28 refused
     ['clokio_get_billing_month', { month: '2026-10', min_billable_hours: -0.5 }], // 29 refused
     ['clokio_get_billing_month', { month: '2026-10', compact: true, exclude_dismissed: true }], // 30
+    // 0.36.0
+    ['clokio_get_billing_month', { month: '2026-10', per_page: 200, page: 3 }], // 31
+    ['clokio_get_billing_month', { month: '2026-10', per_page: 201 }], // 32 refused
+    ['clokio_get_billing_month', { month: '2026-10', page: 0 }], // 33 refused
   ],
 });
 
@@ -72,7 +76,7 @@ check('get invoice with employees', [h[3]?.method, h[3]?.path, h[3]?.search], ['
 check('task billing', [h[4]?.method, h[4]?.path, h[4]?.search], ['GET', '/tasks/41/billing', '']);
 check('billing summary default window', [h[5]?.method, h[5]?.path, h[5]?.search], ['GET', '/clients/7/billing-summary', '']);
 check('billing summary window', [h[6]?.method, h[6]?.path, h[6]?.search], ['GET', '/clients/7/billing-summary', '?from_month=2026-01&to_month=2026-06']);
-check('billing month is compact by default', [h[7]?.method, h[7]?.path, h[7]?.search], ['GET', '/invoices/month', '?month=2026-10&compact=1']);
+check('billing month is compact by default', [h[7]?.method, h[7]?.path, h[7]?.search], ['GET', '/invoices/month', '?month=2026-10&compact=1&per_page=50']);
 check('unbilled', [h[8]?.method, h[8]?.path, h[8]?.search], ['GET', '/clients/7/unbilled', '?month=2026-10']);
 check('unbilled, No Client bucket, with employees', [h[9]?.method, h[9]?.path, h[9]?.search], ['GET', '/clients/0/unbilled', '?month=2026-10&include=employees']);
 
@@ -81,20 +85,20 @@ for (const [i, label] of [
   [14, 'a month in words'], [15, 'a full date as month'], [16, 'a two-digit year'], [17, 'invoice id 0'], [18, 'a negative task id'],
   [19, 'month 13'], [20, 'month 00'],
 ]) check(`${label} is refused locally`, run.errored(i), true);
-check('month 12 goes out', [h[10]?.path, h[10]?.search], ['/invoices/month', '?month=2026-12&compact=1']);
+check('month 12 goes out', [h[10]?.path, h[10]?.search], ['/invoices/month', '?month=2026-12&compact=1&per_page=50']);
 check('list: min_total', [h[11]?.path, h[11]?.search], ['/invoices', '?min_total=100.5']);
 check('list: client_id 0 is sent (No Client)', [h[12]?.path, h[12]?.search], ['/invoices', '?client_id=0']);
 check('get invoice with activities', [h[13]?.path, h[13]?.search], ['/invoices/12', '?include=activities']);
 check('get invoice with employees and activities, one comma list', [h[14]?.path, decodeURIComponent(h[14]?.search ?? '')], ['/invoices/12', '?include=employees,activities']);
 check('billing month: every filter, full rows', [h[15]?.path, decodeURIComponent(h[15]?.search ?? '')], [
   '/invoices/month',
-  '?month=2026-10&client_ids[]=0&client_ids[]=12&only_not_invoiced=1&exclude_dismissed=0&min_billable_hours=1.5&compact=0',
+  '?month=2026-10&client_ids[]=0&client_ids[]=12&only_not_invoiced=1&exclude_dismissed=0&min_billable_hours=1.5&compact=0&per_page=50',
 ]);
-check('billing month: compact true and a flag', [h[16]?.path, h[16]?.search], ['/invoices/month', '?month=2026-10&exclude_dismissed=1&compact=1']);
+check('billing month: compact true and a flag', [h[16]?.path, h[16]?.search], ['/invoices/month', '?month=2026-10&exclude_dismissed=1&compact=1&per_page=50']);
 for (const [i, label] of [[27, 'a negative min_total'], [28, 'a negative client id'], [29, 'negative min_billable_hours']]) {
   check(`${label} is refused locally`, run.errored(i), true);
 }
-check('only the seventeen good calls went out', h.length, 17);
+check('only the eighteen good calls went out', h.length, 18);
 check('every request was a GET', h.every((x) => x.method === 'GET'), true);
 
 const t = (n) => run.tools[n];
@@ -110,6 +114,16 @@ has('list says paid is a mark set in Clokio', t('clokio_list_invoices')?.descrip
 has('summary says totals are per currency', t('clokio_get_client_billing_summary')?.description, 'per currency');
 has('list says no iCount', t('clokio_list_invoices')?.description, 'iCount');
 // Review fix 2: the number stored as invoice_number may be the provider's, so "no iCount data" is never flat.
+const paged = h.find((x) => x.path === '/invoices/month' && x.search.includes('page=3'));
+check('billing month: per_page and page sent', [paged?.path, paged?.search], ['/invoices/month', '?month=2026-10&compact=1&per_page=200&page=3']);
+check('per_page 201 is refused locally', run.errored(32), true);
+check('page 0 is refused locally', run.errored(33), true);
+has('billing month says per_page defaults to 50', t('clokio_get_billing_month')?.description, 'per_page defaults to 50');
+has('billing month says to use page', t('clokio_get_billing_month')?.description, 'use page to continue');
+has('billing month says totals cover every matching client', t('clokio_get_billing_month')?.description, 'not_invoiced and totals cover every matching client');
+has('get invoice names origin', t('clokio_get_invoice')?.description, 'origin ("timer" or "custom"');
+has('get invoice says none is not a deleted task', t('clokio_get_invoice')?.description, 'never a deleted task');
+has('get invoice names the activity detail', t('clokio_get_invoice')?.description, 'old_value, new_value');
 for (const n of NAMES) has(`${n} says no iCount data beyond invoice_number`, t(n)?.description, 'no iCount data beyond the number stored as invoice_number');
 has('number example is a real generated format', t('clokio_list_invoices')?.inputSchema?.properties?.number?.description, 'INV-2026-0012');
 has('amount text says compact rows carry only source, total, currency', t('clokio_get_billing_month')?.description, 'carry only amount {source, total, currency}');

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.36.0
+
+Invoices round 3, from the owner's live test of 0.35.0 (2026-11-08). **Backend dependency:** the Clokio backend with branch `feature/invoices-round3`, deployed FIRST: on an older server `clokio_get_billing_month` is refused (the `per_page` it now always sends is an unknown parameter there: 422), and the new activity and item fields are simply absent. After updating, start a NEW session and check that `clokio_whoami` reports `mcp_version` 0.36.0. Before publishing, run `node test/api-conformance.mjs` against the deployed spec (or `CLOKIO_SPEC_FILE` at the backend's `docs/api/openapi.json`): 145 tools.
+
+- **`clokio_get_billing_month`** takes `per_page` (1-200, **default 50 in the tool**) and `page`. The answer carries `meta {total, per_page, current_page, last_page}`; use `page` to continue. `not_invoiced` and `totals` still cover every matching client, not only the page.
+- **`clokio_get_invoice`**: with `include_activities`, each activity has `field`, `old_value`, `new_value` (only for edits of the invoice or of a line) and `item_id`; external document events show action and time only. Each line has `origin` (`timer` or `custom`), and the description says that `task_state: none` is a hand-added line or a timer line logged without a task, never a deleted task.
+- Still 145 tools by default (48 with `CLOKIO_TOOLSETS=tasks`). Tests: `test/invoices-tools.mjs`, conformance entries.
+
 ## 0.35.0
 
 Invoices round 2, from the owner's live test of 0.34.0 (2026-11-08). **Backend dependency:** the Clokio backend with branch `feature/invoices-api-round2`, deployed FIRST: on an older server `clokio_get_billing_month` is refused (its new `compact` query key, sent by default, is an unknown parameter there: 422), `min_total` and `include_activities` are refused as unknown values, and the new fields are simply absent. After updating, start a NEW session and check that `clokio_whoami` reports `mcp_version` 0.35.0. Before publishing, run `node test/api-conformance.mjs` against the deployed spec (or `CLOKIO_SPEC_FILE` at the backend's `docs/api/openapi.json`): 145 tools.
