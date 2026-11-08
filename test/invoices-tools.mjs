@@ -1,6 +1,9 @@
 // 0.34.0: the read-only `invoices` toolset over GET /invoices, /invoices/month,
 // /invoices/{id}, /tasks/{id}/billing, /clients/{id}/billing-summary and
 // /clients/{id}/unbilled.
+// 0.35.0 (round 2): billing month filters + compact by default, include_activities,
+// min_total, client_id 0, descriptions for amount / draft / No Client 0 /
+// missing_rate / task_state / employees_scope.
 //
 // Run by hand:  npm run build && node test/invoices-tools.mjs
 import { checker, runTools } from './support/harness.mjs';
@@ -42,6 +45,16 @@ const run = await runTools({
     ['clokio_get_billing_month', { month: '2026-13' }], // 19
     ['clokio_list_invoices', { to_month: '2026-00' }], // 20
     ['clokio_get_billing_month', { month: '2026-12' }], // 21 (the last valid month)
+    // 0.35.0
+    ['clokio_list_invoices', { min_total: 100.5 }], // 22
+    ['clokio_list_invoices', { client_id: 0 }], // 23 No Client invoices
+    ['clokio_get_invoice', { id: 12, include_activities: true }], // 24
+    ['clokio_get_invoice', { id: 12, include_employees: true, include_activities: true }], // 25
+    ['clokio_get_billing_month', { month: '2026-10', client_ids: [0, 12], only_not_invoiced: true, exclude_dismissed: false, min_billable_hours: 1.5, compact: false }], // 26
+    ['clokio_list_invoices', { min_total: -1 }], // 27 refused
+    ['clokio_get_billing_month', { month: '2026-10', client_ids: [-1] }], // 28 refused
+    ['clokio_get_billing_month', { month: '2026-10', min_billable_hours: -0.5 }], // 29 refused
+    ['clokio_get_billing_month', { month: '2026-10', compact: true, exclude_dismissed: true }], // 30
   ],
 });
 
@@ -59,7 +72,7 @@ check('get invoice with employees', [h[3]?.method, h[3]?.path, h[3]?.search], ['
 check('task billing', [h[4]?.method, h[4]?.path, h[4]?.search], ['GET', '/tasks/41/billing', '']);
 check('billing summary default window', [h[5]?.method, h[5]?.path, h[5]?.search], ['GET', '/clients/7/billing-summary', '']);
 check('billing summary window', [h[6]?.method, h[6]?.path, h[6]?.search], ['GET', '/clients/7/billing-summary', '?from_month=2026-01&to_month=2026-06']);
-check('billing month', [h[7]?.method, h[7]?.path, h[7]?.search], ['GET', '/invoices/month', '?month=2026-10']);
+check('billing month is compact by default', [h[7]?.method, h[7]?.path, h[7]?.search], ['GET', '/invoices/month', '?month=2026-10&compact=1']);
 check('unbilled', [h[8]?.method, h[8]?.path, h[8]?.search], ['GET', '/clients/7/unbilled', '?month=2026-10']);
 check('unbilled, No Client bucket, with employees', [h[9]?.method, h[9]?.path, h[9]?.search], ['GET', '/clients/0/unbilled', '?month=2026-10&include=employees']);
 
@@ -68,8 +81,20 @@ for (const [i, label] of [
   [14, 'a month in words'], [15, 'a full date as month'], [16, 'a two-digit year'], [17, 'invoice id 0'], [18, 'a negative task id'],
   [19, 'month 13'], [20, 'month 00'],
 ]) check(`${label} is refused locally`, run.errored(i), true);
-check('only the eleven good calls went out', h.length, 11);
-check('month 12 goes out', [h[10]?.path, h[10]?.search], ['/invoices/month', '?month=2026-12']);
+check('month 12 goes out', [h[10]?.path, h[10]?.search], ['/invoices/month', '?month=2026-12&compact=1']);
+check('list: min_total', [h[11]?.path, h[11]?.search], ['/invoices', '?min_total=100.5']);
+check('list: client_id 0 is sent (No Client)', [h[12]?.path, h[12]?.search], ['/invoices', '?client_id=0']);
+check('get invoice with activities', [h[13]?.path, h[13]?.search], ['/invoices/12', '?include=activities']);
+check('get invoice with employees and activities, one comma list', [h[14]?.path, decodeURIComponent(h[14]?.search ?? '')], ['/invoices/12', '?include=employees,activities']);
+check('billing month: every filter, full rows', [h[15]?.path, decodeURIComponent(h[15]?.search ?? '')], [
+  '/invoices/month',
+  '?month=2026-10&client_ids[]=0&client_ids[]=12&only_not_invoiced=1&exclude_dismissed=0&min_billable_hours=1.5&compact=0',
+]);
+check('billing month: compact true and a flag', [h[16]?.path, h[16]?.search], ['/invoices/month', '?month=2026-10&exclude_dismissed=1&compact=1']);
+for (const [i, label] of [[27, 'a negative min_total'], [28, 'a negative client id'], [29, 'negative min_billable_hours']]) {
+  check(`${label} is refused locally`, run.errored(i), true);
+}
+check('only the seventeen good calls went out', h.length, 17);
 check('every request was a GET', h.every((x) => x.method === 'GET'), true);
 
 const t = (n) => run.tools[n];
@@ -97,5 +122,31 @@ for (const n of ['clokio_get_invoice', 'clokio_get_client_unbilled']) {
   has(`${n} include_employees says a task line lists everyone on the task`, inc, 'a task line lists everyone who worked that task in the period');
   check(`${n} include_employees has no em-dash`, inc.includes(String.fromCharCode(0x2014)), false);
 }
+
+// 0.35.0 descriptions (M4).
+const month = t('clokio_get_billing_month')?.description ?? '';
+has('billing month says compact by default', month, 'COMPACT BY DEFAULT');
+has('billing month says totals follow the filter', month, 'computed over the FILTERED rows');
+has('billing month says total is issued only', month, 'ISSUED invoices only');
+has('billing month names draft', month, 'draft');
+for (const n of ['clokio_get_billing_month', 'clokio_get_client_billing_summary']) {
+  const d = t(n)?.description ?? '';
+  has(`${n} explains amount vs estimated_amount`, d, 'Use amount, not estimated_amount');
+  has(`${n} names missing_rate`, d, 'missing_rate');
+}
+has('summary says invoiced is issued only', t('clokio_get_client_billing_summary')?.description, 'invoiced counts ISSUED invoices only');
+for (const n of ['clokio_list_invoices', 'clokio_get_invoice', 'clokio_get_task_billing', 'clokio_get_billing_month', 'clokio_get_client_unbilled']) {
+  has(`${n} says No Client is 0`, t(n)?.description, 'client id 0 everywhere');
+}
+has('get_invoice names task_state', t('clokio_get_invoice')?.description, 'task_state');
+has('get_invoice names include_activities', t('clokio_get_invoice')?.description, 'include_activities');
+has('get_invoice names missing_rate', t('clokio_get_invoice')?.description, 'missing_rate');
+has('task billing names note', t('clokio_get_task_billing')?.description, 'project_not_billable');
+has('list says what invoice_number is', t('clokio_list_invoices')?.description, 'document number');
+for (const n of ['clokio_get_invoice', 'clokio_get_client_unbilled']) {
+  has(`${n} include_employees names employees_scope`, t(n)?.inputSchema?.properties?.include_employees?.description, 'employees_scope');
+}
+check('billing month compact is described as default true', /Default true/.test(t('clokio_get_billing_month')?.inputSchema?.properties?.compact?.description ?? ''), true);
+for (const n of NAMES) check(`${n} still has no em-dash`, (t(n)?.description ?? '').includes(String.fromCharCode(0x2014)), false);
 
 done();

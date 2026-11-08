@@ -233,11 +233,12 @@ const TOOL_CALLS = [
   { tool: 'clokio_ticket_report_satisfaction_ratings', method: 'get', path: '/reports/tickets/satisfaction/ratings', query: ['from', 'to', 'inbox_id', 'label', 'team_id', 'page', 'low'] },
   { tool: 'clokio_ticket_report_workload', method: 'get', path: '/reports/tickets/workload', query: ['from', 'to', 'inbox_id', 'label', 'team_id'] },
   // 0.34.0: invoices toolset (read only).
-  { tool: 'clokio_list_invoices', method: 'get', path: '/invoices', query: ['client_id', 'number', 'from_month', 'to_month', 'status', 'per_page', 'page'] },
+  { tool: 'clokio_list_invoices', method: 'get', path: '/invoices', query: ['client_id', 'number', 'from_month', 'to_month', 'status', 'min_total', 'per_page', 'page'] },
   { tool: 'clokio_get_invoice', method: 'get', path: '/invoices/{id}', query: ['include'] },
   { tool: 'clokio_get_task_billing', method: 'get', path: '/tasks/{id}/billing', query: [] },
   { tool: 'clokio_get_client_billing_summary', method: 'get', path: '/clients/{id}/billing-summary', query: ['from_month', 'to_month'] },
-  { tool: 'clokio_get_billing_month', method: 'get', path: '/invoices/month', query: ['month'] },
+  // 0.35.0: billing month filters and compact; include on get_invoice is a comma list.
+  { tool: 'clokio_get_billing_month', method: 'get', path: '/invoices/month', query: ['month', 'client_ids', 'only_not_invoiced', 'exclude_dismissed', 'min_billable_hours', 'compact'] },
   { tool: 'clokio_get_client_unbilled', method: 'get', path: '/clients/{id}/unbilled', query: ['month', 'include'] },
 ];
 

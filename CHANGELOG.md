@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.35.0
+
+Invoices round 2, from the owner's live test of 0.34.0 (2026-11-08). **Backend dependency:** the Clokio backend with branch `feature/invoices-api-round2`, deployed FIRST: on an older server `clokio_get_billing_month` is refused (its new `compact` query key, sent by default, is an unknown parameter there: 422), `min_total` and `include_activities` are refused as unknown values, and the new fields are simply absent. After updating, start a NEW session and check that `clokio_whoami` reports `mcp_version` 0.35.0. Before publishing, run `node test/api-conformance.mjs` against the deployed spec (or `CLOKIO_SPEC_FILE` at the backend's `docs/api/openapi.json`): 145 tools.
+
+- **`clokio_get_billing_month`** takes `client_ids` (0 = No Client), `only_not_invoiced`, `exclude_dismissed`, `min_billable_hours` and `compact`. **Compact is the default** (the tool sends `compact=1` unless `compact: false`), because the full answer overflowed agents; compact rows are client, billable hours, `amount {source, total, currency}`, invoice `{id, status}`, dismissed, `missing_rate`. Rows, `not_invoiced` and totals are computed over the filtered rows.
+- **`clokio_get_invoice`** takes `include_activities` (default false); with `include_employees` it sends one list, `include=employees,activities`. The activity trail is no longer in the answer by default; `activity_count` always is.
+- **`clokio_list_invoices`** takes `min_total`, and `client_id: 0` (the invoices with no client).
+- Descriptions explain the round-2 answers: `amount` (the invoice's own numbers, or exactly the unbilled tool's estimate) vs the deprecated `estimated_amount` (the screen's figure, VAT mixed in); `invoiced` / `total` count issued invoices only and `draft` is the drafts' total; the No Client bucket is client id 0 everywhere; `missing_rate`; `task_state` (linked / deleted / none); `employees_scope` (task / line); the task billing `note`; what `invoice_number` is.
+- Still 145 tools by default (48 with `CLOKIO_TOOLSETS=tasks`). Tests: `test/invoices-tools.mjs` (exact query per call), conformance entries.
+
 ## 0.34.0
 
 A read-only `invoices` toolset over the new `/api/v1/invoices` family (2026-11-08). **Backend dependency:** the Clokio backend with branch `feature/invoices-read-api`, deployed FIRST: on an older server the six tools answer 404. The key needs the `invoices:read` scope (Full access has it) AND the key's person needs billing access, otherwise the server answers 403 `NO_BILLING_ACCESS`. After updating, start a NEW session and check that `clokio_whoami` reports `mcp_version` 0.34.0. Before publishing, run `node test/api-conformance.mjs` against the deployed spec (or `CLOKIO_SPEC_FILE`): 145 tools.
