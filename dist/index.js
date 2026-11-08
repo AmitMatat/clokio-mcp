@@ -18,6 +18,7 @@ import { ClokioApiError, loadConfig, request } from './client.js';
 import { VERSION } from './version.js';
 import { registerTaskTools } from './tools/tasks.js';
 import { registerProjectTools } from './tools/projects.js';
+import { registerInvoiceTools } from './tools/invoices.js';
 import { registerEmployeeTools } from './tools/employees.js';
 import { registerAttendanceTools } from './tools/attendance.js';
 import { registerDocTools } from './tools/docs.js';
@@ -36,7 +37,7 @@ import { registerTicketTools } from './tools/tickets.js';
  * to resolve names to ids, so it is always registered. Naming a toolset that
  * does not exist is refused at startup rather than silently ignored.
  */
-const OPTIONAL_TOOLSETS = ['tasks', 'employees', 'attendance', 'docs', 'tickets'];
+const OPTIONAL_TOOLSETS = ['tasks', 'employees', 'attendance', 'docs', 'tickets', 'invoices'];
 function selectedToolsets() {
     const raw = process.env.CLOKIO_TOOLSETS?.trim();
     if (!raw) {
@@ -125,6 +126,8 @@ async function main() {
         registerDocTools(server, config);
     if (toolsets.has('tickets'))
         registerTicketTools(server, config);
+    if (toolsets.has('invoices'))
+        registerInvoiceTools(server, config);
     const transport = new StdioServerTransport();
     await server.connect(transport);
     // stderr is safe for logs on stdio transport (stdout carries the protocol).

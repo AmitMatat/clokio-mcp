@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.34.0
+
+A read-only `invoices` toolset over the new `/api/v1/invoices` family (2026-11-08). **Backend dependency:** the Clokio backend with branch `feature/invoices-read-api`, deployed FIRST: on an older server the six tools answer 404. The key needs the `invoices:read` scope (Full access has it) AND the key's person needs billing access, otherwise the server answers 403 `NO_BILLING_ACCESS`. After updating, start a NEW session and check that `clokio_whoami` reports `mcp_version` 0.34.0. Before publishing, run `node test/api-conformance.mjs` against the deployed spec (or `CLOKIO_SPEC_FILE`): 145 tools.
+
+- **New: `clokio_list_invoices`** (`client_id`, `number`, `from_month`, `to_month`, `status` as a list, `per_page` 1-100, `page`): Clokio's own invoices, paginated.
+- **New: `clokio_get_invoice`** (`id`, `include_employees`): one invoice with its lines; `include_employees` adds who worked each line.
+- **New: `clokio_get_task_billing`** (`task_id`): a task's invoice lines, totals by status and unbilled hours.
+- **New: `clokio_get_client_billing_summary`** (`client_id`, `from_month`, `to_month`): a client's month-by-month billing; totals keyed by currency.
+- **New: `clokio_get_billing_month`** (`month`): one month across all clients.
+- **New: `clokio_get_client_unbilled`** (`client_id`, `month`, `include_employees`): what is still unbilled for a client (id 0 is the "No Client" bucket).
+- Every tool is a GET. Months are `YYYY-MM`, ids positive integers, `per_page` 1-100; a bad value is refused before any request. "paid" is a status someone set in Clokio, not a payment record; money totals are per currency; no iCount data.
+- New toolset name `invoices` for `CLOKIO_TOOLSETS` (on by default). 145 tools by default (48 with `CLOKIO_TOOLSETS=tasks`). Tests: `test/invoices-tools.mjs`, toolsets count, conformance entries.
+
 ## 0.33.0
 
 Reply drafts you can edit and send, moving a ticket to another mailbox, and the customer behind a no-reply relay (2026-11-03, the MCP field report on ticket #6567). **Backend dependency:** the Clokio backend with branch `feature/ticket-draft-api`, deployed FIRST: on an older server `clokio_update_reply_draft` and `clokio_move_ticket` answer 404 with a hint naming the 0.33 API, `draft_message_id` on `clokio_reply_ticket` is refused as an unknown field (a 422, nothing sent), and `clokio_get_ticket` prints no "Reply goes to" / "NOT SENT YET" line. After updating, start a NEW session and check that `clokio_whoami` reports `mcp_version` 0.33.0. Before publishing, run `node test/api-conformance.mjs` against the deployed spec (or `CLOKIO_SPEC_FILE`): 139 tools.
