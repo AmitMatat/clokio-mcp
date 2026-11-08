@@ -79,4 +79,17 @@ has('list says paid is a mark set in Clokio', t('clokio_list_invoices')?.descrip
 has('summary says totals are per currency', t('clokio_get_client_billing_summary')?.description, 'per currency');
 has('list says no iCount', t('clokio_list_invoices')?.description, 'iCount');
 
+// Final fix wave M1/M2: the unbilled answer is not billable-only, and a task
+// line lists everyone on the task in the period.
+const unbilled = t('clokio_get_client_unbilled')?.description ?? '';
+has('unbilled says finished web-timer entries', unbilled, 'finished web-timer entries');
+has('unbilled says non-billable lines come at price 0', unbilled, 'non-billable ones appear with is_billable false and price 0');
+has('unbilled says the subtotal counts billable lines only', unbilled, 'subtotal counts billable lines only');
+check('unbilled no longer says "billable timer entries"', /billable\s+timer entries/.test(unbilled), false);
+for (const n of ['clokio_get_invoice', 'clokio_get_client_unbilled']) {
+  const inc = t(n)?.inputSchema?.properties?.include_employees?.description ?? '';
+  has(`${n} include_employees says a task line lists everyone on the task`, inc, 'a task line lists everyone who worked that task in the period');
+  check(`${n} include_employees has no em-dash`, inc.includes(String.fromCharCode(0x2014)), false);
+}
+
 done();

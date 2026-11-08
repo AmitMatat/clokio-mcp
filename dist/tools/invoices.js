@@ -14,7 +14,8 @@ const id = z.number().int().positive();
 const includeEmployees = z
     .boolean()
     .optional()
-    .describe('true: each line also lists who worked it and for how many hours (include=employees)');
+    .describe('true: each line also lists who worked it and for how many hours (include=employees); ' +
+    'a task line lists everyone who worked that task in the period, even when the task is split over several lines.');
 export function registerInvoiceTools(server, config) {
     registerTool(server, config, {
         name: 'clokio_list_invoices',
@@ -77,8 +78,8 @@ export function registerInvoiceTools(server, config) {
     });
     registerTool(server, config, {
         name: 'clokio_get_client_unbilled',
-        description: "What is still unbilled for a client in a month: the web invoice review's lines, from finished billable " +
-            'timer entries. client_id 0 is the "No Client" bucket. If an invoice already exists for that month the ' +
+        description: "What is still unbilled for a client in a month: the web invoice review's lines, from finished web-timer entries; " +
+            'non-billable ones appear with is_billable false and price 0; subtotal counts billable lines only. client_id 0 is the "No Client" bucket. If an invoice already exists for that month the ' +
             'answer is existing_invoice and no lines. Amounts are in one currency per answer; each line carries its own. ' +
             ACCESS,
         schema: {
