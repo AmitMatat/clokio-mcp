@@ -72,7 +72,7 @@ for (const n of NAMES) {
   const d = t(n)?.description ?? '';
   has(`${n} names the scope`, d, 'invoices:read');
   has(`${n} names the billing-access rule`, d, 'NO_BILLING_ACCESS');
-  check(`${n} has no em-dash`, d.includes('—'), false);
+  check(`${n} has no em-dash`, d.includes(String.fromCharCode(0x2014)), false);
   check(`${n} is not marked as mutating`, /destructive|mutat/i.test(JSON.stringify(t(n)?.annotations ?? {})) && t(n)?.annotations?.readOnlyHint === false, false);
 }
 has('list says paid is a mark set in Clokio', t('clokio_list_invoices')?.description, 'not a payment record');
