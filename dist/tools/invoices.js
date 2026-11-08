@@ -9,7 +9,7 @@ import { registerTool } from './helpers.js';
 const ACCESS = 'Needs the invoices:read scope AND billing access for the key\'s person (otherwise 403 NO_BILLING_ACCESS). ' +
     'Read only. These are Clokio\'s own invoices; no iCount data. "paid" is a status someone set in Clokio, ' +
     'not a payment record.';
-const month = (what) => z.string().regex(/^\d{4}-\d{2}$/, 'month must be YYYY-MM').describe(what);
+const month = (what) => z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'month must be YYYY-MM (month 01-12)').describe(what);
 const id = z.number().int().positive();
 const includeEmployees = z
     .boolean()
@@ -45,7 +45,7 @@ export function registerInvoiceTools(server, config) {
     });
     registerTool(server, config, {
         name: 'clokio_get_invoice',
-        description: 'One invoice with its lines. ' + ACCESS,
+        description: 'One invoice with its lines (include_employees adds who worked each line). ' + ACCESS,
         schema: { id, include_employees: includeEmployees },
         handler: (args, cfg) => request(cfg, `/invoices/${args.id}`, { query: { include: args.include_employees ? 'employees' : undefined } }),
     });

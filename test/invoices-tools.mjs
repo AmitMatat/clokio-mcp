@@ -39,6 +39,9 @@ const run = await runTools({
     ['clokio_get_client_billing_summary', { client_id: 7, to_month: '26-10' }], // 16
     ['clokio_get_invoice', { id: 0 }], // 17
     ['clokio_get_task_billing', { task_id: -3 }], // 18
+    ['clokio_get_billing_month', { month: '2026-13' }], // 19
+    ['clokio_list_invoices', { to_month: '2026-00' }], // 20
+    ['clokio_get_billing_month', { month: '2026-12' }], // 21 (the last valid month)
   ],
 });
 
@@ -63,8 +66,10 @@ check('unbilled, No Client bucket, with employees', [h[9]?.method, h[9]?.path, h
 for (const [i, label] of [
   [10, 'a one-digit month'], [11, 'per_page 101'], [12, 'per_page 0'], [13, 'an unknown status'],
   [14, 'a month in words'], [15, 'a full date as month'], [16, 'a two-digit year'], [17, 'invoice id 0'], [18, 'a negative task id'],
+  [19, 'month 13'], [20, 'month 00'],
 ]) check(`${label} is refused locally`, run.errored(i), true);
-check('only the ten good calls went out', h.length, 10);
+check('only the eleven good calls went out', h.length, 11);
+check('month 12 goes out', [h[10]?.path, h[10]?.search], ['/invoices/month', '?month=2026-12']);
 check('every request was a GET', h.every((x) => x.method === 'GET'), true);
 
 const t = (n) => run.tools[n];
@@ -75,6 +80,7 @@ for (const n of NAMES) {
   check(`${n} has no em-dash`, d.includes(String.fromCharCode(0x2014)), false);
   check(`${n} is not marked as mutating`, /destructive|mutat/i.test(JSON.stringify(t(n)?.annotations ?? {})) && t(n)?.annotations?.readOnlyHint === false, false);
 }
+has('get_invoice mentions include_employees', t('clokio_get_invoice')?.description, 'include_employees');
 has('list says paid is a mark set in Clokio', t('clokio_list_invoices')?.description, 'not a payment record');
 has('summary says totals are per currency', t('clokio_get_client_billing_summary')?.description, 'per currency');
 has('list says no iCount', t('clokio_list_invoices')?.description, 'iCount');

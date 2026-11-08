@@ -10,6 +10,7 @@ A read-only `invoices` toolset over the new `/api/v1/invoices` family (2026-11-0
 - **New: `clokio_get_client_billing_summary`** (`client_id`, `from_month`, `to_month`): a client's month-by-month billing; totals keyed by currency.
 - **New: `clokio_get_billing_month`** (`month`): one month across all clients.
 - **New: `clokio_get_client_unbilled`** (`client_id`, `month`, `include_employees`): what is still unbilled for a client (id 0 is the "No Client" bucket).
+- Months are checked as `YYYY-MM` with a real month (01-12), as the server does: `2026-13` is refused locally. `clokio_get_invoice` names `include_employees` in its description.
 - Every tool is a GET. Months are `YYYY-MM`, ids positive integers, `per_page` 1-100; a bad value is refused before any request. "paid" is a status someone set in Clokio, not a payment record; money totals are per currency; no iCount data.
 - New toolset name `invoices` for `CLOKIO_TOOLSETS` (on by default). 145 tools by default (48 with `CLOKIO_TOOLSETS=tasks`). Tests: `test/invoices-tools.mjs`, toolsets count, conformance entries.
 
