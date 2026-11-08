@@ -10,7 +10,7 @@ import { registerTool } from './helpers.js';
  */
 const ACCESS =
   'Needs the invoices:read scope AND billing access for the key\'s person (otherwise 403 NO_BILLING_ACCESS). ' +
-  'Read only. These are Clokio\'s own invoices; no iCount data. "paid" is a status someone set in Clokio, ' +
+  'Read only. These are Clokio\'s own invoices; no iCount data beyond the number stored as invoice_number. "paid" is a status someone set in Clokio, ' +
   'not a payment record.';
 
 const NO_CLIENT = 'The "No Client" bucket is client id 0 everywhere (client {id: 0, name: "No Client"}). ';
@@ -18,7 +18,8 @@ const AMOUNT =
   'Each row has amount {source, subtotal, vat_amount, total, currency}: source "invoice" is the invoice\'s own numbers, ' +
   'source "estimate" is exactly what clokio_get_client_unbilled answers for that client and month (VAT at the organisation rate). ' +
   'Use amount, not estimated_amount: estimated_amount is the screen\'s figure, deprecated (the invoice total WITH VAT, or hours times rates ' +
-  'WITHOUT VAT, rounded differently). missing_rate is true when billable hours have no rate (amount 0). ';
+  'WITHOUT VAT, rounded differently). Compact rows (clokio_get_billing_month by default) carry only amount {source, total, currency}. ' +
+  'missing_rate is true when billable hours have no rate (amount 0). ';
 
 const month = (what: string) =>
   z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'month must be YYYY-MM (month 01-12)').describe(what);
@@ -43,7 +44,7 @@ export function registerInvoiceTools(server: McpServer, config: ClokioConfig): v
       'Paginated: {data, meta}. ' + ACCESS,
     schema: {
       client_id: z.number().int().min(0).optional().describe('Only this client; 0 = invoices with no client'),
-      number: z.string().min(1).max(50).optional().describe('Exact invoice number, e.g. INV-0012'),
+      number: z.string().min(1).max(50).optional().describe('Exact invoice number, e.g. INV-2026-0012 (Clokio\'s own) or 3529 (a provider document number)'),
       from_month: month('First period month, YYYY-MM').optional(),
       to_month: month('Last period month, YYYY-MM; at most 24 months after from_month').optional(),
       status: z.array(z.enum(['draft', 'finalized', 'sent', 'paid', 'cancelled'])).min(1).optional()

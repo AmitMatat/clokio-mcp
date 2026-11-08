@@ -8,6 +8,7 @@ Invoices round 2, from the owner's live test of 0.34.0 (2026-11-08). **Backend d
 - **`clokio_get_invoice`** takes `include_activities` (default false); with `include_employees` it sends one list, `include=employees,activities`. The activity trail is no longer in the answer by default; `activity_count` always is.
 - **`clokio_list_invoices`** takes `min_total`, and `client_id: 0` (the invoices with no client).
 - Descriptions explain the round-2 answers: `amount` (the invoice's own numbers, or exactly the unbilled tool's estimate) vs the deprecated `estimated_amount` (the screen's figure, VAT mixed in); `invoiced` / `total` count issued invoices only and `draft` is the drafts' total; the No Client bucket is client id 0 everywhere; `missing_rate`; `task_state` (linked / deleted / none); `employees_scope` (task / line); the task billing `note`; what `invoice_number` is.
+- "No iCount data" now reads "no iCount data beyond the number stored as invoice_number": with an invoicing integration, finalize stores the provider's document number there (which is why numbers like `3529` sit beside `INV-2026-0012`). The `number` example is a format Clokio really generates.
 - Still 145 tools by default (48 with `CLOKIO_TOOLSETS=tasks`). Tests: `test/invoices-tools.mjs` (exact query per call), conformance entries.
 
 ## 0.34.0

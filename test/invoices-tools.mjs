@@ -109,6 +109,10 @@ has('get_invoice mentions include_employees', t('clokio_get_invoice')?.descripti
 has('list says paid is a mark set in Clokio', t('clokio_list_invoices')?.description, 'not a payment record');
 has('summary says totals are per currency', t('clokio_get_client_billing_summary')?.description, 'per currency');
 has('list says no iCount', t('clokio_list_invoices')?.description, 'iCount');
+// Review fix 2: the number stored as invoice_number may be the provider's, so "no iCount data" is never flat.
+for (const n of NAMES) has(`${n} says no iCount data beyond invoice_number`, t(n)?.description, 'no iCount data beyond the number stored as invoice_number');
+has('number example is a real generated format', t('clokio_list_invoices')?.inputSchema?.properties?.number?.description, 'INV-2026-0012');
+has('amount text says compact rows carry only source, total, currency', t('clokio_get_billing_month')?.description, 'carry only amount {source, total, currency}');
 
 // Final fix wave M1/M2: the unbilled answer is not billable-only, and a task
 // line lists everyone on the task in the period.
