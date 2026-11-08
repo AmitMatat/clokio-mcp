@@ -113,7 +113,6 @@ has('get_invoice mentions include_employees', t('clokio_get_invoice')?.descripti
 has('list says paid is a mark set in Clokio', t('clokio_list_invoices')?.description, 'not a payment record');
 has('summary says totals are per currency', t('clokio_get_client_billing_summary')?.description, 'per currency');
 has('list says no iCount', t('clokio_list_invoices')?.description, 'iCount');
-// Review fix 2: the number stored as invoice_number may be the provider's, so "no iCount data" is never flat.
 const paged = h.find((x) => x.path === '/invoices/month' && x.search.includes('page=3'));
 check('billing month: per_page and page sent', [paged?.path, paged?.search], ['/invoices/month', '?month=2026-10&compact=1&per_page=200&page=3']);
 check('per_page 201 is refused locally', run.errored(32), true);
@@ -121,9 +120,10 @@ check('page 0 is refused locally', run.errored(33), true);
 has('billing month says per_page defaults to 50', t('clokio_get_billing_month')?.description, 'per_page defaults to 50');
 has('billing month says to use page', t('clokio_get_billing_month')?.description, 'use page to continue');
 has('billing month says totals cover every matching client', t('clokio_get_billing_month')?.description, 'not_invoiced and totals cover every matching client');
-has('get invoice names origin', t('clokio_get_invoice')?.description, 'origin ("timer" or "custom"');
+has('get invoice names origin', t('clokio_get_invoice')?.description, 'origin (derived from the line type');
 has('get invoice says none is not a deleted task', t('clokio_get_invoice')?.description, 'never a deleted task');
 has('get invoice names the activity detail', t('clokio_get_invoice')?.description, 'old_value, new_value');
+// Review fix 2: the number stored as invoice_number may be the provider's, so "no iCount data" is never flat.
 for (const n of NAMES) has(`${n} says no iCount data beyond invoice_number`, t(n)?.description, 'no iCount data beyond the number stored as invoice_number');
 has('number example is a real generated format', t('clokio_list_invoices')?.inputSchema?.properties?.number?.description, 'INV-2026-0012');
 has('amount text says compact rows carry only source, total, currency', t('clokio_get_billing_month')?.description, 'carry only amount {source, total, currency}');

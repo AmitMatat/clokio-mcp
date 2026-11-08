@@ -73,9 +73,9 @@ export function registerInvoiceTools(server: McpServer, config: ClokioConfig): v
     description:
       'One invoice with its lines and activity_count (include_employees adds who worked each line; include_activities adds the activity trail). ' +
       'Each line has task_state: "linked" (the task exists), "deleted" (the task was deleted or is gone; the stored title still shows), ' +
-      '"none" (no task id: a hand-added line, or a timer line logged without a task, never a deleted task), ' +
-      'origin ("timer" or "custom": a timer line vs one added by hand) and missing_rate (billable hours with no price). ' +
-      'With include_activities each activity also has field, old_value, new_value (only for edits of the invoice or of a line) and item_id; ' +
+      '"none" (no task id: a hand-added line or, normally, timer hours logged without a task, never a deleted task), ' +
+      'origin (derived from the line type: "custom" = added by hand, "timer" = normally a timer line) and missing_rate (billable hours with no price). ' +
+      'With include_activities each activity also has field, old_value, new_value (only for edits of the invoice or of a line; client_id is an integer with No Client as 0, due_date is YYYY-MM-DD, is_billable a boolean) and item_id; ' +
       'external document events show action and time only. ' + NO_CLIENT + ACCESS,
     schema: {
       id,
@@ -121,7 +121,7 @@ export function registerInvoiceTools(server: McpServer, config: ClokioConfig): v
       'One month across all clients, as the web /invoices screen: per client hours, amount and invoice, the client ids not yet invoiced (not_invoiced, 0 = No Client), and totals. ' +
       'COMPACT BY DEFAULT: the full answer is large enough to overflow an agent, so this tool sends compact=1 unless compact is false ' +
       '(compact rows: client, billable_hours, amount {source, total, currency}, invoice {id, status}, dismissed, missing_rate). ' +
-      'PAGED: per_page defaults to 50 here (max 200); the answer has meta {total, per_page, current_page, last_page}: use page to continue. ' +
+      'PAGED: per_page defaults to 50 here (max 200); the answer has meta {total, per_page, current_page, last_page}: use page to continue. Rows are ordered by client name then id, No Client last. ' +
       'not_invoiced and totals cover every matching client, not just the page. ' +
       'Filters client_ids, only_not_invoiced, exclude_dismissed, min_billable_hours; rows, not_invoiced and totals are computed over the FILTERED rows. ' +
       'totals per currency: total = ISSUED invoices only (finalized + sent + paid), draft = the drafts, pending = finalized + sent, overdue_count. Money totals are per currency, never summed. ' +
@@ -133,7 +133,7 @@ export function registerInvoiceTools(server: McpServer, config: ClokioConfig): v
       exclude_dismissed: z.boolean().optional().describe('true: leave dismissed clients out'),
       min_billable_hours: z.number().min(0).optional().describe('Only clients with at least this many billable hours'),
       per_page: z.number().int().min(1).max(200).optional().describe('Clients per page, 1-200; default 50'),
-      page: z.number().int().min(1).optional().describe('Page, from 1; use it to continue when meta.last_page is above 1'),
+      page: z.number().int().min(1).max(1000000).optional().describe('Page, from 1; use it to continue when meta.last_page is above 1'),
       compact: z.boolean().optional().describe('Default true (smaller rows). false: the full rows (total_hours, projects, estimated_amount, the full amount, the invoice number and total).'),
     },
     handler: (args, cfg) =>
