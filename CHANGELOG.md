@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.36.1
+
+From the owner's live test of 0.36.0 (2026-11-09). Descriptions only in the MCP; one backend change. **Backend:** the numeric activity values come from the Clokio backend with branch `feature/invoices-round4`; on an older server they are still strings such as `"69.00"` and nothing else changes. After updating, start a NEW session and check that `clokio_whoami` reports `mcp_version` 0.36.1.
+
+- **Answer shape of `clokio_get_billing_month` (changed in 0.36.0, now stated):** `{data: {month, clients, not_invoiced, totals}, meta}`. This differs from the 0.35 answer, which had no `meta` block; read the rows at `data.clients` and the paging at `meta`.
+- **`clokio_get_invoice`** activities: `quantity`, `unit_price`, `line_total` and `vat_rate` values are numbers (`69`, not `"69.00"`), beside the boolean `is_billable` and integer `client_id`.
+- Still 145 tools by default (48 with `CLOKIO_TOOLSETS=tasks`).
+
 ## 0.36.0
 
 Invoices round 3, from the owner's live test of 0.35.0 (2026-11-08). **Backend dependency:** the Clokio backend with branch `feature/invoices-round3`, deployed FIRST: on an older server `clokio_get_billing_month` is refused (the `per_page` it now always sends is an unknown parameter there: 422), and the new activity and item fields are simply absent. After updating, start a NEW session and check that `clokio_whoami` reports `mcp_version` 0.36.0. Before publishing, run `node test/api-conformance.mjs` against the deployed spec (or `CLOKIO_SPEC_FILE` at the backend's `docs/api/openapi.json`): 145 tools.

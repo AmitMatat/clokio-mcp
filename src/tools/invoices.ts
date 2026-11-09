@@ -75,7 +75,7 @@ export function registerInvoiceTools(server: McpServer, config: ClokioConfig): v
       'Each line has task_state: "linked" (the task exists), "deleted" (the task was deleted or is gone; the stored title still shows), ' +
       '"none" (no task id: a hand-added line or, normally, timer hours logged without a task, never a deleted task), ' +
       'origin (derived from the line type: "custom" = added by hand, "timer" = normally a timer line) and missing_rate (billable hours with no price). ' +
-      'With include_activities each activity also has field, old_value, new_value (only for edits of the invoice or of a line; client_id is an integer with No Client as 0, due_date is YYYY-MM-DD, is_billable a boolean) and item_id; ' +
+      'With include_activities each activity also has field, old_value, new_value (only for edits of the invoice or of a line; quantity, unit_price, line_total and vat_rate are numbers, client_id is an integer with No Client as 0, due_date is YYYY-MM-DD, is_billable a boolean) and item_id; ' +
       'external document events show action and time only. ' + NO_CLIENT + ACCESS,
     schema: {
       id,
@@ -119,6 +119,7 @@ export function registerInvoiceTools(server: McpServer, config: ClokioConfig): v
     name: 'clokio_get_billing_month',
     description:
       'One month across all clients, as the web /invoices screen: per client hours, amount and invoice, the client ids not yet invoiced (not_invoiced, 0 = No Client), and totals. ' +
+      'ANSWER SHAPE (since 0.36): {data: {month, clients, not_invoiced, totals}, meta}; read the rows at data.clients and the paging at meta. ' +
       'COMPACT BY DEFAULT: the full answer is large enough to overflow an agent, so this tool sends compact=1 unless compact is false ' +
       '(compact rows: client, billable_hours, amount {source, total, currency}, invoice {id, status}, dismissed, missing_rate). ' +
       'PAGED: per_page defaults to 50 here (max 200); the answer has meta {total, per_page, current_page, last_page}: use page to continue. Rows are ordered by client name then id, No Client last. ' +
