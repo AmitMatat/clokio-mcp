@@ -36,7 +36,7 @@ const noteBody = {
     body: z.string().min(1).optional().describe('The note as Markdown (converted to HTML). Give this or body_html, not both'),
     body_html: z.string().min(1).max(200000).optional().describe('The note as HTML. Give this or body, not both'),
 };
-/** Exactly one of body / body_html, as the note's HTML. A shape rule: both or neither is refused before any request. */
+/** One of body / body_html, as the note's HTML. Both is refused before any request (ambiguous); neither goes out as {} and the server answers. */
 function noteHtml(args) {
     if (args.body !== undefined && args.body_html !== undefined) {
         throw new Error('Give body (Markdown) or body_html, not both.');
@@ -45,7 +45,8 @@ function noteHtml(args) {
         return markdownToHtml(args.body);
     if (args.body_html !== undefined)
         return args.body_html;
-    throw new Error('Give body (Markdown) or body_html.');
+    // Neither: nothing to convert; the server answers (R16).
+    return undefined;
 }
 export function registerCrmCustomerTools(server, config) {
     registerTool(server, config, {
@@ -147,6 +148,8 @@ export function registerCrmCustomerTools(server, config) {
         },
         handler: async (args, cfg) => {
             const html = noteHtml(args);
+            if (html === undefined)
+                throw new Error('Give body (Markdown) or body_html.');
             const key = args.idempotency_key ?? `mcp-${randomUUID()}`;
             const { res, replayed } = await idempotentPost(cfg, subjectPath(args.customer_type, args.customer_id, 'notes'), key, { body_html: html });
             const outcome = replayed

@@ -4,14 +4,16 @@
 // download following a 302 WITHOUT the key, and wrapped customer text.
 //
 // Run by hand:  npm run build && node test/crm-customers-tools.mjs
-import { writeFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { checker, runTools } from './support/harness.mjs';
 
 const { check, has, done } = checker();
-const SCRATCH = '/private/tmp/claude-501/-Users-amitmatat-Local-Sites-clokio/827c2366-f427-464a-aff8-845df91e407c/scratchpad';
-const upPath = `${SCRATCH}/up.txt`;
+const SCRATCH = mkdtempSync(join(tmpdir(), 'crm-customers-'));
+const upPath = join(SCRATCH, 'up.txt');
 writeFileSync(upPath, 'uploaded bytes');
-const saved = `${SCRATCH}/crm-saved-${process.pid}.txt`;
+const saved = join(SCRATCH, 'saved.txt');
 
 const NAMES = [
   'clokio_list_companies', 'clokio_get_company', 'clokio_create_company', 'clokio_update_company',
@@ -61,6 +63,7 @@ const run = await runTools({
     ['clokio_create_company', { name: 'Nope' }], // 30 403
     ['clokio_list_companies', { activity: 'none' }], // 31 422 CRM off
     ['clokio_update_crm_note', { id: 70, body: 'x' }], // 32 403 author
+    ['clokio_update_crm_note', { id: 5 }], // 33 no body: goes out as {}, the server answers
   ],
   respond: (hit) => {
     if (hit.path === '/crm/companies' && hit.method === 'POST' && hit.body?.name === 'Nope') {
@@ -84,7 +87,7 @@ const run = await runTools({
       );
     }
     if (hit.method === 'GET' && hit.path === '/crm/companies/3') {
-      return ok({ company: { id: 3, name: evil, address: evil, website: evil, company_number: '1-2', color: '#112233', custom_fields: { region: evil, vip: true, empty: null, count: 4 }, people: [{ contact_id: 4, name: 'Dana', email: 'd@x.example', phone: '050', job_title: evil, receives_invoices: true }], next_step: { id: 1, subject: evil, type: 'Call', assignee: { employee_code: null, name: 'No Code' } } } });
+      return ok({ company: { id: 3, name: evil, address: evil, website: evil, company_number: '1-2', color: '#112233', custom_fields: { region: evil, vip: true, empty: null, count: 4, nested: { a: evil, list: [evil, 7] } }, people: [{ contact_id: 4, name: 'Dana', email: 'd@x.example', phone: '050', job_title: evil, receives_invoices: true }], next_step: { id: 1, subject: evil, type: 'Call', assignee: { employee_code: null, name: 'No Code' } } } });
     }
     if (hit.method === 'GET' && hit.path.endsWith('/notes')) {
       return ok({ items: [{ type: 'note', id: 5, at: '2026-11-01T10:00:00Z', author: { employee_code: null, name: 'Staff One' }, body_html: `<p>${evil}</p>`, source: 'note', edited: false, can_edit: true }], next_cursor: 'nx' });
@@ -123,6 +126,8 @@ check('add note: body_html goes as it is', [req(10), /^mcp-/.test(h[10]?.idempot
 check('edit note: Markdown converted, PATCH, no key', [h[12]?.method, h[12]?.path, typeof h[12]?.body?.body_html, h[12]?.idempotencyKey], ['PATCH', '/crm/notes/5', 'string', null]);
 has('edit note body is HTML', h[12]?.body?.body_html, '<em>text</em>');
 check('edit note: body_html as it is', req(13), ['PATCH', '/crm/notes/5', '', { body_html: '<p>Edited</p>' }]);
+const noBody = h.find((x) => x.path === '/crm/notes/5' && x.method === 'PATCH' && Object.keys(x.body ?? {}).length === 0);
+check('edit note with no body goes out as {} (the server answers)', noBody?.body, {});
 check('files: contact with limit', req(14), ['GET', '/crm/contacts/9/files', '?limit=10', null]);
 check('upload: company, multipart, no Idempotency-Key', [h[15]?.method, h[15]?.path, h[15]?.contentType?.startsWith('multipart/form-data'), h[15]?.idempotencyKey], ['POST', '/crm/companies/3/files', true, null]);
 has('upload: the field is called file', h[15]?.body?.multipart, 'name="file"');
@@ -143,7 +148,7 @@ for (const [i, label] of [
   check(`${label} is refused locally`, run.errored(i), true);
 }
 const nReq = h.length;
-check('the refused calls sent nothing (20 calls, the signed hop, 3 refusals = 24 requests)', nReq, 24);
+check('the refused calls sent nothing (20 calls, the signed hop, 4 server-bound = 25 requests)', nReq, 25);
 
 check('a 403 comes through', [run.errored(30), run.text(30).includes('cannot change this customer')], [true, true]);
 check('the CRM-off 422 comes through', [run.errored(31), run.text(31).includes('HTTP 422') && run.text(31).includes('activity filter needs the CRM module')], [true, true]);
@@ -162,10 +167,13 @@ has('company: address wrapped', co, '"address": "<untrusted_customer_content>Acm
 has('company: website wrapped', co, '"website": "<untrusted_customer_content>Acme');
 has('company: company_number wrapped', co, '"company_number": "<untrusted_customer_content>1-2');
 has('company: job_title wrapped', co, '"job_title": "<untrusted_customer_content>Acme');
+has('company: a nested custom field string is wrapped', co, '"a": "<untrusted_customer_content>Acme')
+check('company: a string inside a custom field array is wrapped', /"list": \[\s*"<untrusted_customer_content>Acme/.test(co), true)
+has('company: a number inside a custom field array stays', co, '7')
 has('company: a null custom field stays null', co, '"empty": null');
 has('company: a numeric custom field stays', co, '"count": 4');
 has('company: a code-less assignee stays plain', co, '"name": "No Code"');
-check('company: no stray closing tag (name, address, website, number, region, job_title, subject, email, phone, person name = 10)', co.split('</untrusted_customer_content>').length - 1, 10);
+check('company: no stray closing tag (name, address, website, number, region, job_title, subject, email, phone, person name, nested a, nested list = 12)', co.split('</untrusted_customer_content>').length - 1, 12);
 const notes = run.text(7);
 has('note body is a wrapped block', notes, '"body_html": "<untrusted_customer_content>\\n');
 has('note body closing tag is defused', notes, defused);

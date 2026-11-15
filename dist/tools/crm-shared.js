@@ -89,6 +89,17 @@ const STAFF_KEYS = new Set([
     'reason',
     'participants',
 ]);
+/** Wrap every string at any depth (a custom field's answer, whatever its key or shape). */
+function wrapEverything(value) {
+    if (typeof value === 'string')
+        return wrapInline(value);
+    if (Array.isArray(value))
+        return value.map(wrapEverything);
+    if (value !== null && typeof value === 'object') {
+        return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, wrapEverything(v)]));
+    }
+    return value;
+}
 /**
  * Wrap the customer text of a CRM answer, recursing over objects and arrays.
  * `key` is the key the value sits under (an array passes its own key to its
@@ -110,9 +121,8 @@ export function wrapCustomerText(value, key, staff = false) {
     // A company's custom fields are a record keyed by the ORGANISATION's field
     // keys, which no fixed key set can name: every string value is a short
     // answer staff typed about the customer (ruling R16), wrapped whatever its key.
-    if (key === 'custom_fields' && value !== null && typeof value === 'object') {
-        return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, typeof v === 'string' ? wrapInline(v) : v]));
-    }
+    if (key === 'custom_fields' && value !== null && typeof value === 'object')
+        return wrapEverything(value);
     if (value !== null && typeof value === 'object') {
         return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, wrapCustomerText(v, k)]));
     }

@@ -300,48 +300,43 @@ export function typeHintOnly(name: string | undefined): string | undefined {
 }
 
 /**
- * Download one file of a ticket message (GET /api/v1/tickets/{id}/attachments/{attachmentId})
- * and hand it to the shared renderer. save_path is the caller's own path, never
- * joined with a file name.
+ * The one download for a customer's file (a ticket message's or a CRM file):
+ * the bytes, or a 302 that requestRawBytes follows WITHOUT the key, then the
+ * shared renderer. A customer's file is the customer's content, so its text,
+ * PDF text and ZIP entry names come back inside the untrusted wrapper; the
+ * file name is a type hint only (N16) and save_path is the caller's own path.
  */
+async function downloadCustomerFile(
+  config: ClokioConfig,
+  path: string,
+  opts: { fileName?: string; savePath?: string; overwrite?: boolean }
+): Promise<unknown> {
+  const { buffer, contentType, fileName } = await requestRawBytes(config, path);
+  return renderDownload(buffer, contentType, {
+    savePath: opts.savePath,
+    overwrite: opts.overwrite,
+    fileName: typeHintOnly(opts.fileName ?? fileName),
+    wrap: true,
+  });
+}
+
+/** Download one file of a ticket message (GET /api/v1/tickets/{id}/attachments/{attachmentId}). */
 export async function downloadTicketAttachment(
   config: ClokioConfig,
   ticketId: number,
   attachmentId: number,
   opts: { fileName?: string; savePath?: string; overwrite?: boolean }
 ): Promise<unknown> {
-  const { buffer, contentType, fileName } = await requestRawBytes(
-    config,
-    `/tickets/${seg(ticketId)}/attachments/${seg(attachmentId)}`
-  );
-  return renderDownload(buffer, contentType, {
-    savePath: opts.savePath,
-    overwrite: opts.overwrite,
-    fileName: typeHintOnly(opts.fileName ?? fileName),
-    // A ticket file is the customer's content: its text, PDF text and ZIP
-    // entry names come back inside the untrusted wrapper, like the thread.
-    wrap: true,
-  });
+  return downloadCustomerFile(config, `/tickets/${seg(ticketId)}/attachments/${seg(attachmentId)}`, opts);
 }
 
-/**
- * Download one CRM file (GET /api/v1/crm/files/{id}): the bytes (200) or a 302
- * to a signed URL, which requestRawBytes follows WITHOUT the key. A CRM file is
- * the customer's content, so its text, PDF text and ZIP entry names come back
- * inside the untrusted wrapper; the name is a type hint only.
- */
+/** Download one CRM file (GET /api/v1/crm/files/{id}). */
 export async function downloadCrmFile(
   config: ClokioConfig,
   fileId: number,
   opts: { fileName?: string; savePath?: string; overwrite?: boolean }
 ): Promise<unknown> {
-  const { buffer, contentType, fileName } = await requestRawBytes(config, `/crm/files/${seg(fileId)}`);
-  return renderDownload(buffer, contentType, {
-    savePath: opts.savePath,
-    overwrite: opts.overwrite,
-    fileName: typeHintOnly(opts.fileName ?? fileName),
-    wrap: true,
-  });
+  return downloadCustomerFile(config, `/crm/files/${seg(fileId)}`, opts);
 }
 
 /**
