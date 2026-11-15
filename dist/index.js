@@ -27,6 +27,7 @@ import { registerTicketTools } from './tools/tickets.js';
 import { registerCrmLeadTools } from './tools/crm-leads.js';
 import { registerCrmActivityTools } from './tools/crm-activities.js';
 import { registerCrmCustomerTools } from './tools/crm-customers.js';
+import { registerTodoTools } from './tools/todos.js';
 /**
  * The optional tool groups a session can turn OFF.
  *
@@ -40,7 +41,7 @@ import { registerCrmCustomerTools } from './tools/crm-customers.js';
  * to resolve names to ids, so it is always registered. Naming a toolset that
  * does not exist is refused at startup rather than silently ignored.
  */
-const OPTIONAL_TOOLSETS = ['tasks', 'employees', 'attendance', 'docs', 'tickets', 'invoices', 'crm'];
+const OPTIONAL_TOOLSETS = ['tasks', 'employees', 'attendance', 'docs', 'tickets', 'invoices', 'crm', 'todos'];
 function selectedToolsets() {
     const raw = process.env.CLOKIO_TOOLSETS?.trim();
     if (!raw) {
@@ -137,6 +138,9 @@ async function main() {
         registerCrmActivityTools(server, config);
         registerCrmCustomerTools(server, config);
     }
+    // My To-Do (/api/v1/todos): the key holder's own list; admin key only, like the CRM.
+    if (toolsets.has('todos'))
+        registerTodoTools(server, config);
     const transport = new StdioServerTransport();
     await server.connect(transport);
     // stderr is safe for logs on stdio transport (stdout carries the protocol).

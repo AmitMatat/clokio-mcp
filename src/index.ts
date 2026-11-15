@@ -27,6 +27,7 @@ import { registerTicketTools } from './tools/tickets.js';
 import { registerCrmLeadTools } from './tools/crm-leads.js';
 import { registerCrmActivityTools } from './tools/crm-activities.js';
 import { registerCrmCustomerTools } from './tools/crm-customers.js';
+import { registerTodoTools } from './tools/todos.js';
 
 
 /**
@@ -42,7 +43,7 @@ import { registerCrmCustomerTools } from './tools/crm-customers.js';
  * to resolve names to ids, so it is always registered. Naming a toolset that
  * does not exist is refused at startup rather than silently ignored.
  */
-const OPTIONAL_TOOLSETS = ['tasks', 'employees', 'attendance', 'docs', 'tickets', 'invoices', 'crm'] as const;
+const OPTIONAL_TOOLSETS = ['tasks', 'employees', 'attendance', 'docs', 'tickets', 'invoices', 'crm', 'todos'] as const;
 type Toolset = (typeof OPTIONAL_TOOLSETS)[number];
 
 function selectedToolsets(): Set<Toolset> {
@@ -152,6 +153,9 @@ async function main(): Promise<void> {
     registerCrmActivityTools(server, config);
     registerCrmCustomerTools(server, config);
   }
+
+  // My To-Do (/api/v1/todos): the key holder's own list; admin key only, like the CRM.
+  if (toolsets.has('todos')) registerTodoTools(server, config);
 
   const transport = new StdioServerTransport();
   await server.connect(transport);

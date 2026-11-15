@@ -289,6 +289,13 @@ const TOOL_CALLS = [
   { tool: 'clokio_upload_crm_file', method: 'post', path: '/crm/leads/{id}/files', query: [] },
   { tool: 'clokio_update_crm_note', method: 'patch', path: '/crm/notes/{id}', query: [], body: ['body_html'] },
   { tool: 'clokio_download_crm_file', method: 'get', path: '/crm/files/{id}', query: [] },
+  // 0.37.0: the key holder's own to-dos (todos.ts).
+  { tool: 'clokio_list_todos', method: 'get', path: '/todos', query: ['completed'] },
+  { tool: 'clokio_create_todo', method: 'post', path: '/todos', query: [], body: ['title', 'description', 'due_date', 'due_time', 'recurrence'] },
+  { tool: 'clokio_update_todo', method: 'patch', path: '/todos/{id}', query: [], body: ['title', 'description', 'due_date', 'due_time', 'recurrence'] },
+  { tool: 'clokio_complete_todo', method: 'post', path: '/todos/{id}/complete', query: [], body: [] },
+  { tool: 'clokio_reopen_todo', method: 'post', path: '/todos/{id}/reopen', query: [], body: [] },
+  { tool: 'clokio_delete_todo', method: 'delete', path: '/todos/{id}', query: [] },
 ];
 
 let fails = 0;
@@ -371,7 +378,7 @@ for (const call of TOOL_CALLS) {
 // Every tool the server registers must appear above, or a new tool could ship
 // unchecked - which is exactly how the broken ones got out.
 const registered = new Set();
-for (const file of ['tasks', 'projects', 'employees', 'attendance', 'docs', 'tickets', 'invoices', 'crm-leads', 'crm-activities', 'crm-customers']) {
+for (const file of ['tasks', 'projects', 'employees', 'attendance', 'docs', 'tickets', 'invoices', 'crm-leads', 'crm-activities', 'crm-customers', 'todos']) {
   const src = await readFile(new URL(`../src/tools/${file}.ts`, import.meta.url), 'utf8');
   for (const m of src.matchAll(/name:\s*'(clokio_[a-z_]+)'/g)) registered.add(m[1]);
 }

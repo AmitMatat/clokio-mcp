@@ -43,7 +43,7 @@ check('tasks toolset DROPS employees', tasksOnly.names?.includes('clokio_list_em
 check('tasks toolset DROPS the time-logging tools', tasksOnly.names?.includes('clokio_log_time'), false);
 const attendanceOnly = listTools({ CLOKIO_TOOLSETS: 'attendance' });
 check('attendance toolset carries the four time-logging tools', ['clokio_log_time', 'clokio_start_timer', 'clokio_stop_timer', 'clokio_get_active_timer'].every((n) => attendanceOnly.names?.includes(n)), true);
-check('default registers 178 tools', all.names?.length, 178);
+check('default registers 184 tools', all.names?.length, 184);
 check('tasks toolset carries the project task summary', tasksOnly.names?.includes('clokio_get_project_task_summary'), true);
 check('tasks toolset registers 48 tools', tasksOnly.names?.length, 48);
 check('tasks toolset carries the project activity feed', tasksOnly.names?.includes('clokio_list_project_activity'), true);
@@ -81,6 +81,18 @@ check('tasks toolset DROPS the lead tools', tasksOnly.names?.includes('clokio_li
 const crmEmployee = listTools({ CLOKIO_API_KEY: '', CLOKIO_EMPLOYEE_KEY: 'ek_x', CLOKIO_TOOLSETS: 'crm' });
 check('employee mode with CLOKIO_TOOLSETS=crm refuses to start', crmEmployee.code !== 0 && crmEmployee.names === null, true);
 check('and names crm', crmEmployee.stderr.includes('employee surface does not have: crm'), true);
+
+// The todos toolset (0.37.0): the key holder's own to-dos. Admin key only.
+const todosOnly = listTools({ CLOKIO_TOOLSETS: 'todos' });
+const TODO_NAMES = ['clokio_list_todos', 'clokio_create_todo', 'clokio_update_todo', 'clokio_complete_todo', 'clokio_reopen_todo', 'clokio_delete_todo'];
+check('todos toolset carries the six to-do tools', TODO_NAMES.every((n) => todosOnly.names?.includes(n)), true);
+check('todos toolset keeps clokio_whoami (projects always on)', todosOnly.names?.includes('clokio_whoami'), true);
+check('todos toolset DROPS the CRM tools', ['clokio_list_leads', 'clokio_list_companies', 'clokio_list_crm_activities'].some((n) => todosOnly.names?.includes(n)), false);
+check('crm toolset DROPS the to-do tools', TODO_NAMES.some((n) => crmOnly.names?.includes(n)), false);
+check('tasks toolset DROPS the to-do tools', TODO_NAMES.some((n) => tasksOnly.names?.includes(n)), false);
+const todosEmployee = listTools({ CLOKIO_API_KEY: '', CLOKIO_EMPLOYEE_KEY: 'ek_x', CLOKIO_TOOLSETS: 'todos' });
+check('employee mode with CLOKIO_TOOLSETS=todos refuses to start', todosEmployee.code !== 0 && todosEmployee.names === null, true);
+check('and names todos', todosEmployee.stderr.includes('employee surface does not have: todos'), true);
 
 console.log(fails === 0 ? '\nALL PASS' : `\n${fails} FAILED`);
 process.exit(fails ? 1 : 0);
