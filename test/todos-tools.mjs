@@ -119,9 +119,9 @@ for (const n of NAMES) {
   const d = t(n)?.description ?? '';
   has(`${n} names the scopes`, d, 'Needs todos:read (todos:write to change).');
   has(`${n} names the issuer rule`, d, 'Only on a key that acts as its own issuer: a key acting as a colleague is refused');
-  check(`${n} has no em-dash`, d.includes('\\u2014'), false);
+  check(`${n} has no em-dash`, d.includes('\u2014'), false);
   for (const [prop, schema] of Object.entries(t(n)?.inputSchema?.properties ?? {})) {
-    check(`${n}.${prop} has no em-dash`, JSON.stringify(schema).includes('\\u2014'), false);
+    check(`${n}.${prop} has no em-dash`, JSON.stringify(schema).includes('\u2014'), false);
   }
 }
 for (const n of ['clokio_list_todos']) check(`${n} is read-only`, [t(n)?.annotations?.readOnlyHint, t(n)?.annotations?.destructiveHint], [true, false]);
