@@ -25,6 +25,7 @@ import { registerDocTools } from './tools/docs.js';
 import { registerEmployeeIdentityTools, registerEmployeeModeTools } from './tools/employee.js';
 import { registerTicketTools } from './tools/tickets.js';
 import { registerCrmLeadTools } from './tools/crm-leads.js';
+import { registerCrmActivityTools } from './tools/crm-activities.js';
 /**
  * The optional tool groups a session can turn OFF.
  *
@@ -130,8 +131,10 @@ async function main() {
     if (toolsets.has('invoices'))
         registerInvoiceTools(server, config);
     // The CRM (/api/v1/crm): admin key only, so EMPLOYEE_TOOLSETS does not name it.
-    if (toolsets.has('crm'))
+    if (toolsets.has('crm')) {
         registerCrmLeadTools(server, config);
+        registerCrmActivityTools(server, config);
+    }
     const transport = new StdioServerTransport();
     await server.connect(transport);
     // stderr is safe for logs on stdio transport (stdout carries the protocol).

@@ -54,7 +54,7 @@ export const CRM_NEEDS =
  * lead's close note: staff write it, but it can be copied from what the
  * customer said, and over-wrapping costs nothing.
  */
-const BLOCK_KEYS = new Set(['description', 'body_html', 'message', 'note']);
+const BLOCK_KEYS = new Set(['description', 'body_html', 'message', 'note', 'notes']);
 
 /**
  * A string under one of these keys is a short customer value inside a line.
@@ -73,6 +73,9 @@ const INLINE_KEYS = new Set([
   'email',
   'phone',
   'subject',
+  'outcome',
+  'location',
+  'video_url',
   'edit_refused',
   'move_refused',
   'convert_refused',

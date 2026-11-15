@@ -255,6 +255,21 @@ const TOOL_CALLS = [
   { tool: 'clokio_convert_lead', method: 'post', path: '/crm/leads/{id}/convert', query: [], body: ['mode', 'client_id', 'company_name'] },
   { tool: 'clokio_update_lead', method: 'patch', path: '/crm/leads/{id}', query: [], body: ['company_name', 'description', 'channel', 'name', 'phone', 'email'] },
   { tool: 'clokio_delete_lead', method: 'delete', path: '/crm/leads/{id}', query: [] },
+  // 0.37.0: CRM activities (crm-activities.ts; backend /api/v1/crm/activities).
+  { tool: 'clokio_list_crm_activities', method: 'get', path: '/crm/activities', query: ['assignee', 'period', 'type_id', 'priority', 'page'] },
+  { tool: 'clokio_get_crm_activity', method: 'get', path: '/crm/activities/{id}', query: [] },
+  { tool: 'clokio_list_crm_activity_types', method: 'get', path: '/crm/activity-types', query: [] },
+  { tool: 'clokio_create_crm_activity', method: 'post', path: '/crm/companies/{id}/activities', query: [], body: ['type_id', 'due_on', 'subject', 'notes', 'due_time', 'all_day', 'duration_minutes', 'contact_ids', 'participant_employee_codes', 'priority', 'location', 'video_url', 'outcome', 'assignee_employee_code', 'done'] },
+  { tool: 'clokio_create_crm_activity', method: 'post', path: '/crm/contacts/{id}/activities', query: [], body: ['type_id', 'due_on', 'subject', 'notes', 'due_time', 'all_day', 'duration_minutes', 'contact_ids', 'participant_employee_codes', 'priority', 'location', 'video_url', 'outcome', 'assignee_employee_code', 'done'] },
+  { tool: 'clokio_create_crm_activity', method: 'post', path: '/crm/leads/{id}/activities', query: [], body: ['type_id', 'due_on', 'subject', 'notes', 'due_time', 'all_day', 'duration_minutes', 'contact_ids', 'participant_employee_codes', 'priority', 'location', 'video_url', 'outcome', 'assignee_employee_code', 'done'] },
+  { tool: 'clokio_update_crm_activity', method: 'patch', path: '/crm/activities/{id}', query: [], body: ['type_id', 'due_on', 'subject', 'notes', 'due_time', 'all_day', 'duration_minutes', 'contact_ids', 'participant_employee_codes', 'priority', 'location', 'video_url', 'outcome'] },
+  { tool: 'clokio_complete_crm_activity', method: 'post', path: '/crm/activities/{id}/done', query: [], body: ['outcome'] },
+  { tool: 'clokio_reopen_crm_activity', method: 'post', path: '/crm/activities/{id}/reopen', query: [], body: [] },
+  { tool: 'clokio_reassign_crm_activity', method: 'post', path: '/crm/activities/{id}/assignee', query: [], body: ['assignee_employee_code'] },
+  { tool: 'clokio_delete_crm_activity', method: 'delete', path: '/crm/activities/{id}', query: [] },
+  { tool: 'clokio_get_crm_next_step', method: 'get', path: '/crm/companies/{id}/next-step', query: [] },
+  { tool: 'clokio_get_crm_next_step', method: 'get', path: '/crm/contacts/{id}/next-step', query: [] },
+  { tool: 'clokio_get_crm_next_step', method: 'get', path: '/crm/leads/{id}/next-step', query: [] },
 ];
 
 let fails = 0;
@@ -337,7 +352,7 @@ for (const call of TOOL_CALLS) {
 // Every tool the server registers must appear above, or a new tool could ship
 // unchecked - which is exactly how the broken ones got out.
 const registered = new Set();
-for (const file of ['tasks', 'projects', 'employees', 'attendance', 'docs', 'tickets', 'invoices', 'crm-leads']) {
+for (const file of ['tasks', 'projects', 'employees', 'attendance', 'docs', 'tickets', 'invoices', 'crm-leads', 'crm-activities']) {
   const src = await readFile(new URL(`../src/tools/${file}.ts`, import.meta.url), 'utf8');
   for (const m of src.matchAll(/name:\s*'(clokio_[a-z_]+)'/g)) registered.add(m[1]);
 }

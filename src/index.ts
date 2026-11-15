@@ -25,6 +25,7 @@ import { registerDocTools } from './tools/docs.js';
 import { registerEmployeeIdentityTools, registerEmployeeModeTools } from './tools/employee.js';
 import { registerTicketTools } from './tools/tickets.js';
 import { registerCrmLeadTools } from './tools/crm-leads.js';
+import { registerCrmActivityTools } from './tools/crm-activities.js';
 
 
 /**
@@ -145,7 +146,10 @@ async function main(): Promise<void> {
   if (toolsets.has('tickets')) registerTicketTools(server, config);
   if (toolsets.has('invoices')) registerInvoiceTools(server, config);
   // The CRM (/api/v1/crm): admin key only, so EMPLOYEE_TOOLSETS does not name it.
-  if (toolsets.has('crm')) registerCrmLeadTools(server, config);
+  if (toolsets.has('crm')) {
+    registerCrmLeadTools(server, config);
+    registerCrmActivityTools(server, config);
+  }
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
