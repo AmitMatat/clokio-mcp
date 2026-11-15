@@ -14,7 +14,7 @@ import { z } from 'zod';
 import { ClokioConfig, request, seg } from '../client.js';
 import { idempotentPost } from '../idempotency.js';
 import { calendarDate, registerTool } from './helpers.js';
-import { CRM_NEEDS, createKey, employeeCode, renderCrm } from './crm-shared.js';
+import { CRM_NEEDS, createKey, employeeCode, renderCrm, replayNote } from './crm-shared.js';
 
 /** The channels a lead may carry (CrmLead::CHANNELS). */
 const CHANNELS = ['phone', 'website', 'whatsapp', 'email', 'chat', 'referral', 'other'] as const;
@@ -150,7 +150,7 @@ export function registerCrmLeadTools(server: McpServer, config: ClokioConfig): v
       });
       const id = res?.lead?.id ?? '-';
       const outcome = replayed
-        ? { replayed_note: `Lead #${id} was already created by this request (replayed: nothing new was created).` }
+        ? replayNote('Lead', id, true)
         : res?.created === false
           ? { existing_note: `This person already has an open lead (#${id}): nothing was created. The answer is that lead.` }
           : {};

@@ -146,3 +146,8 @@ export const createKey = z
   .string()
   .regex(IDEMPOTENCY_KEY, 'idempotency_key must be 8-191 of letters, digits, ., _, : or -')
   .optional();
+
+/** `{replayed_note}` for a create answered from an earlier identical request, else nothing. */
+export function replayNote(label: string, id: unknown, replayed: boolean): { replayed_note?: string } {
+  return replayed ? { replayed_note: `${label} #${id ?? '-'} was already created by this request (replayed: nothing new was created).` } : {};
+}

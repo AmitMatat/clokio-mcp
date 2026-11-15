@@ -154,7 +154,7 @@ async function main(): Promise<void> {
     registerCrmCustomerTools(server, config);
   }
 
-  // My To-Do (/api/v1/todos): the key holder's own list; admin key only, like the CRM.
+  // My To-Do (/api/v1/todos): the key holder's own list. Served only to a key acting as its own issuer (403 otherwise); no CRM module gate. Not in EMPLOYEE_TOOLSETS.
   if (toolsets.has('todos')) registerTodoTools(server, config);
 
   const transport = new StdioServerTransport();

@@ -5,7 +5,7 @@ import { request, requestUpload, seg } from '../client.js';
 import { idempotentPost } from '../idempotency.js';
 import { markdownToHtml } from '../markdown.js';
 import { registerTool } from './helpers.js';
-import { createKey, customerType, renderCrm, subjectPath } from './crm-shared.js';
+import { createKey, customerType, renderCrm, replayNote, subjectPath } from './crm-shared.js';
 const companyId = z.number().int().positive().describe('The company id (clokio_list_companies)');
 const customerId = z.number().int().positive().describe('The id of the company, contact or lead named by customer_type');
 const noteId = z.number().int().positive().describe('The note id (clokio_list_crm_notes)');
@@ -92,9 +92,7 @@ export function registerCrmCustomerTools(server, config) {
             const key = args.idempotency_key ?? `mcp-${randomUUID()}`;
             const { idempotency_key: _k, ...fields } = args;
             const { res, replayed } = await idempotentPost(cfg, '/crm/companies', key, fields);
-            const outcome = replayed
-                ? { replayed_note: `Company #${res?.company?.id ?? '-'} was already created by this request (replayed: nothing new was created).` }
-                : {};
+            const outcome = replayNote('Company', res?.company?.id, replayed);
             return renderCrm({ ...outcome, ...res, idempotency_key: key });
         },
     });
@@ -152,9 +150,7 @@ export function registerCrmCustomerTools(server, config) {
                 throw new Error('Give body (Markdown) or body_html.');
             const key = args.idempotency_key ?? `mcp-${randomUUID()}`;
             const { res, replayed } = await idempotentPost(cfg, subjectPath(args.customer_type, args.customer_id, 'notes'), key, { body_html: html });
-            const outcome = replayed
-                ? { replayed_note: `Note #${res?.note?.id ?? '-'} was already created by this request (replayed: nothing new was created).` }
-                : {};
+            const outcome = replayNote('Note', res?.note?.id, replayed);
             return renderCrm({ ...outcome, ...res, idempotency_key: key });
         },
     });

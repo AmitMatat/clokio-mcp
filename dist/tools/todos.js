@@ -3,12 +3,12 @@ import { z } from 'zod';
 import { request, seg } from '../client.js';
 import { idempotentPost } from '../idempotency.js';
 import { calendarDate, registerTool } from './helpers.js';
-import { createKey, renderCrm } from './crm-shared.js';
+import { createKey, renderCrm, replayNote } from './crm-shared.js';
 const NEEDS = ' Needs todos:read (todos:write to change). Only on a key that acts as its own issuer: a key acting as a colleague is refused (403), because a personal to-do list is private.';
 const DATES = ' Dates and times are the owner\'s LOCAL date (YYYY-MM-DD) and wall time (HH:MM), in the owner\'s time zone, not UTC.';
 const ITEM = 'An item is {id, title, description, due_date, due_time, rolled_from_date, reminded, sort_order, recurrence, link, customer, completed, completed_at (UTC), created_at (UTC)}; ' +
     'customer (company and contact names, origin crm or linked) appears only while your organisation\'s CRM module is on, and link (a task or ticket) is set on the web only.';
-const WRAPPED = ' Customer names on an item come back inside <untrusted_customer_content>.';
+const WRAPPED = ' Customer names on an item, and its title and description (a to-do made by a CRM activity mirrors the activity\'s subject), come back inside <untrusted_customer_content>.';
 const todoId = z.number().int().positive().describe('The to-do id (clokio_list_todos)');
 const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 /** daily, weekly with days, monthly with a day, none or null (stops repeating). Shape only: "needs a date" is the server's. */
@@ -56,14 +56,13 @@ export function registerTodoTools(server, config) {
             const key = args.idempotency_key ?? `mcp-${randomUUID()}`;
             const { idempotency_key: _k, ...fields } = args;
             const { res, replayed } = await idempotentPost(cfg, '/todos', key, fields);
-            const id = res?.item?.id ?? '-';
-            const outcome = replayed ? { replayed_note: `To-do #${id} was already created by this request (replayed: nothing new was created).` } : {};
+            const outcome = replayNote('To-do', res?.item?.id, replayed);
             return renderCrm({ ...outcome, ...res, idempotency_key: key });
         },
     });
     registerTool(server, config, {
         name: 'clokio_update_todo',
-        description: 'Edit one of your to-dos: only the fields you give are sent (null clears where the field allows it). due_date here is YYYY-MM-DD only ("today" is a create-only shortcut and the server answers 422). ' +
+        description: 'Edit one of your to-dos: only the fields you give are sent (null clears where the field allows it). due_date here is YYYY-MM-DD only ("today" is a create-only shortcut and is refused here). ' +
             'A to-do made by a CRM activity keeps its activity: a title change follows it, and it cannot repeat. Answers {item}. ' +
             ITEM + DATES + WRAPPED + NEEDS,
         schema: {

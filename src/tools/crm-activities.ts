@@ -15,7 +15,7 @@ import { z } from 'zod';
 import { ClokioConfig, request, seg } from '../client.js';
 import { idempotentPost } from '../idempotency.js';
 import { calendarDate, registerTool } from './helpers.js';
-import { CRM_NEEDS, createKey, customerType, employeeCode, renderCrm, subjectPath } from './crm-shared.js';
+import { CRM_NEEDS, createKey, customerType, employeeCode, renderCrm, replayNote, subjectPath } from './crm-shared.js';
 
 const activityId = z.number().int().positive().describe('The activity id (clokio_list_crm_activities)');
 const customerId = z.number().int().positive().describe('The id of the company, contact or lead named by customer_type');
@@ -134,10 +134,7 @@ export function registerCrmActivityTools(server: McpServer, config: ClokioConfig
       const key = args.idempotency_key ?? `mcp-${randomUUID()}`;
       const { customer_type, customer_id, idempotency_key: _k, ...fields } = args;
       const { res, replayed } = await idempotentPost(cfg, subjectPath(customer_type, customer_id, 'activities'), key, fields);
-      const id = res?.activity?.id ?? '-';
-      const outcome = replayed
-        ? { replayed_note: `Activity #${id} was already created by this request (replayed: nothing new was created).` }
-        : {};
+      const outcome = replayNote('Activity', res?.activity?.id, replayed);
       return renderCrm({ ...outcome, ...res, idempotency_key: key });
     },
   });
