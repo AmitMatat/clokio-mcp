@@ -39,6 +39,11 @@ const ROW =
 
 const WRAPPED = ' Customer-written text (names, emails, phones, the company, the description) comes back inside <untrusted_customer_content>.';
 
+/** The lead page adds the close note and the refusal sentences, which can name a company or a person. */
+const WRAPPED_PAGE =
+  ' Customer-written text (names, emails, phones, the company, the description, the close note) and the *_refused sentences ' +
+  '(they can name a company or a person) come back inside <untrusted_customer_content>.';
+
 export function registerCrmLeadTools(server: McpServer, config: ClokioConfig): void {
   registerTool(server, config, {
     name: 'clokio_list_leads',
@@ -87,7 +92,7 @@ export function registerCrmLeadTools(server: McpServer, config: ClokioConfig): v
       'each *_refused says in words why the acting employee may not edit, move or convert that person, or is null), customer (what a converted lead became), ' +
       'reopen_refused, close {reason, note, recontact_on}, moments (UTC) and the full next_step with open_count. ' +
       'Another organisation\'s lead, a deleted one and an id that never existed are the same 404.' +
-      WRAPPED + LEADS,
+      WRAPPED_PAGE + LEADS,
     schema: { id: leadId },
     handler: async (args, cfg) => renderCrm(await request(cfg, `/crm/leads/${seg(args.id)}`)),
   });
@@ -112,7 +117,7 @@ export function registerCrmLeadTools(server: McpServer, config: ClokioConfig): v
   registerTool(server, config, {
     name: 'clokio_create_lead',
     description:
-      'Create a lead, as the New lead panel does, with the acting employee as its creator. name and phone or email are required. ' +
+      'Create a lead, as the New lead panel does, with the acting employee as its creator. name and phone or email are required (the server answers 422 without one). ' +
       'The person is matched by phone (read in your organisation\'s country when it has no country code), then email, to an existing contact, ' +
       'else a new contact is made; an existing person\'s details are never changed. ONE OPEN LEAD PER PERSON: when the person already has one, ' +
       'nothing is created and the answer is that lead with created: false (a description is added to its history as "Submitted again"). ' +
@@ -133,9 +138,6 @@ export function registerCrmLeadTools(server: McpServer, config: ClokioConfig): v
     },
     mutates: true,
     handler: async (args, cfg) => {
-      if (args.phone === undefined && args.email === undefined) {
-        throw new Error('A lead needs phone or email: pass one of them, or both.');
-      }
       const key = args.idempotency_key ?? `mcp-${randomUUID()}`;
       const { res, replayed } = await idempotentPost(cfg, '/crm/leads', key, {
         name: args.name,
@@ -255,7 +257,8 @@ export function registerCrmLeadTools(server: McpServer, config: ClokioConfig): v
     name: 'clokio_convert_lead',
     description:
       'Convert a lead to a customer. mode: existing (client_id, an active company of your organisation or the person\'s own private customer), ' +
-      'new (a new company named company_name) or private (a private customer named after the person). The person is linked to the customer and the ' +
+      'new (a new company named company_name) or private (a private customer named after the person); the server answers 422 when the mode\'s field is missing. ' +
+      'The person is linked to the customer and the ' +
       'lead\'s notes, files and activities follow it. Taking the person away from the company they belong to needs the acting employee\'s clients.manage ' +
       '(otherwise a 422 on client_id naming that company; clokio_get_lead says so beforehand in contact.move_refused / convert_refused). ' +
       'No undo. Answers {customer {id, name, kind, url}, lead: <row>}.' +
@@ -263,23 +266,11 @@ export function registerCrmLeadTools(server: McpServer, config: ClokioConfig): v
     schema: {
       id: leadId,
       mode: z.enum(['existing', 'new', 'private']),
-      client_id: z.number().int().positive().optional().describe('mode existing only, required there'),
-      company_name: z.string().trim().min(1).max(255).optional().describe('mode new only, required there'),
+      client_id: z.number().int().positive().optional().describe('mode existing: the customer to convert to (required there)'),
+      company_name: z.string().trim().min(1).max(255).optional().describe('mode new: the name of the company to create (required there)'),
     },
     mutates: 'destructive',
     handler: async (args, cfg) => {
-      if (args.mode === 'existing' && args.client_id === undefined) {
-        throw new Error('mode existing needs client_id: the company (or the person\'s own private customer) to convert to.');
-      }
-      if (args.mode === 'new' && args.company_name === undefined) {
-        throw new Error('mode new needs company_name: the name of the company to create.');
-      }
-      if (args.mode !== 'existing' && args.client_id !== undefined) {
-        throw new Error('client_id goes with mode existing only.');
-      }
-      if (args.mode !== 'new' && args.company_name !== undefined) {
-        throw new Error('company_name goes with mode new only.');
-      }
       return renderCrm(
         await request(cfg, `/crm/leads/${seg(args.id)}/convert`, {
           method: 'POST',
@@ -296,7 +287,7 @@ export function registerCrmLeadTools(server: McpServer, config: ClokioConfig): v
       'its PERSON\'s name, phone and email (changed, never removed: an empty phone or email is a 422). A request carrying a person field is refused whole ' +
       '(422 on lead) when the acting employee may not change that person here (clokio_get_lead gives the sentence beforehand as contact.edit_refused). ' +
       'A phone or address another contact holds is a 422. Answers {lead: <the lead page, as clokio_get_lead>}.' +
-      ENDED + WRAPPED + LEADS + BUSY,
+      ENDED + WRAPPED_PAGE + LEADS + BUSY,
     schema: {
       id: leadId,
       company_name: z.string().max(190).nullable().optional().describe('The company the lead mentioned, as text; null clears it'),
@@ -308,11 +299,8 @@ export function registerCrmLeadTools(server: McpServer, config: ClokioConfig): v
     },
     mutates: true,
     handler: async (args, cfg) => {
-      const { id, ...fields } = args;
-      const body = Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined));
-      if (Object.keys(body).length === 0) {
-        throw new Error('Nothing to change: pass at least one of company_name, description, channel, name, phone, email.');
-      }
+      // A field left out is not sent (JSON drops undefined); null is sent and clears.
+      const { id, ...body } = args;
       return renderCrm(await request(cfg, `/crm/leads/${seg(id)}`, { method: 'PATCH', body }));
     },
   });

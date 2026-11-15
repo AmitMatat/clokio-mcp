@@ -39,9 +39,17 @@ export const CUSTOMER_TEXT_NOTE = 'Names, messages, notes and file names between
  * tools: companies, notes and files do not need the CRM module (ruling R5).
  */
 export const CRM_NEEDS = ' Needs crm:read (crm:write to change) and the acting employee\'s own CRM permissions; the CRM module must be on (404 otherwise).';
-/** A string under one of these keys is a block of customer text. */
-const BLOCK_KEYS = new Set(['description', 'body_html', 'message']);
-/** A string under one of these keys is a short customer value inside a line. */
+/**
+ * A string under one of these keys is a block of customer text. `note` is a
+ * lead's close note: staff write it, but it can be copied from what the
+ * customer said, and over-wrapping costs nothing.
+ */
+const BLOCK_KEYS = new Set(['description', 'body_html', 'message', 'note']);
+/**
+ * A string under one of these keys is a short customer value inside a line.
+ * The `*_refused` keys are the server's sentences on a lead page saying why a
+ * change is refused; they can name a company or a person (ruling R16).
+ */
 const INLINE_KEYS = new Set([
     'name',
     'company_name',
@@ -54,6 +62,10 @@ const INLINE_KEYS = new Set([
     'email',
     'phone',
     'subject',
+    'edit_refused',
+    'move_refused',
+    'convert_refused',
+    'reopen_refused',
 ]);
 /** Below one of these keys nothing is wrapped: a staff person or a setting. */
 const STAFF_KEYS = new Set([
