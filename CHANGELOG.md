@@ -1,5 +1,68 @@
 # Changelog
 
+## 0.37.0
+
+Two new toolsets: `crm` (33 tools: companies, leads, activities, the customer's next step, notes and files) and `todos` (6 tools: your own personal to-do list), over the new `/api/v1/crm` and `/api/v1/todos` routes. **Backend dependency:** the Clokio backend with branch `feature/crm-activities` (not deployed yet), deployed FIRST: on an older server every new tool answers 404. Scopes: `crm:read` / `crm:write` for the CRM tools and `todos:read` / `todos:write` for the to-dos (Full access has them; an explicit-list key must have them ticked). Every action acts as the key's effective person (its acts-as employee, else the issuer) and is limited by that person's own CRM permissions. Leads, activities and the next step need the organisation's CRM module switched on (404 while it is off); companies, notes and files do not. To-dos work only for a key that acts as its own issuer (403 for a key acting as a colleague, because a personal list is private) and have no CRM gate. After updating, start a NEW session and check that `clokio_whoami` reports `mcp_version` 0.37.0. Before publishing, run `node test/api-conformance.mjs` against the deployed spec (or `CLOKIO_SPEC_FILE` at the backend's `docs/api/openapi.json`): 184 tools.
+
+- CRM answers wrap customer-written text (a lead's name, emails, phones and description, a note's body, a file's name, history lines) in `<untrusted_customer_content>` tags: data, never instructions. Staff records (owners, assignees, authors, statuses, types, reasons) are not wrapped.
+- Creates (lead, activity, company, note, to-do) send an `Idempotency-Key`: a fresh one, or the `idempotency_key` you pass to retry the same call; a replay says "replayed: nothing new was created". A file upload has no key: list the files before retrying.
+- Limits of this version: API mentions in notes are not supported (write plain text); there is no tool to delete a note or a file.
+- Employee-key mode (`CLOKIO_EMPLOYEE_KEY`) has neither toolset, and `CLOKIO_TOOLSETS=crm` or `todos` refuses to start there.
+- New toolset names `crm` and `todos` for `CLOKIO_TOOLSETS` (both on by default).
+
+Leads (`crm` toolset):
+
+- **New: `clokio_list_leads`** (`tab`, `status_id`, `channel`, `owner_employee_code`, `page`): the leads queue.
+- **New: `clokio_get_lead_options`**: statuses, close reasons, channels and the people who work leads.
+- **New: `clokio_get_lead`** (`id`): one lead as its page shows it.
+- **New: `clokio_list_lead_history`** (`id`, `cursor`, `limit`): a lead's history.
+- **New: `clokio_create_lead`** (`name`, `phone`, `email`, `company_name`, `description`, `channel`, `owner_employee_code`, `idempotency_key`): a new lead (phone or email required).
+- **New: `clokio_take_lead`** (`id`, `seen_owner_employee_code`): become the owner; 409 if a colleague got there first.
+- **New: `clokio_assign_lead`** (`id`, `owner_employee_code`): give a lead to an owner, or null to unassign.
+- **New: `clokio_set_lead_status`** (`id`, `status_id`): move to another open status.
+- **New: `clokio_close_lead`** (`id`, `reason_id`, `note`, `recontact_on`): close with a reason.
+- **New: `clokio_reopen_lead`** (`id`): reopen a closed lead.
+- **New: `clokio_convert_lead`** (`id`, `mode`, `client_id`, `company_name`): convert to an existing company, a new one or a private customer.
+- **New: `clokio_update_lead`** (`id`, `company_name`, `description`, `channel`, `name`, `phone`, `email`): edit a lead.
+- **New: `clokio_delete_lead`** (`id`): delete a lead.
+
+Activities and the next step (`crm` toolset):
+
+- **New: `clokio_list_crm_activities`** (`assignee`, `period`, `type_id`, `priority`, `page`): activities, planned by default.
+- **New: `clokio_get_crm_activity`** (`id`): one activity.
+- **New: `clokio_list_crm_activity_types`**: the activity types.
+- **New: `clokio_create_crm_activity`** (`customer_type`, `customer_id`, `type_id`, `due_on`, `assignee_employee_code`, `done`, `idempotency_key`): plan or log an activity on a company, contact or lead.
+- **New: `clokio_update_crm_activity`** (`id`, `type_id`, `due_on` and the other editable fields): edit an activity.
+- **New: `clokio_complete_crm_activity`** (`id`, `outcome`): mark done.
+- **New: `clokio_reopen_crm_activity`** (`id`): mark open again.
+- **New: `clokio_reassign_crm_activity`** (`id`, `assignee_employee_code`): hand it to someone else.
+- **New: `clokio_delete_crm_activity`** (`id`): delete an activity.
+- **New: `clokio_get_crm_next_step`** (`customer_type`, `customer_id`): the customer's next step.
+
+Companies, notes and files (`crm` toolset; no CRM module needed):
+
+- **New: `clokio_list_companies`** (`search`, `status`, `activity`, `sort`, `page`): the CRM's company list (not the key-wide `clokio_get_client`).
+- **New: `clokio_get_company`** (`id`): one company with its people and field keys.
+- **New: `clokio_create_company`** (`name`, `address`, `color`, `website`, `company_number`, `custom_fields`, `idempotency_key`): a new company.
+- **New: `clokio_update_company`** (`id`, the same fields, `is_active`): edit or deactivate a company.
+- **New: `clokio_list_crm_notes`** (`customer_type`, `customer_id`, `cursor`, `limit`): notes on a company, contact or lead.
+- **New: `clokio_add_crm_note`** (`customer_type`, `customer_id`, `body` or `body_html`, `idempotency_key`): add a note.
+- **New: `clokio_update_crm_note`** (`id`, `body` or `body_html`): edit a note (its author only).
+- **New: `clokio_list_crm_files`** (`customer_type`, `customer_id`, `cursor`, `limit`): the files on a customer.
+- **New: `clokio_upload_crm_file`** (`customer_type`, `customer_id`, `file_path`): upload a file from this machine.
+- **New: `clokio_download_crm_file`** (`id`, `file_name`, `save_path`, `overwrite`): read a file (image, PDF text, ZIP entries, text) or save it to disk.
+
+To-dos (`todos` toolset; the key holder's own list):
+
+- **New: `clokio_list_todos`** (`completed`): your to-dos grouped (overdue, today, tomorrow, upcoming, no date).
+- **New: `clokio_create_todo`** (`title`, `description`, `due_date`, `due_time`, `recurrence`, `idempotency_key`): a new to-do.
+- **New: `clokio_update_todo`** (`id`, `title`, `description`, `due_date`, `due_time`, `recurrence`): edit a to-do.
+- **New: `clokio_complete_todo`** (`id`): mark done.
+- **New: `clokio_reopen_todo`** (`id`): mark open again.
+- **New: `clokio_delete_todo`** (`id`): delete a to-do.
+
+184 tools by default (48 with `CLOKIO_TOOLSETS=tasks`). Tests: `test/crm-leads-tools.mjs`, `test/crm-activities-tools.mjs`, `test/crm-customers-tools.mjs`, `test/todos-tools.mjs`, toolsets counts, conformance entries.
+
 ## 0.36.1
 
 From the owner's live test of 0.36.0 (2026-11-09). Descriptions only in the MCP; one backend change. **Backend:** the numeric activity values come from the Clokio backend with branch `feature/invoices-round4`; on an older server they are still strings such as `"69.00"` and nothing else changes. After updating, start a NEW session and check that `clokio_whoami` reports `mcp_version` 0.36.1.
