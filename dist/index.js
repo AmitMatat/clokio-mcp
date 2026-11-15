@@ -3,7 +3,7 @@
  * clokio-mcp - an MCP server for the Clokio Public API.
  *
  * Exposes tasks, projects/clients, employees, attendance, documents, support
- * tickets, invoices and the CRM as MCP tools over stdio. Auth is the per-user CLOKIO_API_KEY (an X-API-Key
+ * tickets, invoices, the CRM and your own to-dos as MCP tools over stdio. Auth is the per-user CLOKIO_API_KEY (an X-API-Key
  * credential); the key carries its own scopes, so this server never
  * re-implements authorization. Documents additionally need a key that "acts
  * as" an employee - the API decides that, not this server.

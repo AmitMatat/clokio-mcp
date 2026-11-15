@@ -208,4 +208,7 @@ has('delete names its rule', t('clokio_delete_crm_activity')?.description, 'crea
 check('reassign requires the code', (t('clokio_reassign_crm_activity')?.inputSchema?.required ?? []).includes('assignee_employee_code'), true);
 check('create requires customer, type and date', ['customer_type', 'customer_id', 'type_id', 'due_on'].every((k) => (t('clokio_create_crm_activity')?.inputSchema?.required ?? []).includes(k)), true);
 
+has('next step says a lead needs leads.view only', t('clokio_get_crm_next_step')?.description, 'a lead needs leads.view only');
+check('next step does not claim clients.view for every route', (t('clokio_get_crm_next_step')?.description ?? '').includes('clients.view for every activity route'), false);
+
 done();

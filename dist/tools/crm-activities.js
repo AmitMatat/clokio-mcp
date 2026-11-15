@@ -1,15 +1,16 @@
-import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { request, seg } from '../client.js';
-import { idempotentPost } from '../idempotency.js';
-import { calendarDate, registerTool } from './helpers.js';
-import { CRM_NEEDS, createKey, customerType, employeeCode, renderCrm, replayNote, subjectPath } from './crm-shared.js';
+import { calendarDate } from './helpers.js';
+import { CRM_NEEDS, RETRY_SAFE, createKey, crmCreate, customerId, customerType, employeeCode, registerCrmTool, renderCrm, subjectPath } from './crm-shared.js';
 const activityId = z.number().int().positive().describe('The activity id (clokio_list_crm_activities)');
-const customerId = z.number().int().positive().describe('The id of the company, contact or lead named by customer_type');
 const PERIODS = ['planned', 'overdue', 'today', 'tomorrow', 'this_week', 'next_week', 'done'];
 /** Who acts and what gates it. */
 const ACTS = ' Acts as the key\'s person (its acts-as employee, else its issuer) with their own permissions: clients.view for every activity route (403 without), ' +
     'and a lead\'s activities need them to work leads (leads.view).' +
+    CRM_NEEDS;
+/** The next step asks a lead's gate only (ruling R4): clients.view for a company or contact, leads.view for a lead. */
+const ACTS_NEXT_STEP = ' Acts as the key\'s person (its acts-as employee, else its issuer) with their own permissions: a company or a contact needs clients.view (403 without), ' +
+    'a lead needs leads.view only (404 without).' +
     CRM_NEEDS;
 const WRITES_ON = ' A write the person may not make on that customer is a 403; an unreachable record is a 404.';
 const BUSY = ' When the activity changed meanwhile the answer is 409 and nothing was written: read it again and retry.';
@@ -38,7 +39,7 @@ const sharedFields = {
     outcome: z.string().max(500).nullable().optional().describe('What came of it, plain text, one line'),
 };
 export function registerCrmActivityTools(server, config) {
-    registerTool(server, config, {
+    registerCrmTool(server, config, {
         name: 'clokio_list_crm_activities',
         description: 'List CRM activities, as the Activities page shows them. assignee: me (the default), all, or an employee code (a departed person\'s code still filters); ' +
             'period: planned (the default), overdue, today, tomorrow, this_week, next_week or done; filters type_id (clokio_list_crm_activity_types) and priority (none, low, normal, high). ' +
@@ -55,7 +56,7 @@ export function registerCrmActivityTools(server, config) {
             query: { assignee: args.assignee, period: args.period, type_id: args.type_id, priority: args.priority, page: args.page },
         })),
     });
-    registerTool(server, config, {
+    registerCrmTool(server, config, {
         name: 'clokio_get_crm_activity',
         description: 'One CRM activity. Answers {activity}: the row fields (clokio_list_crm_activities) plus notes, duration_minutes, assignee_left, origin (crm or linked to a calendar event or to-do), ' +
             'done_by, location, video_url, participants, can {edit, delete, reassign, complete}, editable_fields and locked_hint (why a field cannot be changed). ' +
@@ -63,7 +64,7 @@ export function registerCrmActivityTools(server, config) {
         schema: { id: activityId },
         handler: async (args, cfg) => renderCrm(await request(cfg, `/crm/activities/${seg(args.id)}`)),
     });
-    registerTool(server, config, {
+    registerCrmTool(server, config, {
         name: 'clokio_list_crm_activity_types',
         description: 'The active activity types of the organisation, in order: [{id, name, kind: calendar|todo, outcome_required}]. ' +
             'type_id on create and edit takes one of these; a calendar type also writes the assignee\'s calendar event (left out while the calendar is off), a todo type their My To-Do item; ' +
@@ -72,13 +73,12 @@ export function registerCrmActivityTools(server, config) {
         schema: {},
         handler: (_args, cfg) => request(cfg, '/crm/activity-types'),
     });
-    registerTool(server, config, {
+    registerCrmTool(server, config, {
         name: 'clokio_create_crm_activity',
         description: 'Add an activity (a call, meeting or to-do) to a company, a contact or a lead. customer_type is company, contact or lead and customer_id its id. ' +
             'type_id (clokio_list_crm_activity_types) and due_on are required; assignee_employee_code defaults to the acting employee (an assignee other than them is told). ' +
             'done: true logs it as already done (an outcome-required type then needs outcome; the server answers 422 otherwise). ' +
-            'Every call sends an Idempotency-Key: a fresh one (returned as idempotency_key), or the one you pass. To retry after a timeout pass the SAME idempotency_key ' +
-            'and the same fields: the first answer comes back with "replayed: nothing new was created". Answers {activity, replayed}.' +
+            RETRY_SAFE + 'Answers {activity, replayed}.' +
             LOCAL_TIME + WRITES_ON + WRAPPED + ACTS,
         schema: {
             customer_type: customerType,
@@ -91,15 +91,16 @@ export function registerCrmActivityTools(server, config) {
             idempotency_key: createKey.describe('Reuse the key of an earlier call only to retry THAT call; omit for a new activity'),
         },
         mutates: true,
-        handler: async (args, cfg) => {
-            const key = args.idempotency_key ?? `mcp-${randomUUID()}`;
-            const { customer_type, customer_id, idempotency_key: _k, ...fields } = args;
-            const { res, replayed } = await idempotentPost(cfg, subjectPath(customer_type, customer_id, 'activities'), key, fields);
-            const outcome = replayNote('Activity', res?.activity?.id, replayed);
-            return renderCrm({ ...outcome, ...res, idempotency_key: key });
+        handler: (args, cfg) => {
+            const { customer_type, customer_id, idempotency_key, ...fields } = args;
+            return crmCreate(cfg, subjectPath(customer_type, customer_id, 'activities'), fields, {
+                key: idempotency_key,
+                label: 'Activity',
+                idOf: (res) => res?.activity?.id,
+            });
         },
     });
-    registerTool(server, config, {
+    registerCrmTool(server, config, {
         name: 'clokio_update_crm_activity',
         description: 'Edit an activity: only the fields you give are sent (null clears where the field allows it). The kind (calendar or to-do) is kept; ' +
             'the activity\'s editable_fields say which fields can change (a to-do paired with someone else\'s My To-Do item can be locked). ' +
@@ -117,7 +118,7 @@ export function registerCrmActivityTools(server, config) {
             return renderCrm(await request(cfg, `/crm/activities/${seg(id)}`, { method: 'PATCH', body }));
         },
     });
-    registerTool(server, config, {
+    registerCrmTool(server, config, {
         name: 'clokio_complete_crm_activity',
         description: 'Mark an activity done, with an optional outcome (what came of it). A type that needs an outcome answers 422 without one. ' +
             'A paired My To-Do item is completed with it. Answers {activity}.' +
@@ -129,14 +130,14 @@ export function registerCrmActivityTools(server, config) {
         mutates: true,
         handler: async (args, cfg) => renderCrm(await request(cfg, `/crm/activities/${seg(args.id)}/done`, { method: 'POST', body: { outcome: args.outcome } })),
     });
-    registerTool(server, config, {
+    registerCrmTool(server, config, {
         name: 'clokio_reopen_crm_activity',
         description: 'Reopen a done activity (no body). A paired My To-Do item is reopened with it. Answers {activity}.' + WRITES_ON + BUSY + WRAPPED + ACTS,
         schema: { id: activityId },
         mutates: true,
         handler: async (args, cfg) => renderCrm(await request(cfg, `/crm/activities/${seg(args.id)}/reopen`, { method: 'POST' })),
     });
-    registerTool(server, config, {
+    registerCrmTool(server, config, {
         name: 'clokio_reassign_crm_activity',
         description: 'Give an activity to another assignee, by employee code. An unknown code is a 422 on assignee_employee_code; the new assignee must be allowed to see the customer. ' +
             'The new assignee is told. Answers {activity}.' +
@@ -148,7 +149,7 @@ export function registerCrmActivityTools(server, config) {
             body: { assignee_employee_code: args.assignee_employee_code },
         })),
     });
-    registerTool(server, config, {
+    registerCrmTool(server, config, {
         name: 'clokio_delete_crm_activity',
         description: 'Delete an activity, and the calendar event or My To-Do item paired with it. No undo. Only its creator or an administrator may: otherwise 403 ' +
             '"Only its creator or an administrator can delete this activity." Answers {id}.' +
@@ -157,12 +158,12 @@ export function registerCrmActivityTools(server, config) {
         mutates: 'destructive',
         handler: async (args, cfg) => renderCrm(await request(cfg, `/crm/activities/${seg(args.id)}`, { method: 'DELETE' })),
     });
-    registerTool(server, config, {
+    registerCrmTool(server, config, {
         name: 'clokio_get_crm_next_step',
         description: 'A customer\'s next step: its nearest open activity. customer_type is company, contact or lead and customer_id its id. ' +
             'Answers {next_step: {id, subject, type (the type name), due_on, due_time, all_day, overdue, assignee, open_count} | null}; null when nothing is open. ' +
             'due_on and due_time are the assignee\'s local date and time.' +
-            WRAPPED + ACTS,
+            WRAPPED + ACTS_NEXT_STEP,
         schema: { customer_type: customerType, customer_id: customerId },
         handler: async (args, cfg) => renderCrm(await request(cfg, subjectPath(args.customer_type, args.customer_id, 'next-step'))),
     });

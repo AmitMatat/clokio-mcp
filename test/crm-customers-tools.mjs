@@ -82,12 +82,12 @@ const run = await runTools({
     if (hit.path === '/storage/signed-abc') return { status: 200, headers: { 'content-type': 'text/plain' }, bytes: 'signed storage text' };
     if (hit.method === 'GET' && hit.path === '/crm/companies') {
       return ok(
-        [{ id: 3, name: evil, kind: 'company', website: 'https://x.example', company_number: '12-34', people: [{ contact_id: 4, name: evil }], custom_fields: { region: evil, vip: true } }],
+        [{ id: 3, name: evil, kind: 'company', website: 'https://x.example', company_number: '12-34', people: [{ id: 4, name: evil, emails: [], phones: [] }], custom_fields: { region: evil, vip: true } }],
         { meta: { page: 1, per_page: 25, total: 1, last_page: 1 } },
       );
     }
     if (hit.method === 'GET' && hit.path === '/crm/companies/3') {
-      return ok({ company: { id: 3, name: evil, address: evil, website: evil, company_number: '1-2', color: '#112233', custom_fields: { region: evil, vip: true, empty: null, count: 4, nested: { a: evil, list: [evil, 7] } }, people: [{ contact_id: 4, name: 'Dana', email: 'd@x.example', phone: '050', job_title: evil, receives_invoices: true }], next_step: { id: 1, subject: evil, type: 'Call', assignee: { employee_code: null, name: 'No Code' } } } });
+      return ok({ company: { id: 3, name: evil, address: evil, website: evil, company_number: '1-2', color: '#112233', custom_fields: { region: evil, vip: true, empty: null, count: 4, nested: { a: evil, list: [evil, 7] } }, people: [{ id: 4, name: 'Dana', emails: ['d@x.example'], phones: ['050'], job_title: evil, receives_invoices: true }], next_step: { id: 1, subject: evil, type: 'Call', assignee: { employee_code: null, name: 'No Code' } } } });
     }
     if (hit.method === 'GET' && hit.path.endsWith('/notes')) {
       return ok({ items: [{ type: 'note', id: 5, at: '2026-11-01T10:00:00Z', author: { employee_code: null, name: 'Staff One' }, body_html: `<p>${evil}</p>`, source: 'note', edited: false, can_edit: true }], next_cursor: 'nx' });
@@ -141,14 +141,15 @@ has('download: the signed text comes back', run.text(18), 'signed storage text')
 check('download save_path writes a file', run.text(19).includes('saved_to') && run.text(19).includes('sha256'), true);
 
 for (const [i, label] of [
-  [20, 'body and body_html together'], [21, 'neither body nor body_html'], [22, 'an edit with both'], [23, 'a colour that is not #rrggbb'],
+  [20, 'body and body_html together'], [22, 'an edit with both'], [23, 'a colour that is not #rrggbb'],
   [24, 'an unknown status'], [25, 'an unknown sort'], [26, 'an unknown customer_type'], [27, 'limit 101'],
   [28, 'a short idempotency_key'], [29, 'a custom field value that is an array'],
 ]) {
   check(`${label} is refused locally`, run.errored(i), true);
 }
 const nReq = h.length;
-check('the refused calls sent nothing (20 calls, the signed hop, 4 server-bound = 25 requests)', nReq, 25);
+check('the refused calls sent nothing (19 calls, the signed hop, 6 server-bound = 26 requests; the empty-body add goes to the server, R16)', nReq, 26);
+check('add note with neither body nor body_html goes out as {} and the server answers', h.find((x) => x.method === 'POST' && x.path === '/crm/companies/3/notes' && JSON.stringify(x.body) === '{}') !== undefined, true);
 
 check('a 403 comes through', [run.errored(30), run.text(30).includes('cannot change this customer')], [true, true]);
 check('the CRM-off 422 comes through', [run.errored(31), run.text(31).includes('HTTP 422') && run.text(31).includes('activity filter needs the CRM module')], [true, true]);

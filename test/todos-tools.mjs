@@ -143,4 +143,12 @@ for (const i of [0, 1, 2]) {
   has(`colleague key ${i}: HTTP 403`, run2.text(i), '403');
   has(`colleague key ${i}: the server's words`, run2.text(i), NOT_YOUR_LIST);
 }
+// A monthly recurrence without a day is the server's to default (R16): sent, not refused.
+const run3 = await runTools({
+  toolsets: 'todos',
+  calls: [['clokio_create_todo', { title: 'M', due_date: '2026-12-05', recurrence: { freq: 'monthly' } }]],
+  respond: () => ({ status: 201, json: { status: 'success', message: 'ok', data: { item: { id: 1, title: 'M' }, replayed: false } } }),
+});
+check('monthly recurrence without a day is sent', [run3.errored(0), run3.hits[0]?.body?.recurrence], [false, { freq: 'monthly' }]);
+
 done();

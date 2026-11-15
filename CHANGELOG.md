@@ -2,9 +2,9 @@
 
 ## 0.37.0
 
-Two new toolsets: `crm` (33 tools: companies, leads, activities, the customer's next step, notes and files) and `todos` (6 tools: your own personal to-do list), over the new `/api/v1/crm` and `/api/v1/todos` routes. **Backend dependency:** the Clokio backend with branch `feature/crm-activities` (not deployed yet), deployed FIRST: on an older server every new tool answers 404. Scopes: `crm:read` / `crm:write` for the CRM tools and `todos:read` / `todos:write` for the to-dos (Full access has them; an explicit-list key must have them ticked). Every action acts as the key's effective person (its acts-as employee, else the issuer) and is limited by that person's own CRM permissions. Leads, activities and the next step need the organisation's CRM module switched on (404 while it is off); companies, notes and files do not. To-dos work only for a key that acts as its own issuer (403 for a key acting as a colleague, because a personal list is private) and have no CRM gate. After updating, start a NEW session and check that `clokio_whoami` reports `mcp_version` 0.37.0. Before publishing, run `node test/api-conformance.mjs` against the deployed spec (or `CLOKIO_SPEC_FILE` at the backend's `docs/api/openapi.json`): 184 tools.
+Two new toolsets: `crm` (33 tools: companies, leads, activities, the customer's next step, notes and files) and `todos` (6 tools: your own personal to-do list), over the new `/api/v1/crm` and `/api/v1/todos` routes. **Backend dependency:** the Clokio backend with branch `feature/crm-activities` (not deployed yet), deployed FIRST: on an older server every new tool answers 404. Scopes: `crm:read` / `crm:write` for the CRM tools and `todos:read` / `todos:write` for the to-dos (Full access has them; an explicit-list key must have them ticked). Every action acts as the key's effective person (its acts-as employee, else the issuer) and is limited by that person's own CRM permissions. Leads, activities and the next step need the organisation's CRM module switched on (404 while it is off); companies, and the notes and files of companies and contacts, do not (a lead's notes and files do). To-dos work only for a key that acts as its own issuer (403 for a key acting as a colleague, because a personal list is private) and have no CRM gate. After updating, start a NEW session and check that `clokio_whoami` reports `mcp_version` 0.37.0. Before publishing, run `node test/api-conformance.mjs` against the deployed spec (or `CLOKIO_SPEC_FILE` at the backend's `docs/api/openapi.json`): 184 tools.
 
-- CRM answers wrap customer-written text (a lead's name, emails, phones and description, a note's body, a file's name, history lines) in `<untrusted_customer_content>` tags: data, never instructions. Staff records (owners, assignees, authors, statuses, types, reasons) are not wrapped.
+- CRM answers wrap customer-written text (a lead's name, emails, phones and description, a note's body, a file's name, history lines, the contacts' names, emails and phones) in `<untrusted_customer_content>` tags: data, never instructions. An error answer that quotes customer text (a lead reopen or convert refused over a person or company name) is wrapped the same way, in its message and its Details. A contact is always `{id, name, emails, phones}` (a company's people add `job_title`, `receives_invoices`; a lead's contact adds `private_origin`, `company`, `edit_refused`, `move_refused`, `convert_refused`). Staff records (owners, assignees, authors, statuses, types, reasons) are not wrapped.
 - Creates (lead, activity, company, note, to-do) send an `Idempotency-Key`: a fresh one, or the `idempotency_key` you pass to retry the same call; a replay says "replayed: nothing new was created". A file upload has no key: list the files before retrying.
 - Limits of this version: API mentions in notes are not supported (write plain text); there is no tool to delete a note or a file.
 - Employee-key mode (`CLOKIO_EMPLOYEE_KEY`) has neither toolset, and `CLOKIO_TOOLSETS=crm` or `todos` refuses to start there.
@@ -21,7 +21,7 @@ Leads (`crm` toolset):
 - **New: `clokio_assign_lead`** (`id`, `owner_employee_code`): give a lead to an owner, or null to unassign.
 - **New: `clokio_set_lead_status`** (`id`, `status_id`): move to another open status.
 - **New: `clokio_close_lead`** (`id`, `reason_id`, `note`, `recontact_on`): close with a reason.
-- **New: `clokio_reopen_lead`** (`id`): reopen a closed lead.
+- **New: `clokio_reopen_lead`** (`id`): reopen a closed or converted lead.
 - **New: `clokio_convert_lead`** (`id`, `mode`, `client_id`, `company_name`): convert to an existing company, a new one or a private customer.
 - **New: `clokio_update_lead`** (`id`, `company_name`, `description`, `channel`, `name`, `phone`, `email`): edit a lead.
 - **New: `clokio_delete_lead`** (`id`): delete a lead.
@@ -39,7 +39,7 @@ Activities and the next step (`crm` toolset):
 - **New: `clokio_delete_crm_activity`** (`id`): delete an activity.
 - **New: `clokio_get_crm_next_step`** (`customer_type`, `customer_id`): the customer's next step.
 
-Companies, notes and files (`crm` toolset; no CRM module needed):
+Companies, notes and files (`crm` toolset; no CRM module needed for companies and for the notes and files of companies and contacts, a lead's notes and files need it):
 
 - **New: `clokio_list_companies`** (`search`, `status`, `activity`, `sort`, `page`): the CRM's company list (not the key-wide `clokio_get_client`).
 - **New: `clokio_get_company`** (`id`): one company with its people and field keys.

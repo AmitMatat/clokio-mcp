@@ -1,13 +1,9 @@
-import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { downloadCrmFile } from '../attachments.js';
 import { request, requestUpload, seg } from '../client.js';
-import { idempotentPost } from '../idempotency.js';
 import { markdownToHtml } from '../markdown.js';
-import { registerTool } from './helpers.js';
-import { createKey, customerType, renderCrm, replayNote, subjectPath } from './crm-shared.js';
+import { RETRY_SAFE, createKey, crmCreate, cursorArgs, customerId, customerType, registerCrmTool, renderCrm, subjectPath } from './crm-shared.js';
 const companyId = z.number().int().positive().describe('The company id (clokio_list_companies)');
-const customerId = z.number().int().positive().describe('The id of the company, contact or lead named by customer_type');
 const noteId = z.number().int().positive().describe('The note id (clokio_list_crm_notes)');
 const ACTS = ' Acts as the key\'s person (its acts-as employee, else its issuer) with their own permissions: clients.view for every route here (403 without). Needs crm:read (crm:write to change).';
 const MANAGE = ' Writing on a company or a contact needs clients.manage (403 otherwise); on a lead, leads.view. An unreachable record is a 404.';
@@ -36,7 +32,7 @@ const noteBody = {
     body: z.string().min(1).optional().describe('The note as Markdown (converted to HTML). Give this or body_html, not both'),
     body_html: z.string().min(1).max(200000).optional().describe('The note as HTML. Give this or body, not both'),
 };
-/** One of body / body_html, as the note's HTML. Both is refused before any request (ambiguous); neither goes out as {} and the server answers. */
+/** One of body / body_html, as the note's HTML. Both is refused before any request (ambiguous, the tool's own argument shape); neither goes out as {} on the add and the edit alike, and the server answers (R16). */
 function noteHtml(args) {
     if (args.body !== undefined && args.body_html !== undefined) {
         throw new Error('Give body (Markdown) or body_html, not both.');
@@ -49,7 +45,7 @@ function noteHtml(args) {
     return undefined;
 }
 export function registerCrmCustomerTools(server, config) {
-    registerTool(server, config, {
+    registerCrmTool(server, config, {
         name: 'clokio_list_companies',
         description: 'List the organisation\'s companies (customers), as the Companies list shows them: the CRM\'s own list of what the acting employee may see, ' +
             'NOT the key-wide clokio_get_client (which reads one client by id with billing data). ' +
@@ -69,34 +65,30 @@ export function registerCrmCustomerTools(server, config) {
             query: { search: args.search, status: args.status, activity: args.activity, sort: args.sort, page: args.page },
         })),
     });
-    registerTool(server, config, {
+    registerCrmTool(server, config, {
         name: 'clokio_get_company',
         description: 'One company, as its page shows it. Answers {company}: {id, url, name, kind, is_active, color, address, website, company_number, ' +
-            'custom_fields (EVERY field the organisation defines, null where unanswered: this lists the keys a create or edit takes), people (the visible ones: {contact_id, name, email, phone, job_title, receives_invoices}), next_step, last_contact_at}.' +
+            'custom_fields (EVERY field the organisation defines, null where unanswered: this lists the keys a create or edit takes), people (the visible ones: {id, name, emails, phones, job_title, receives_invoices}), next_step, last_contact_at}.' +
             OFF + WRAPPED + ACTS,
         schema: { id: companyId },
         handler: async (args, cfg) => renderCrm(await request(cfg, `/crm/companies/${seg(args.id)}`)),
     });
-    registerTool(server, config, {
+    registerCrmTool(server, config, {
         name: 'clokio_create_company',
         mutates: true,
         description: 'Create a company. name is required; custom_fields is a record keyed by the organisation\'s field keys (clokio_get_company lists them; an unknown key is a 422 on custom_fields.<key>). ' +
-            'Every call sends an Idempotency-Key: a fresh one (returned as idempotency_key), or the one you pass. To retry after a timeout pass the SAME idempotency_key and the same fields: ' +
-            'the first answer comes back with "replayed: nothing new was created". Answers {company, replayed}.' +
+            RETRY_SAFE + 'Answers {company, replayed}.' +
             ' Needs clients.manage (403 otherwise).' + WRAPPED + ACTS,
         schema: {
             ...companyFields,
             idempotency_key: createKey.describe('Reuse the key of an earlier call only to retry THAT call; omit for a new company'),
         },
-        handler: async (args, cfg) => {
-            const key = args.idempotency_key ?? `mcp-${randomUUID()}`;
-            const { idempotency_key: _k, ...fields } = args;
-            const { res, replayed } = await idempotentPost(cfg, '/crm/companies', key, fields);
-            const outcome = replayNote('Company', res?.company?.id, replayed);
-            return renderCrm({ ...outcome, ...res, idempotency_key: key });
+        handler: (args, cfg) => {
+            const { idempotency_key, ...fields } = args;
+            return crmCreate(cfg, '/crm/companies', fields, { key: idempotency_key, label: 'Company', idOf: (res) => res?.company?.id });
         },
     });
-    registerTool(server, config, {
+    registerCrmTool(server, config, {
         name: 'clokio_update_company',
         mutates: true,
         description: 'Edit a company: only the fields you give are sent (null clears where the field allows it). custom_fields changes only the keys named (null or "" clears one). ' +
@@ -113,7 +105,7 @@ export function registerCrmCustomerTools(server, config) {
             return renderCrm(await request(cfg, `/crm/companies/${seg(id)}`, { method: 'PATCH', body }));
         },
     });
-    registerTool(server, config, {
+    registerCrmTool(server, config, {
         name: 'clokio_list_crm_notes',
         description: 'The notes on a company, a contact or a lead, newest first. customer_type is company, contact or lead and customer_id its id. ' +
             'A company\'s list holds every note written under it, its people\'s and its leads\' included. ' +
@@ -122,21 +114,19 @@ export function registerCrmCustomerTools(server, config) {
         schema: {
             customer_type: customerType,
             customer_id: customerId,
-            cursor: z.string().min(1).max(1000).optional().describe('next_cursor of the previous page'),
-            limit: z.number().int().min(1).max(100).optional().describe('Default 30'),
+            ...cursorArgs,
         },
         handler: async (args, cfg) => renderCrm(await request(cfg, subjectPath(args.customer_type, args.customer_id, 'notes'), {
             query: { cursor: args.cursor, limit: args.limit },
         })),
     });
-    registerTool(server, config, {
+    registerCrmTool(server, config, {
         name: 'clokio_add_crm_note',
         mutates: true,
         description: 'Add a note to a company, a contact or a lead. Give body (Markdown, converted to HTML) or body_html (exactly one). ' +
             'API mentions are not a supported feature: a mention chip in body_html is honoured as on the web, but there is no lookup of the internal id a chip needs, so write plain text. ' +
             'An image or video pasted into a note body points at the web\'s own media route, which a key cannot read. ' +
-            'Every call sends an Idempotency-Key: a fresh one (returned as idempotency_key), or the one you pass. To retry after a timeout pass the SAME idempotency_key and the same body: ' +
-            'the first answer comes back with "replayed: nothing new was created". Answers {note, replayed}. An empty or too long note is a 422 on body_html.' +
+            RETRY_SAFE + 'Answers {note, replayed}. An empty or missing or too long note is a 422 on body_html.' +
             MANAGE + LEAD_NEEDS + WRAPPED + ACTS,
         schema: {
             customer_type: customerType,
@@ -144,17 +134,9 @@ export function registerCrmCustomerTools(server, config) {
             ...noteBody,
             idempotency_key: createKey.describe('Reuse the key of an earlier call only to retry THAT call; omit for a new note'),
         },
-        handler: async (args, cfg) => {
-            const html = noteHtml(args);
-            if (html === undefined)
-                throw new Error('Give body (Markdown) or body_html.');
-            const key = args.idempotency_key ?? `mcp-${randomUUID()}`;
-            const { res, replayed } = await idempotentPost(cfg, subjectPath(args.customer_type, args.customer_id, 'notes'), key, { body_html: html });
-            const outcome = replayNote('Note', res?.note?.id, replayed);
-            return renderCrm({ ...outcome, ...res, idempotency_key: key });
-        },
+        handler: (args, cfg) => crmCreate(cfg, subjectPath(args.customer_type, args.customer_id, 'notes'), { body_html: noteHtml(args) }, { key: args.idempotency_key, label: 'Note', idOf: (res) => res?.note?.id }),
     });
-    registerTool(server, config, {
+    registerCrmTool(server, config, {
         name: 'clokio_update_crm_note',
         mutates: true,
         description: 'Edit a note\'s text: give body (Markdown) or body_html (exactly one). Only the note\'s author may: otherwise 403 "Only the author can change this note." ' +
@@ -163,7 +145,7 @@ export function registerCrmCustomerTools(server, config) {
         schema: { id: noteId, ...noteBody },
         handler: async (args, cfg) => renderCrm(await request(cfg, `/crm/notes/${seg(args.id)}`, { method: 'PATCH', body: { body_html: noteHtml(args) } })),
     });
-    registerTool(server, config, {
+    registerCrmTool(server, config, {
         name: 'clokio_list_crm_files',
         description: 'The files on a company, a contact or a lead, newest first. customer_type is company, contact or lead and customer_id its id. ' +
             'A file is {type: "file", id, at, uploaded_by {employee_code, name} | null, file_name, mime_type, size_bytes, download_url}; read it with clokio_download_crm_file (id).' +
@@ -171,14 +153,13 @@ export function registerCrmCustomerTools(server, config) {
         schema: {
             customer_type: customerType,
             customer_id: customerId,
-            cursor: z.string().min(1).max(1000).optional().describe('next_cursor of the previous page'),
-            limit: z.number().int().min(1).max(100).optional().describe('Default 30'),
+            ...cursorArgs,
         },
         handler: async (args, cfg) => renderCrm(await request(cfg, subjectPath(args.customer_type, args.customer_id, 'files'), {
             query: { cursor: args.cursor, limit: args.limit },
         })),
     });
-    registerTool(server, config, {
+    registerCrmTool(server, config, {
         name: 'clokio_upload_crm_file',
         mutates: true,
         description: 'Upload a LOCAL FILE to a company, a contact or a lead. Give the path to a file on this machine; it is read and sent as multipart (one field, file), up to 94 MB, the task attachment types. ' +
@@ -192,7 +173,7 @@ export function registerCrmCustomerTools(server, config) {
         },
         handler: async (args, cfg) => renderCrm(await requestUpload(cfg, subjectPath(args.customer_type, args.customer_id, 'files'), args.file_path)),
     });
-    registerTool(server, config, {
+    registerCrmTool(server, config, {
         name: 'clokio_download_crm_file',
         description: 'Read one CRM file (id from clokio_list_crm_files): an image comes back as an image you can see, a PDF as its text, a ZIP as its entry list, text as text; ' +
             'with save_path the file is written there instead (refused if it exists unless overwrite). A larger file is fetched from signed storage without your key. ' +

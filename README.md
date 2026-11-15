@@ -101,7 +101,7 @@ through it.
 
 ## Tools
 
-184 tools across nine areas. Read-only tools carry the MCP `readOnlyHint`; writes
+184 tools across ten areas. Read-only tools carry the MCP `readOnlyHint`; writes
 are marked mutating (deletes are `destructive`).
 
 | Area | Tools |
@@ -164,8 +164,8 @@ answer 404).
 - **Who acts:** every action acts as the key's effective person (its acts-as employee, else the
   issuer) and is limited by that person's own CRM permissions.
 - **The CRM module:** leads, activities and the customer's next step need the organisation's CRM
-  module switched on (Settings > Modules); while it is off they answer 404. Companies, notes
-  and files do not need it.
+  module switched on (Settings > Modules); while it is off they answer 404. Companies, and the notes and
+  files of companies and contacts, do not; a LEAD's notes and files do (404 while the module is off).
 - **To-dos are private:** they work only for a key that acts as its own issuer. A key acting as
   a colleague gets 403 on every to-do tool, and there is no CRM gate.
 - **Creates are retry-safe:** a new lead, activity, company, note or to-do sends an
