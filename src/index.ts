@@ -2,8 +2,8 @@
 /**
  * clokio-mcp - an MCP server for the Clokio Public API.
  *
- * Exposes tasks, projects/clients, employees, attendance, documents and support
- * tickets as MCP tools over stdio. Auth is the per-user CLOKIO_API_KEY (an X-API-Key
+ * Exposes tasks, projects/clients, employees, attendance, documents, support
+ * tickets, invoices and the CRM as MCP tools over stdio. Auth is the per-user CLOKIO_API_KEY (an X-API-Key
  * credential); the key carries its own scopes, so this server never
  * re-implements authorization. Documents additionally need a key that "acts
  * as" an employee - the API decides that, not this server.
@@ -24,6 +24,7 @@ import { registerAttendanceTools } from './tools/attendance.js';
 import { registerDocTools } from './tools/docs.js';
 import { registerEmployeeIdentityTools, registerEmployeeModeTools } from './tools/employee.js';
 import { registerTicketTools } from './tools/tickets.js';
+import { registerCrmLeadTools } from './tools/crm-leads.js';
 
 
 /**
@@ -39,7 +40,7 @@ import { registerTicketTools } from './tools/tickets.js';
  * to resolve names to ids, so it is always registered. Naming a toolset that
  * does not exist is refused at startup rather than silently ignored.
  */
-const OPTIONAL_TOOLSETS = ['tasks', 'employees', 'attendance', 'docs', 'tickets', 'invoices'] as const;
+const OPTIONAL_TOOLSETS = ['tasks', 'employees', 'attendance', 'docs', 'tickets', 'invoices', 'crm'] as const;
 type Toolset = (typeof OPTIONAL_TOOLSETS)[number];
 
 function selectedToolsets(): Set<Toolset> {
@@ -143,6 +144,8 @@ async function main(): Promise<void> {
   if (toolsets.has('docs')) registerDocTools(server, config);
   if (toolsets.has('tickets')) registerTicketTools(server, config);
   if (toolsets.has('invoices')) registerInvoiceTools(server, config);
+  // The CRM (/api/v1/crm): admin key only, so EMPLOYEE_TOOLSETS does not name it.
+  if (toolsets.has('crm')) registerCrmLeadTools(server, config);
 
   const transport = new StdioServerTransport();
   await server.connect(transport);

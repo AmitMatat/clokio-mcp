@@ -43,7 +43,7 @@ check('tasks toolset DROPS employees', tasksOnly.names?.includes('clokio_list_em
 check('tasks toolset DROPS the time-logging tools', tasksOnly.names?.includes('clokio_log_time'), false);
 const attendanceOnly = listTools({ CLOKIO_TOOLSETS: 'attendance' });
 check('attendance toolset carries the four time-logging tools', ['clokio_log_time', 'clokio_start_timer', 'clokio_stop_timer', 'clokio_get_active_timer'].every((n) => attendanceOnly.names?.includes(n)), true);
-check('default registers 145 tools', all.names?.length, 145);
+check('default registers 158 tools', all.names?.length, 158);
 check('tasks toolset carries the project task summary', tasksOnly.names?.includes('clokio_get_project_task_summary'), true);
 check('tasks toolset registers 48 tools', tasksOnly.names?.length, 48);
 check('tasks toolset carries the project activity feed', tasksOnly.names?.includes('clokio_list_project_activity'), true);
@@ -69,6 +69,18 @@ check('tickets toolset carries the download and draft tools', ['clokio_download_
 check('tasks toolset carries the inline media tool', tasksOnly.names?.includes('clokio_download_task_media'), true);
 check('tickets toolset keeps clokio_whoami (projects always on)', ticketsOnly.names?.includes('clokio_whoami'), true);
 check('tasks toolset DROPS tickets', tasksOnly.names?.includes('clokio_list_tickets'), false);
+
+// The crm toolset (0.37.0): the lead tools over /api/v1/crm/leads. Admin key
+// only: the employee surface has no CRM routes.
+const crmOnly = listTools({ CLOKIO_TOOLSETS: 'crm' });
+check('crm toolset keeps clokio_whoami (projects always on)', crmOnly.names?.includes('clokio_whoami'), true);
+check('crm toolset carries the lead tools', ['clokio_list_leads', 'clokio_get_lead', 'clokio_create_lead', 'clokio_convert_lead', 'clokio_delete_lead'].every((n) => crmOnly.names?.includes(n)), true);
+check('crm toolset DROPS clokio_create_task', crmOnly.names?.includes('clokio_create_task'), false);
+check('crm toolset DROPS tickets', crmOnly.names?.includes('clokio_list_tickets'), false);
+check('tasks toolset DROPS the lead tools', tasksOnly.names?.includes('clokio_list_leads'), false);
+const crmEmployee = listTools({ CLOKIO_API_KEY: '', CLOKIO_EMPLOYEE_KEY: 'ek_x', CLOKIO_TOOLSETS: 'crm' });
+check('employee mode with CLOKIO_TOOLSETS=crm refuses to start', crmEmployee.code !== 0 && crmEmployee.names === null, true);
+check('and names crm', crmEmployee.stderr.includes('employee surface does not have: crm'), true);
 
 console.log(fails === 0 ? '\nALL PASS' : `\n${fails} FAILED`);
 process.exit(fails ? 1 : 0);

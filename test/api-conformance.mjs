@@ -241,6 +241,20 @@ const TOOL_CALLS = [
   // 0.35.0: billing month filters and compact; include on get_invoice is a comma list.
   { tool: 'clokio_get_billing_month', method: 'get', path: '/invoices/month', query: ['month', 'client_ids', 'only_not_invoiced', 'exclude_dismissed', 'min_billable_hours', 'compact', 'per_page', 'page'] },
   { tool: 'clokio_get_client_unbilled', method: 'get', path: '/clients/{id}/unbilled', query: ['month', 'include'] },
+  // 0.37.0: the crm toolset, leads (crm-leads.ts; backend /api/v1/crm/leads).
+  { tool: 'clokio_list_leads', method: 'get', path: '/crm/leads', query: ['tab', 'status_id', 'channel', 'owner_employee_code', 'page'] },
+  { tool: 'clokio_get_lead_options', method: 'get', path: '/crm/leads/options', query: [] },
+  { tool: 'clokio_get_lead', method: 'get', path: '/crm/leads/{id}', query: [] },
+  { tool: 'clokio_list_lead_history', method: 'get', path: '/crm/leads/{id}/history', query: ['cursor', 'limit'] },
+  { tool: 'clokio_create_lead', method: 'post', path: '/crm/leads', query: [], body: ['name', 'phone', 'email', 'company_name', 'description', 'channel', 'owner_employee_code'] },
+  { tool: 'clokio_take_lead', method: 'post', path: '/crm/leads/{id}/take', query: [], body: ['seen_owner_employee_code'] },
+  { tool: 'clokio_assign_lead', method: 'post', path: '/crm/leads/{id}/assign', query: [], body: ['owner_employee_code'] },
+  { tool: 'clokio_set_lead_status', method: 'post', path: '/crm/leads/{id}/status', query: [], body: ['status_id'] },
+  { tool: 'clokio_close_lead', method: 'post', path: '/crm/leads/{id}/close', query: [], body: ['reason_id', 'note', 'recontact_on'] },
+  { tool: 'clokio_reopen_lead', method: 'post', path: '/crm/leads/{id}/reopen', query: [], body: [] },
+  { tool: 'clokio_convert_lead', method: 'post', path: '/crm/leads/{id}/convert', query: [], body: ['mode', 'client_id', 'company_name'] },
+  { tool: 'clokio_update_lead', method: 'patch', path: '/crm/leads/{id}', query: [], body: ['company_name', 'description', 'channel', 'name', 'phone', 'email'] },
+  { tool: 'clokio_delete_lead', method: 'delete', path: '/crm/leads/{id}', query: [] },
 ];
 
 let fails = 0;
@@ -323,7 +337,7 @@ for (const call of TOOL_CALLS) {
 // Every tool the server registers must appear above, or a new tool could ship
 // unchecked - which is exactly how the broken ones got out.
 const registered = new Set();
-for (const file of ['tasks', 'projects', 'employees', 'attendance', 'docs', 'tickets', 'invoices']) {
+for (const file of ['tasks', 'projects', 'employees', 'attendance', 'docs', 'tickets', 'invoices', 'crm-leads']) {
   const src = await readFile(new URL(`../src/tools/${file}.ts`, import.meta.url), 'utf8');
   for (const m of src.matchAll(/name:\s*'(clokio_[a-z_]+)'/g)) registered.add(m[1]);
 }

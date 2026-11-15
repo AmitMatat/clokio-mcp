@@ -6,6 +6,11 @@ import { ClokioApiError, ClokioConfig, request, requestUpload, seg } from '../cl
 import { calendarDate, registerTool } from './helpers.js';
 import { downloadTicketAttachment } from '../attachments.js';
 import { defuse, wrapInline, wrapUntrusted } from '../untrusted.js';
+import { IDEMPOTENCY_KEY, idempotentPost, isReplay } from '../idempotency.js';
+
+// Moved to ../idempotency.ts (0.37.0, shared with the CRM tools); re-exported
+// so existing importers of this module keep working.
+export { IDEMPOTENCY_KEY, isReplay };
 
 /**
  * Tickets (the support inbox) over /api/v1/tickets, /contacts, /inboxes,
@@ -749,29 +754,6 @@ export async function withOlderServerHint<T>(call: () => Promise<T>, explain?: s
   }
 }
 
-/**
- * E7 (0.25.0): whether a successful idempotent write was a REPLAY of an
- * earlier answer: the `Idempotency-Replayed: true` header, or `replayed: true`
- * in the answer's data. A replay wrote nothing and sent nothing.
- */
-export function isReplay(headers: Headers | null, data: any): boolean {
-  return headers?.get('idempotency-replayed')?.trim().toLowerCase() === 'true' || data?.replayed === true;
-}
-
-/** An idempotent POST that also reports whether the server replayed it. */
-async function idempotentPost(cfg: ClokioConfig, path: string, key: string, body: unknown): Promise<{ res: any; replayed: boolean }> {
-  let headers: Headers | null = null;
-  const res = await request<any>(cfg, path, {
-    method: 'POST',
-    headers: { 'Idempotency-Key': key },
-    body,
-    onHeaders: (h) => {
-      headers = h;
-    },
-  });
-  return { res, replayed: isReplay(headers, res) };
-}
-
 /** The hint for a plain 404 / a 405 on a route the 0.25 API added (no ticket to open first). */
 export const NEW_ROUTE_HINT = 'One possible cause: this Clokio server predates the 0.25 API and does not have this route yet.';
 
@@ -988,9 +970,6 @@ export function renderWhatsAppTemplates(res: any, inboxIdArg: number): string {
     ...blocks,
   ].join('\n\n');
 }
-
-/** The Idempotency-Key shape the server accepts (8-191 of A-Za-z0-9 . _ : -). */
-export const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{8,191}$/;
 
 export function registerTicketTools(server: McpServer, config: ClokioConfig): void {
   registerTool(server, config, {
