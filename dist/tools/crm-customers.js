@@ -7,7 +7,7 @@ const companyId = z.number().int().positive().describe('The company id (clokio_l
 const noteId = z.number().int().positive().describe('The note id (clokio_list_crm_notes)');
 const ACTS = ' Acts as the key\'s person (its acts-as employee, else its issuer) with their own permissions: clients.view for every route here (403 without). Needs crm:read (crm:write to change).';
 const MANAGE = ' Writing on a company or a contact needs clients.manage (403 otherwise); on a lead, leads.view. An unreachable record is a 404.';
-const LEAD_NEEDS = ' Companies and contacts work whether or not the CRM module is on; a LEAD\'s notes and files need the CRM module on (404 otherwise) and leads.view.';
+const LEAD_NEEDS = ' Companies and contacts work whether or not the CRM module is on; a LEAD\'s notes and files need the CRM module on (404 otherwise) and leads.view, wherever they show: while it is off, a note or file written on a lead is also left out of its company\'s and its person\'s lists and is a 404 on its own.';
 const WRAPPED = ' Text about a customer (names, address, website, company number, custom field answers, note bodies, file names, people\'s details) comes back inside <untrusted_customer_content>; staff names stay plain.';
 const PAGED = ' Paged by cursor: {items, next_cursor}; pass next_cursor as cursor to continue (limit 1..100, default 30).';
 const OFF = ' While the CRM module is off, next_step and last_contact_at are absent, and the activity filter and the next_step sort answer 422.';
@@ -108,7 +108,7 @@ export function registerCrmCustomerTools(server, config) {
     registerCrmTool(server, config, {
         name: 'clokio_list_crm_notes',
         description: 'The notes on a company, a contact or a lead, newest first. customer_type is company, contact or lead and customer_id its id. ' +
-            'A company\'s list holds every note written under it, its people\'s and its leads\' included. ' +
+            'A company\'s list holds every note written under it: its people\'s, and its leads\' only while the CRM module is on (a person\'s list holds their leads\' notes on the same condition). ' +
             'A note is {type: "note", id, at, author {employee_code, name} | null, body_html, source: note|imported, edited, can_edit}.' +
             PAGED + LEAD_NEEDS + WRAPPED + ACTS,
         schema: {
@@ -148,6 +148,7 @@ export function registerCrmCustomerTools(server, config) {
     registerCrmTool(server, config, {
         name: 'clokio_list_crm_files',
         description: 'The files on a company, a contact or a lead, newest first. customer_type is company, contact or lead and customer_id its id. ' +
+            'A company\'s list holds every file uploaded under it: its people\'s, and its leads\' only while the CRM module is on (a person\'s list likewise). ' +
             'A file is {type: "file", id, at, uploaded_by {employee_code, name} | null, file_name, mime_type, size_bytes, download_url}; read it with clokio_download_crm_file (id).' +
             PAGED + LEAD_NEEDS + WRAPPED + ACTS,
         schema: {

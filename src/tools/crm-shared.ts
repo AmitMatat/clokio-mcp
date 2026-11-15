@@ -62,7 +62,8 @@ export const CUSTOMER_TEXT_NOTE =
 /**
  * The scope and module sentence. Only on the lead, activity and next-step
  * tools: companies and the notes and files of companies and contacts do not
- * need the CRM module (ruling R5); a lead's notes and files do.
+ * need the CRM module (ruling R5); a lead's notes and files do, also where
+ * they show on its company and person (the server's lead-row rule).
  */
 export const CRM_NEEDS =
   ' Needs crm:read (crm:write to change) and the acting employee\'s own CRM permissions; the CRM module must be on (404 otherwise).';
