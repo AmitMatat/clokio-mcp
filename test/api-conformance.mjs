@@ -270,6 +270,25 @@ const TOOL_CALLS = [
   { tool: 'clokio_get_crm_next_step', method: 'get', path: '/crm/companies/{id}/next-step', query: [] },
   { tool: 'clokio_get_crm_next_step', method: 'get', path: '/crm/contacts/{id}/next-step', query: [] },
   { tool: 'clokio_get_crm_next_step', method: 'get', path: '/crm/leads/{id}/next-step', query: [] },
+  // 0.37.0: companies, CRM notes and CRM files (crm-customers.ts).
+  { tool: 'clokio_list_companies', method: 'get', path: '/crm/companies', query: ['search', 'status', 'activity', 'sort', 'page'] },
+  { tool: 'clokio_get_company', method: 'get', path: '/crm/companies/{id}', query: [] },
+  { tool: 'clokio_create_company', method: 'post', path: '/crm/companies', query: [], body: ['name', 'address', 'color', 'website', 'company_number', 'custom_fields'] },
+  { tool: 'clokio_update_company', method: 'patch', path: '/crm/companies/{id}', query: [], body: ['name', 'address', 'color', 'website', 'company_number', 'custom_fields', 'is_active'] },
+  { tool: 'clokio_list_crm_notes', method: 'get', path: '/crm/companies/{id}/notes', query: ['cursor', 'limit'] },
+  { tool: 'clokio_add_crm_note', method: 'post', path: '/crm/companies/{id}/notes', query: [], body: ['body_html'] },
+  { tool: 'clokio_list_crm_files', method: 'get', path: '/crm/companies/{id}/files', query: ['cursor', 'limit'] },
+  { tool: 'clokio_upload_crm_file', method: 'post', path: '/crm/companies/{id}/files', query: [] },
+  { tool: 'clokio_list_crm_notes', method: 'get', path: '/crm/contacts/{id}/notes', query: ['cursor', 'limit'] },
+  { tool: 'clokio_add_crm_note', method: 'post', path: '/crm/contacts/{id}/notes', query: [], body: ['body_html'] },
+  { tool: 'clokio_list_crm_files', method: 'get', path: '/crm/contacts/{id}/files', query: ['cursor', 'limit'] },
+  { tool: 'clokio_upload_crm_file', method: 'post', path: '/crm/contacts/{id}/files', query: [] },
+  { tool: 'clokio_list_crm_notes', method: 'get', path: '/crm/leads/{id}/notes', query: ['cursor', 'limit'] },
+  { tool: 'clokio_add_crm_note', method: 'post', path: '/crm/leads/{id}/notes', query: [], body: ['body_html'] },
+  { tool: 'clokio_list_crm_files', method: 'get', path: '/crm/leads/{id}/files', query: ['cursor', 'limit'] },
+  { tool: 'clokio_upload_crm_file', method: 'post', path: '/crm/leads/{id}/files', query: [] },
+  { tool: 'clokio_update_crm_note', method: 'patch', path: '/crm/notes/{id}', query: [], body: ['body_html'] },
+  { tool: 'clokio_download_crm_file', method: 'get', path: '/crm/files/{id}', query: [] },
 ];
 
 let fails = 0;
@@ -352,7 +371,7 @@ for (const call of TOOL_CALLS) {
 // Every tool the server registers must appear above, or a new tool could ship
 // unchecked - which is exactly how the broken ones got out.
 const registered = new Set();
-for (const file of ['tasks', 'projects', 'employees', 'attendance', 'docs', 'tickets', 'invoices', 'crm-leads', 'crm-activities']) {
+for (const file of ['tasks', 'projects', 'employees', 'attendance', 'docs', 'tickets', 'invoices', 'crm-leads', 'crm-activities', 'crm-customers']) {
   const src = await readFile(new URL(`../src/tools/${file}.ts`, import.meta.url), 'utf8');
   for (const m of src.matchAll(/name:\s*'(clokio_[a-z_]+)'/g)) registered.add(m[1]);
 }

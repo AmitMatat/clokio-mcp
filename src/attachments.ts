@@ -325,6 +325,26 @@ export async function downloadTicketAttachment(
 }
 
 /**
+ * Download one CRM file (GET /api/v1/crm/files/{id}): the bytes (200) or a 302
+ * to a signed URL, which requestRawBytes follows WITHOUT the key. A CRM file is
+ * the customer's content, so its text, PDF text and ZIP entry names come back
+ * inside the untrusted wrapper; the name is a type hint only.
+ */
+export async function downloadCrmFile(
+  config: ClokioConfig,
+  fileId: number,
+  opts: { fileName?: string; savePath?: string; overwrite?: boolean }
+): Promise<unknown> {
+  const { buffer, contentType, fileName } = await requestRawBytes(config, `/crm/files/${seg(fileId)}`);
+  return renderDownload(buffer, contentType, {
+    savePath: opts.savePath,
+    overwrite: opts.overwrite,
+    fileName: typeHintOnly(opts.fileName ?? fileName),
+    wrap: true,
+  });
+}
+
+/**
  * Inline task media (field report F1): the storage path of an image or
  * video pasted into a task's HTML, editor shape only, one file deep. It is
  * matched ANYWHERE in the html, so `/tasks/media/<path>` and an old absolute

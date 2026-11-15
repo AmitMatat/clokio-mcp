@@ -80,6 +80,12 @@ const INLINE_KEYS = new Set([
   'move_refused',
   'convert_refused',
   'reopen_refused',
+  // A company's own details and a person's job title (Task 11): typed by staff
+  // about a customer, so customer data too.
+  'address',
+  'website',
+  'company_number',
+  'job_title',
 ]);
 
 /** Below one of these keys nothing is wrapped: a staff person or a setting. */
@@ -110,6 +116,14 @@ export function wrapCustomerText(value: unknown, key?: string, staff = false): u
     return value;
   }
   if (Array.isArray(value)) return value.map((item) => wrapCustomerText(item, key));
+  // A company's custom fields are a record keyed by the ORGANISATION's field
+  // keys, which no fixed key set can name: every string value is a short
+  // answer staff typed about the customer (ruling R16), wrapped whatever its key.
+  if (key === 'custom_fields' && value !== null && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([k, v]) => [k, typeof v === 'string' ? wrapInline(v) : v]),
+    );
+  }
   if (value !== null && typeof value === 'object') {
     return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, wrapCustomerText(v, k)]));
   }

@@ -26,6 +26,7 @@ import { registerEmployeeIdentityTools, registerEmployeeModeTools } from './tool
 import { registerTicketTools } from './tools/tickets.js';
 import { registerCrmLeadTools } from './tools/crm-leads.js';
 import { registerCrmActivityTools } from './tools/crm-activities.js';
+import { registerCrmCustomerTools } from './tools/crm-customers.js';
 /**
  * The optional tool groups a session can turn OFF.
  *
@@ -134,6 +135,7 @@ async function main() {
     if (toolsets.has('crm')) {
         registerCrmLeadTools(server, config);
         registerCrmActivityTools(server, config);
+        registerCrmCustomerTools(server, config);
     }
     const transport = new StdioServerTransport();
     await server.connect(transport);
