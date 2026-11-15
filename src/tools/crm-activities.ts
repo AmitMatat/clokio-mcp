@@ -216,8 +216,9 @@ export function registerCrmActivityTools(server: McpServer, config: ClokioConfig
   registerTool(server, config, {
     name: 'clokio_get_crm_next_step',
     description:
-      'A customer\'s next step: its nearest open activity (and the open count). customer_type is company, contact or lead and customer_id its id; ' +
-      'null when nothing is open. due_on and due_time in it are the assignee\'s local date and time.' +
+      'A customer\'s next step: its nearest open activity. customer_type is company, contact or lead and customer_id its id. ' +
+      'Answers {next_step: {id, subject, type (the type name), due_on, due_time, all_day, overdue, assignee, open_count} | null}; null when nothing is open. ' +
+      'due_on and due_time are the assignee\'s local date and time.' +
       WRAPPED + ACTS,
     schema: { customer_type: customerType, customer_id: customerId },
     handler: async (args, cfg) => renderCrm(await request(cfg, subjectPath(args.customer_type, args.customer_id, 'next-step'))),
