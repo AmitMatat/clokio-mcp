@@ -165,8 +165,9 @@ answer 404).
   issuer) and is limited by that person's own CRM permissions.
 - **The CRM module:** leads, activities and the customer's next step need the organisation's CRM
   module switched on (Settings > Modules); while it is off they answer 404. Companies, and the notes and
-  files of companies and contacts, do not; a LEAD's notes and files do, wherever they show: while the
-  module is off they are 404 and left out of the lead's company's and person's lists too.
+  files of companies and contacts, do not; a LEAD's notes and files do, wherever they show, until the
+  lead is converted: while the module is off they are 404 and left out of the lead's company's and
+  person's lists too. Once the lead is converted they belong to the customer and stay there.
 - **To-dos are private:** they work only for a key that acts as its own issuer. A key acting as
   a colleague gets 403 on every to-do tool, and there is no CRM gate.
 - **Creates are retry-safe:** a new lead, activity, company, note or to-do sends an

@@ -213,9 +213,11 @@ has('list_companies says next_step and last_contact_at are absent while CRM is o
 for (const n of ['clokio_list_crm_notes', 'clokio_add_crm_note', 'clokio_list_crm_files', 'clokio_upload_crm_file', 'clokio_download_crm_file']) {
   has(`${n} says a lead's notes and files need the CRM module`, t(n)?.description, "LEAD's notes and files need the CRM module");
   has(`${n} says a lead's rows leave its company's and person's lists while CRM is off`, t(n)?.description, "left out of its company's and its person's lists");
+  has(`${n} says the rule holds until the lead is converted`, t(n)?.description, 'until the lead is converted');
+  has(`${n} says a converted lead's rows belong to the customer`, t(n)?.description, 'Once the lead is converted they belong to the customer');
 }
-has('list_crm_notes says a company shows its leads\' notes only while CRM is on', t('clokio_list_crm_notes')?.description, "its leads' only while the CRM module is on");
-has('list_crm_files says a company shows its leads\' files only while CRM is on', t('clokio_list_crm_files')?.description, "its leads' only while the CRM module is on");
+has('list_crm_notes says a company shows its leads\' notes only while CRM is on or once converted', t('clokio_list_crm_notes')?.description, "its leads' only while the CRM module is on or once the lead is converted");
+has('list_crm_files says a company shows its leads\' files only while CRM is on or once converted', t('clokio_list_crm_files')?.description, "its leads' only while the CRM module is on or once the lead is converted");
 check('list_crm_notes no longer says its leads\' notes are always included', (t('clokio_list_crm_notes')?.description ?? '').includes("its leads' included"), false);
 has('add note says mentions are not supported', t('clokio_add_crm_note')?.description, 'API mentions are not a supported feature');
 has('upload says there is no Idempotency-Key', t('clokio_upload_crm_file')?.description, 'NO Idempotency-Key');
