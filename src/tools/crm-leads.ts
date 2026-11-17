@@ -262,7 +262,7 @@ export function registerCrmLeadTools(server: McpServer, config: ClokioConfig): v
       'Convert a lead to a customer. mode: existing (client_id, an active company of your organisation or the person\'s own private customer), ' +
       'new (a new company named company_name) or private (a private customer named after the person); the server answers 422 when the mode\'s field is missing. ' +
       'The person is linked to the customer and the ' +
-      'lead\'s notes, files and activities follow it. Taking the person away from the company they belong to needs the acting employee\'s clients.manage ' +
+      'lead\'s notes and files move to the customer; its activities with no company take the customer, while an activity already on a company keeps it. Taking the person away from the company they belong to needs the acting employee\'s clients.manage ' +
       '(otherwise a 422 on client_id naming that company; clokio_get_lead says so beforehand in contact.move_refused / convert_refused). ' +
       'No undo. Answers {customer {id, name, kind, url}, lead: <row>}.' + ERR_WRAPPED +
       ENDED + LEADS + BUSY,
