@@ -25,6 +25,7 @@ const schema = { sections: [{ title: 'Brand', questions: [{ type: 'short_text', 
 const copy = { sections: [{ key: 'brand', title: 'Brand', questions: [{ key: 'store_name', type: 'short_text', label: 'Store name' }] }] };
 const copyNoKey = { sections: [{ key: 'brand', title: 'Brand', questions: [{ type: 'short_text', label: 'Store name' }] }] };
 const copyNoSectionKey = { sections: [{ title: 'Brand', questions: [{ key: 'store_name', type: 'short_text', label: 'Store name' }] }] };
+const infoSchema = { sections: [{ key: 's', title: 'S', questions: [{ key: 'note', type: 'info', label: '', items: ['Read this'] }, { key: 'c', type: 'single_choice', label: 'Pick', options: [{ label: 'Yes' }, { value: 'no', label: 'No' }] }] }] };
 const actions = { task: { enabled: true, status: 'new', assignee_codes: ['00012'], title_question: 'store_name' }, team_email: { enabled: false, employee_codes: [] } };
 
 import { tmpdir } from 'node:os';
@@ -90,6 +91,9 @@ const run = await runTools({
     ['clokio_update_form', { id: 6, name: 'Stale', kind: 'one_to_one', schema, base_version: 1 }], // 50 409
     ['clokio_get_form', { id: 99 }], // 51 403 forms.manage
     ['clokio_list_project_forms', { project_id: 404 }], // 52 404
+    ['clokio_update_form', { id: 5, name: 'Info', kind: 'one_to_one', schema: infoSchema, base_version: 4 }], // 53 info round trip
+    ['clokio_get_project_form', { id: 10 }], // 54 long text
+    ['clokio_set_form_actions', { id: 7, task: { enabled: false, status: null, assignee_codes: [], title_question: null }, team_email: { enabled: false, employee_codes: [] } }], // 55 nulls
   ],
   respond: (hit) => {
     if (hit.method === 'PUT' && hit.path === '/forms/6') return { status: 409, json: { status: 'error', code: 'VERSION_CONFLICT', message: 'This form was changed since you read it. Read it again and resend.', version: 5 } };
@@ -108,6 +112,7 @@ const run = await runTools({
         files: { logo: [{ id: 31, name: 'logo ' + evil + '.png', size_bytes: 12, mime_type: 'image/png', download_path: 'https://x/files/31' }] },
       });
     }
+    if (hit.path === '/forms/instances/10') return ok({ id: 10, role: 'single', answers: { story: { value: 'line one\nline two', display: 'line one\nline two', answered_by: { type: 'client', name: null } } }, files: {} });
     if (hit.path === '/forms/instances/8') return ok({ id: 8, name: evil, role: 'submission', parent_instance_id: 7, answers: {}, files: {} });
     if (hit.path === '/projects/42/forms' && hit.method === 'GET') return ok([{ id: 7, name: 'Go-live checklist', role: 'single' }, { id: 9, name: 'Open form', role: 'entry', submissions_count: 1 }]);
     if (hit.path === '/forms/instances/9/submissions') {
@@ -190,7 +195,12 @@ check('only the one good questions edit went out', sent(), 1);
 check('a project copy without a question key is named', /key/i.test(run.text(29)), true);
 check('a project copy without a section key is named', /key/i.test(run.text(30)), true);
 check('update without the default flag: the extra key is not sent', h.some((x) => x.method === 'PUT' && x.path === '/forms/5' && 'is_default_for_new_projects' in (x.body ?? {})), false);
-check('total requests = the valid calls (0-28, the stripped #34, and the three server-word calls)', h.length, 29 + 1 + 3);
+check('total requests = the valid calls (0-28, the stripped #34, and the three server-word calls)', h.length, 29 + 1 + 3 + 3);
+
+// round 1 fixes
+check('info question with an empty label and an option without a value are sent as-is', (({ method, path, search, body }) => [method, path, search, body])(h.find((x) => x.method === 'PUT' && x.path === '/forms/5' && x.body?.name === 'Info') ?? {}), ['PUT', '/forms/5', '', { name: 'Info', kind: 'one_to_one', schema: infoSchema, base_version: 4 }]);
+has('a long text keeps its line breaks', run.text(54), '<untrusted_customer_content>\\nline one\\nline two\\n</untrusted_customer_content>');
+check('actions with null status and title_question are sent as-is', h.find((x) => x.method === 'PUT' && x.path === '/forms/instances/7/actions' && x.body?.task?.enabled === false)?.body, { task: { enabled: false, status: null, assignee_codes: [], title_question: null }, team_email: { enabled: false, employee_codes: [] } });
 
 // the server's words
 has('409 keeps the code and the current version', run.text(50), 'VERSION_CONFLICT');
@@ -212,6 +222,8 @@ has('questions: keep every key', d('clokio_update_project_form_questions'), 'Kee
 has('questions: 409', d('clokio_update_project_form_questions'), '409 VERSION_CONFLICT');
 has('questions: type of an answered question', d('clokio_update_project_form_questions'), 'cannot change its type');
 has('questions: hidden not deleted', d('clokio_update_project_form_questions'), 'hidden, not deleted');
+has('actions: read and write back in full', d('clokio_set_form_actions'), 'write back in full');
+has('unknown arguments are said to be dropped', d('clokio_get_form'), 'dropped before the request');
 has('actions: people by employee_code', d('clokio_set_form_actions'), 'employee_code');
 has('actions: people without a code drop out', d('clokio_get_form_actions'), 'DROPS them');
 check('every tool says nothing is sent to a customer', NAMES.every((n) => d(n).includes('sends anything to a customer')), true);

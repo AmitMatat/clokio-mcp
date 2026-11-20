@@ -19,13 +19,13 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { ClokioConfig, request, seg } from '../client.js';
 import { downloadFormFile } from '../attachments.js';
-import { wrapInline } from '../untrusted.js';
+import { wrapInline, wrapUntrusted } from '../untrusted.js';
 import { registerTool } from './helpers.js';
 import { CUSTOMER_TEXT_NOTE, RETRY_SAFE, createKey, crmCreate } from './crm-shared.js';
 
 const NEEDS =
   ' Needs forms:read (forms:write to change) and acts as the key\'s person. Templates need that person\'s forms.manage permission (403 otherwise); ' +
-  'forms on a project need a role on the project (404 otherwise) and, to change them, the right the project\'s Forms tab asks (403). Unknown fields are a 422 naming them. ' +
+  'forms on a project need a role on the project (404 otherwise) and, to change them, the right the project\'s Forms tab asks (403). The server answers 422 naming an unknown field; this tool\'s own arguments are fixed, so an argument it does not list is dropped before the request, not sent. ' +
   'Nothing here sends anything to a customer: sending the form stays a person\'s click on the Forms tab.';
 
 const NOT_ON_PROJECTS =
@@ -57,14 +57,14 @@ const projectId = id('The project id (clokio_list_projects)');
 const KEY_RE = /^[a-z][a-z0-9_]{0,63}$/;
 const keyField = z.string().regex(KEY_RE, 'a key is a lower-case letter then letters, digits or _ (64 at most)');
 
-const option = z.object({ value: z.string().min(1), label: z.string().min(1) }).strict();
+const option = z.object({ value: z.string().min(1).optional().describe('Left out: generated from the label'), label: z.string().min(1) }).strict();
 
 function questionShape(keyRequired: boolean) {
   return z
     .object({
       key: keyRequired ? keyField : keyField.optional(),
       type: z.enum(['short_text', 'long_text', 'number', 'email', 'phone', 'url', 'date', 'single_choice', 'multi_choice', 'yes_no', 'colors', 'file', 'info']),
-      label: z.string().min(1).max(300),
+      label: z.string().max(300).describe('Empty ("") is what the server answers for an info block; it judges the rest'),
       hint: z.string().max(500).nullable().optional(),
       placeholder: z.string().max(500).nullable().optional(),
       required: z.boolean().optional(),
@@ -105,7 +105,8 @@ const kind = z.enum(['one_to_one', 'one_to_many']).describe('one_to_one: one cli
 
 /** Wrap one string, or each string of a list; anything else (a boolean, null) stays. */
 function wrapValue(v: unknown): unknown {
-  if (typeof v === 'string') return wrapInline(v);
+  // A long text keeps its line breaks (block form); a short value collapses to one line.
+  if (typeof v === 'string') return /[\r\n]/.test(v) ? wrapUntrusted(v) : wrapInline(v);
   if (Array.isArray(v)) return v.map(wrapValue);
   return v;
 }
@@ -371,7 +372,7 @@ export function registerFormTools(server: McpServer, config: ClokioConfig): void
     description:
       'Set "When the form is sent": what happens when the CLIENT sends the form (a task is made, the team is emailed). Read first with clokio_get_form_actions and send both parts back: task {enabled, status, assignee_codes, title_question} and team_email {enabled, employee_codes} ' +
       '(both parts and both code lists are required). ' + PEOPLE + 'An unknown, inactive or other-organisation code is a 422 on task.assignee_codes.N or team_email.employee_codes.N and nothing is stored. ' +
-      'status and title_question follow the Forms tab\'s rules (clokio_get_form_action_options lists the choices). This sets up what happens later; it sends nothing now.' + NEEDS,
+      'status and title_question are null or a value: send back exactly what clokio_get_form_actions returned (read, change, write back in full), they follow the Forms tab\'s rules (clokio_get_form_action_options lists the choices). This sets up what happens later; it sends nothing now.' + NEEDS,
     schema: {
       id: instanceId,
       task: z
