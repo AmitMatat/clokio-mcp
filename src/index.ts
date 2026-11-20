@@ -3,7 +3,7 @@
  * clokio-mcp - an MCP server for the Clokio Public API.
  *
  * Exposes tasks, projects/clients, employees, attendance, documents, support
- * tickets, invoices, the CRM and your own to-dos as MCP tools over stdio. Auth is the per-user CLOKIO_API_KEY (an X-API-Key
+ * tickets, invoices, the CRM, your own to-dos and client forms as MCP tools over stdio. Auth is the per-user CLOKIO_API_KEY (an X-API-Key
  * credential); the key carries its own scopes, so this server never
  * re-implements authorization. Documents additionally need a key that "acts
  * as" an employee - the API decides that, not this server.
@@ -28,6 +28,7 @@ import { registerCrmLeadTools } from './tools/crm-leads.js';
 import { registerCrmActivityTools } from './tools/crm-activities.js';
 import { registerCrmCustomerTools } from './tools/crm-customers.js';
 import { registerTodoTools } from './tools/todos.js';
+import { registerFormTools } from './tools/forms.js';
 
 
 /**
@@ -43,7 +44,7 @@ import { registerTodoTools } from './tools/todos.js';
  * to resolve names to ids, so it is always registered. Naming a toolset that
  * does not exist is refused at startup rather than silently ignored.
  */
-const OPTIONAL_TOOLSETS = ['tasks', 'employees', 'attendance', 'docs', 'tickets', 'invoices', 'crm', 'todos'] as const;
+const OPTIONAL_TOOLSETS = ['tasks', 'employees', 'attendance', 'docs', 'tickets', 'invoices', 'crm', 'todos', 'forms'] as const;
 type Toolset = (typeof OPTIONAL_TOOLSETS)[number];
 
 function selectedToolsets(): Set<Toolset> {
@@ -156,6 +157,9 @@ async function main(): Promise<void> {
 
   // My To-Do (/api/v1/todos): the key holder's own list. Served only to a key acting as its own issuer (403 otherwise); no CRM module gate. Not in EMPLOYEE_TOOLSETS.
   if (toolsets.has('todos')) registerTodoTools(server, config);
+
+  // Client forms (/api/v1/forms...): templates, forms on a project, actions, submissions. Acts as a person; never sends to a customer. Not in EMPLOYEE_TOOLSETS.
+  if (toolsets.has('forms')) registerFormTools(server, config);
 
   const transport = new StdioServerTransport();
   await server.connect(transport);

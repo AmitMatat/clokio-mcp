@@ -296,6 +296,30 @@ const TOOL_CALLS = [
   { tool: 'clokio_complete_todo', method: 'post', path: '/todos/{id}/complete', query: [], body: [] },
   { tool: 'clokio_reopen_todo', method: 'post', path: '/todos/{id}/reopen', query: [], body: [] },
   { tool: 'clokio_delete_todo', method: 'delete', path: '/todos/{id}', query: [] },
+  // 0.38.0: the forms toolset (forms.ts; backend /api/v1/forms and /projects/{projectId}/forms).
+  { tool: 'clokio_list_forms', method: 'get', path: '/forms', query: ['archived'] },
+  { tool: 'clokio_get_form', method: 'get', path: '/forms/{id}', query: [] },
+  { tool: 'clokio_create_form', method: 'post', path: '/forms', query: [], body: ['name', 'kind', 'schema', 'description', 'email_subject', 'email_message', 'is_default_for_new_projects'] },
+  { tool: 'clokio_update_form', method: 'put', path: '/forms/{id}', query: [], body: ['name', 'kind', 'schema', 'base_version', 'description', 'email_subject', 'email_message'] },
+  { tool: 'clokio_duplicate_form', method: 'post', path: '/forms/{id}/duplicate', query: [] },
+  { tool: 'clokio_archive_form', method: 'delete', path: '/forms/{id}', query: [] },
+  { tool: 'clokio_restore_form', method: 'post', path: '/forms/{id}/restore', query: [] },
+  { tool: 'clokio_set_default_form', method: 'post', path: '/forms/{id}/default', query: [] },
+  { tool: 'clokio_set_default_form', method: 'delete', path: '/forms/{id}/default', query: [] },
+  { tool: 'clokio_list_project_forms', method: 'get', path: '/projects/{projectId}/forms', query: [] },
+  { tool: 'clokio_get_project_form', method: 'get', path: '/forms/instances/{id}', query: [] },
+  { tool: 'clokio_add_form_to_project', method: 'post', path: '/projects/{projectId}/forms', query: [], body: ['form_id', 'name'] },
+  { tool: 'clokio_update_project_form', method: 'patch', path: '/forms/instances/{id}', query: [], body: ['name', 'link_enabled'] },
+  { tool: 'clokio_regenerate_form_link', method: 'post', path: '/forms/instances/{id}/regenerate-link', query: [] },
+  { tool: 'clokio_archive_project_form', method: 'delete', path: '/forms/instances/{id}', query: [] },
+  { tool: 'clokio_restore_project_form', method: 'post', path: '/forms/instances/{id}/restore', query: [] },
+  { tool: 'clokio_update_project_form_questions', method: 'put', path: '/forms/instances/{id}/schema', query: [], body: ['schema', 'base_version'] },
+  { tool: 'clokio_get_form_actions', method: 'get', path: '/forms/instances/{id}/actions', query: [] },
+  { tool: 'clokio_set_form_actions', method: 'put', path: '/forms/instances/{id}/actions', query: [], body: ['task', 'team_email'] },
+  { tool: 'clokio_get_form_action_options', method: 'get', path: '/projects/{projectId}/forms/action-options', query: [] },
+  { tool: 'clokio_retry_form_action', method: 'post', path: '/forms/instances/{id}/actions/{action}/retry', query: [] },
+  { tool: 'clokio_list_form_submissions', method: 'get', path: '/forms/instances/{id}/submissions', query: ['page', 'per_page'] },
+  { tool: 'clokio_download_form_file', method: 'get', path: '/forms/instances/{id}/files/{fileId}', query: [] },
 ];
 
 let fails = 0;
@@ -378,7 +402,7 @@ for (const call of TOOL_CALLS) {
 // Every tool the server registers must appear above, or a new tool could ship
 // unchecked - which is exactly how the broken ones got out.
 const registered = new Set();
-for (const file of ['tasks', 'projects', 'employees', 'attendance', 'docs', 'tickets', 'invoices', 'crm-leads', 'crm-activities', 'crm-customers', 'todos']) {
+for (const file of ['tasks', 'projects', 'employees', 'attendance', 'docs', 'tickets', 'invoices', 'crm-leads', 'crm-activities', 'crm-customers', 'todos', 'forms']) {
   const src = await readFile(new URL(`../src/tools/${file}.ts`, import.meta.url), 'utf8');
   for (const m of src.matchAll(/name:\s*'(clokio_[a-z_]+)'/g)) registered.add(m[1]);
 }

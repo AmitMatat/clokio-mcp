@@ -217,10 +217,17 @@ export async function crmCreate(
   cfg: ClokioConfig,
   path: string,
   body: Record<string, unknown>,
-  opts: { key?: string; label: string; idOf: (res: any) => unknown; extra?: (res: any) => object },
+  opts: {
+    key?: string;
+    label: string;
+    idOf: (res: any) => unknown;
+    extra?: (res: any) => object;
+    /** How the answer becomes text; default renderCrm (the forms toolset passes its own wrapping). */
+    render?: (res: unknown) => string;
+  },
 ): Promise<string> {
   const key = opts.key ?? `mcp-${randomUUID()}`;
   const { res, replayed } = await idempotentPost(cfg, path, key, body);
   const outcome = replayed ? replayNote(opts.label, opts.idOf(res), true) : (opts.extra?.(res) ?? {});
-  return renderCrm({ ...outcome, ...res, idempotency_key: key });
+  return (opts.render ?? renderCrm)({ ...outcome, ...res, idempotency_key: key });
 }

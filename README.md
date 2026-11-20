@@ -89,11 +89,11 @@ acting. An explicit code on a tool call always takes precedence.
 
 Optional: set `CLOKIO_TOOLSETS` to register only the tool groups you need, e.g.
 `CLOKIO_TOOLSETS=tasks`. This cuts the per-session tool-list cost - a
-task-focused session drops from 184 tools to 48. Optional groups are `tasks`,
+task-focused session drops from 206 tools to 48. Optional groups are `tasks`,
 `employees`, `attendance` (which includes leave, time entries and logging time), `docs`,
 `tickets`, `invoices` (read only: needs `invoices:read` and billing access),
-`crm` (needs `crm:read` / `crm:write`) and `todos` (needs `todos:read` / `todos:write`;
-the key holder's own to-dos); combine them with commas. If your key cannot open documents (no acts-as
+`crm` (needs `crm:read` / `crm:write`), `todos` (needs `todos:read` / `todos:write`;
+the key holder's own to-dos) and `forms` (needs `forms:read` / `forms:write`; client forms); combine them with commas. If your key cannot open documents (no acts-as
 employee and no explicit docs scopes), leaving `docs` out saves 33 tools it
 cannot use. The `projects` group (project/client lookups, task statuses
 and labels, and `whoami`) is always on, because the task tools resolve names
@@ -101,7 +101,7 @@ through it.
 
 ## Tools
 
-184 tools across ten areas. Read-only tools carry the MCP `readOnlyHint`; writes
+206 tools across eleven areas. Read-only tools carry the MCP `readOnlyHint`; writes
 are marked mutating (deletes are `destructive`).
 
 | Area | Tools |
@@ -116,6 +116,7 @@ are marked mutating (deletes are `destructive`).
 | **Invoices** (`invoices` toolset, read only) | list invoices (client, number, months, several statuses, minimum total; rows carry billable hours), get one (with `include_employees` and `include_activities`; lines carry `task_state` and `missing_rate`), a task's billing (with a `note` when it bills nothing), a client's month-by-month billing summary, one month across all clients (**compact by default**, filters for clients, not invoiced, dismissed, minimum billable hours), what a client has unbilled in a month. Month rows carry `amount` (the invoice's own numbers, or the same estimate as the unbilled tool) beside the deprecated `estimated_amount`; `invoiced` / `total` count issued invoices only, drafts are `draft`; the No Client bucket is client id 0. Needs `invoices:read` and billing access for the key's person; "paid" is a status set in Clokio, not a payment record; totals are per currency; no iCount data beyond the number stored as `invoice_number` (the provider's document number when an invoicing integration finalized the invoice) |
 | **CRM** (`crm` toolset; see [CRM and To-Do](#crm-and-to-do)) | **leads** (queue list, options, get, history, create, take, assign, set status, close, reopen, convert, update, delete), **activities** (list, get, types, create, update, complete, reopen, reassign, delete), the customer's **next step**, **companies** (list, get, create, update), **notes** (list, add, edit) and **files** (list, upload, download) on a company, contact or lead |
 | **To-Do** (`todos` toolset; see [CRM and To-Do](#crm-and-to-do)) | list your own to-dos (grouped; optionally the last 7 days' completed), create, update, complete, reopen, delete |
+| **Forms** (`forms` toolset, needs `forms:read` / `forms:write`) | **templates** (list, get, create, update with `base_version`, duplicate, archive, restore, set or clear the default), **forms on a project** (list, get, add a template, rename / switch the link, new link, archive, restore, edit the copy's questions with `base_version`), **"When the form is sent"** (get, set, options, retry a failed action) and an open form's **submissions** (list) and **files** (download, or save to disk). Acts as the key's person: templates need their `forms.manage`, a project's forms a role on the project. A template edit never reaches forms already on projects; a 409 means read again and merge. Nothing sends anything to a customer. Customer answers, submission names and file names come back inside `<untrusted_customer_content>` |
 
 ### Conventions
 

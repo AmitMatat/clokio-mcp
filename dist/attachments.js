@@ -260,6 +260,10 @@ export async function downloadTicketAttachment(config, ticketId, attachmentId, o
 export async function downloadCrmFile(config, fileId, opts) {
     return downloadCustomerFile(config, `/crm/files/${seg(fileId)}`, opts);
 }
+/** Download one file of a client form (GET /api/v1/forms/instances/{id}/files/{fileId}); a customer's file, so wrapped. */
+export async function downloadFormFile(config, instanceId, fileId, opts) {
+    return downloadCustomerFile(config, `/forms/instances/${seg(instanceId)}/files/${seg(fileId)}`, opts);
+}
 /**
  * Inline task media (field report F1): the storage path of an image or
  * video pasted into a task's HTML, editor shape only, one file deep. It is
