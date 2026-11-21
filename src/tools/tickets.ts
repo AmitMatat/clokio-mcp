@@ -38,6 +38,15 @@ const employeeCode = z
   .string()
   .regex(/^[A-Za-z0-9_-]{1,50}$/, 'employee_code must be 1-50 chars of letters, digits, _ or -');
 const ticketId = z.number().int().positive().describe('The ticket id');
+
+/**
+ * 0.39.0: the server refuses a SENT text holding an unfinished placeholder
+ * (422, code PLACEHOLDER_IN_REPLY); drafts and notes are not checked. The
+ * server's message passes through as-is.
+ */
+const PLACEHOLDER_REFUSED =
+  'The server refuses a message whose text still holds an unfinished placeholder like [TODO ...], [להשלים ...], [TBD] or {{...}} (422, code PLACEHOLDER_IN_REPLY, nothing is sent; the message says what it found): ' +
+  'finish the text, or save a draft for a person to finish (clokio_create_reply_draft on an existing ticket, draft: true on clokio_create_ticket). Drafts and notes are not checked. ';
 const emails = z.array(z.string().email()).max(20);
 
 const reportDate = z
@@ -1090,6 +1099,7 @@ export function registerTicketTools(server: McpServer, config: ClokioConfig): vo
       'without body the draft\'s text goes out as it stands, with body the given text goes out instead; either way the draft is then marked used (nobody sends it twice). ' +
       'A message that is not a pending reply draft of this ticket is refused and nothing is sent. ' +
       'When your organisation reviews customer messages first, use clokio_create_reply_draft instead. ' +
+      PLACEHOLDER_REFUSED +
       'FILES (email tickets from a connected Gmail / Microsoft 365 mailbox only): file_paths (files on THIS machine, uploaded for you) and / or attachment_ids ' +
       '(from clokio_upload_ticket_attachment); up to 5, together within 10 MB, each 10 MB at most (pdf, images, doc/docx, xls/xlsx, txt, csv, zip). ' +
       'They go out as real attachments. A retry with the same idempotency_key in this session reuses the files already uploaded.',
@@ -1173,6 +1183,7 @@ export function registerTicketTools(server: McpServer, config: ClokioConfig): vo
       'An email draft ticket: the first reply (here or clokio_reply_ticket without recipients) goes to the drafted recipients with the drafted subject, and the draft then reads "used". ' +
       'Every call sends an Idempotency-Key: a fresh one (returned in the answer), or the idempotency_key you pass. To retry after a timeout, pass the SAME key and the same fields: ' +
       'the first answer is replayed ("already created ... (replayed ...)") and nothing is sent twice. Refusals come back in the inbox\'s own words. ' +
+      PLACEHOLDER_REFUSED +
       'FILES (email, not a draft): file_paths (files on THIS machine, uploaded for you) and / or attachment_ids (from clokio_upload_ticket_attachment); up to 5, ' +
       'together within 10 MB, each 10 MB at most (pdf, images, doc/docx, xls/xlsx, txt, csv, zip). They go out as real attachments. ' +
       'A retry with the same idempotency_key in this session reuses the files already uploaded.',

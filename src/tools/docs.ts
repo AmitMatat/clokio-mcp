@@ -361,7 +361,9 @@ export function registerDocTools(server: McpServer, config: ClokioConfig): void 
     name: 'clokio_move_doc',
     description:
       'Move a document and its sub-pages (needs admin). Send both parent_id and project_id; null = top ' +
-      `level / standalone. With a parent, the parent's project wins. ${CREATE}`,
+      `level / standalone. With a parent, the parent's project wins, also when moving across projects. ` +
+      'Sub-pages with inherit_permissions true take the visibility and access of their new parent. ' +
+      `${CREATE}`,
     mutates: true,
     schema: {
       id: docId,

@@ -587,16 +587,16 @@ export function registerAttendanceTools(server, config) {
     });
     registerTool(server, config, {
         name: 'clokio_list_leaves',
-        description: 'Leave requests in a date range. from and to are both REQUIRED (YYYY-MM-DD, to >= from), ' +
-            'and to - from may be at most 92 days (93 calendar dates); a longer range is refused before any request, so split it yourself ' +
+        description: 'Leave requests in a date range. from and to are YYYY-MM-DD (to >= from); leave BOTH out and the server answers the last 30 days ' +
+            '(give both or neither: one without the other is the server\'s to answer). to - from may be at most 92 days (93 calendar dates); a longer range is refused before any request, so split it yourself ' +
             '(a leave that crosses two windows is returned in both, and rows carry no id to tell them apart). ' +
             'Optionally narrow to one person by employee_code, or to one approval state. Needs leaves:read. ' +
             'Printed one line per request: the type with its day_value (1 a full day, 0.5 a half day), the status, the range, ' +
             '`days` (dates x day_value, e.g. 1.5 for three half days) and number_of_days (the count of DATES). Sum `days` for days taken, never number_of_days. ' +
             'A server older than task #5808 sends no `days`; the row then says so, and a half-day type counts 1 per date there.',
         schema: {
-            from: z.string().describe('YYYY-MM-DD, required'),
-            to: z.string().describe('YYYY-MM-DD, required, on or after from, at most 92 days after it'),
+            from: z.string().optional().describe('YYYY-MM-DD; leave out together with to for the last 30 days'),
+            to: z.string().optional().describe('YYYY-MM-DD, on or after from, at most 92 days after it; leave out together with from for the last 30 days'),
             employee_code: employeeCodeArg,
             employee: employeeAliasArg,
             status: z
@@ -607,7 +607,9 @@ export function registerAttendanceTools(server, config) {
         },
         handler: async (args, cfg) => {
             const employee = employeeFilter(args);
-            assertRangeWithinLimit(args.from, args.to);
+            // Both given: the 92-day window is judged here. Neither, or only one: the server answers.
+            if (args.from !== undefined && args.to !== undefined)
+                assertRangeWithinLimit(args.from, args.to);
             return renderLeaves(await request(cfg, '/leaves', {
                 query: {
                     from: args.from,
