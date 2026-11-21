@@ -103,6 +103,10 @@ const run = await runTools({
     ['clokio_update_project_form', { id: 7, name: 'n'.repeat(151) }], // 61 name over 150
     ['clokio_update_project_form_questions', { id: 7, schema: copy, base_version: 0 }], // 62 base_version 0
     ['clokio_create_form', { name: 'n'.repeat(150), kind: 'one_to_one', schema }], // 63 name of exactly 150: sent
+    // review 2: shared-board people and a null name
+    ['clokio_set_form_actions', { id: 7, task: { enabled: false, assignee_codes: ['00012', { employee_code: '00002', organization_id: 313 }] }, team_email: { enabled: false, employee_codes: [] } }], // 64 object reference: sent
+    ['clokio_update_project_form', { id: 7, name: null }], // 65 null name: sent
+    ['clokio_set_form_actions', { id: 7, task: { enabled: false, assignee_codes: [{ employee_code: '00002' }] }, team_email: { enabled: false, employee_codes: [] } }], // 66 object without organization_id: refused
   ],
   respond: (hit) => {
     if (hit.method === 'PUT' && hit.path === '/forms/6') return { status: 409, json: { status: 'error', code: 'VERSION_CONFLICT', message: 'This form was changed since you read it. Read it again and resend.', version: 5 } };
@@ -196,7 +200,7 @@ has('add to project answers with the key', run.text(14), 'add-key-0001');
 has('add to project shows the link', run.text(14), 'https://app.clokio.io/f/new');
 
 // refused before a request
-const refused = [29, 30, 31, 32, 33, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 56, 57, 58, 59, 60, 61, 62];
+const refused = [29, 30, 31, 32, 33, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 56, 57, 58, 59, 60, 61, 62, 66];
 check('bad arguments are errors', refused.map((i) => run.errored(i)).every(Boolean), true);
 check('no request was made for a refused call', refused.filter((i) => run.out[i] === undefined).length, 0);
 const sent = (n) => h.filter((x) => x.method === 'PUT' && x.path === '/forms/instances/7/schema').length;
@@ -204,7 +208,9 @@ check('only the one good questions edit went out', sent(), 1);
 check('a project copy without a question key is named', /key/i.test(run.text(29)), true);
 check('a project copy without a section key is named', /key/i.test(run.text(30)), true);
 check('update without the default flag: the extra key is not sent', h.some((x) => x.method === 'PUT' && x.path === '/forms/5' && 'is_default_for_new_projects' in (x.body ?? {})), false);
-check('total requests = the valid calls (0-28, the stripped #34, the server-word calls 50-55 and #63)', h.length, 29 + 1 + 3 + 3 + 1);
+check('total requests = the valid calls (0-28, the stripped #34, the server-word calls 50-55, #63, #64 and #65)', h.length, 29 + 1 + 3 + 3 + 1 + 2);
+check('a shared-board person is sent as the object', h.find((x) => x.method === 'PUT' && x.path === '/forms/instances/7/actions' && Array.isArray(x.body?.task?.assignee_codes) && x.body.task.assignee_codes.length === 2)?.body?.task?.assignee_codes, ['00012', { employee_code: '00002', organization_id: 313 }]);
+check('a null name is sent as null', h.some((x) => x.method === 'PATCH' && x.path === '/forms/instances/7' && x.body && 'name' in x.body && x.body.name === null), true);
 check('a name of exactly 150 is sent', h.some((x) => x.method === 'POST' && x.path === '/forms' && x.body?.name?.length === 150), true);
 
 // round 1 fixes
@@ -235,7 +241,11 @@ has('questions: hidden not deleted', d('clokio_update_project_form_questions'), 
 has('actions: read and write back in full', d('clokio_set_form_actions'), 'write back in full');
 has('unknown arguments are said to be dropped', d('clokio_get_form'), 'dropped before the request');
 has('actions: people by employee_code', d('clokio_set_form_actions'), 'employee_code');
-has('actions: people without a code drop out', d('clokio_get_form_actions'), 'DROPS them');
+has('actions: people you cannot name are kept', d('clokio_get_form_actions'), 'People you cannot name');
+has('set_actions: people you cannot name are kept', d('clokio_set_form_actions'), 'KEPT when you write the actions back');
+check('no tool says people drop out', ['clokio_get_form_actions', 'clokio_set_form_actions'].some((n) => /DROPS|drop out/.test(d(n))), false);
+has('questions: answers the structure only', d('clokio_update_project_form_questions'), 'never its answers or files');
+has('update_project_form: null name resets', d('clokio_update_project_form'), 'null sets it back');
 check('every tool says nothing is sent to a customer', NAMES.every((n) => d(n).includes('sends anything to a customer')), true);
 has('get_form_actions: statuses and title_questions at the top level', d('clokio_get_form_actions'), 'team_email: {enabled, employee_codes, recipients}, statuses, title_questions}');
 check('get_form_actions: statuses not inside task', d('clokio_get_form_actions').includes('assignees, statuses'), false);
