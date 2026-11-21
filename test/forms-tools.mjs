@@ -242,19 +242,25 @@ has('actions: read and write back in full', d('clokio_set_form_actions'), 'write
 has('unknown arguments are said to be dropped', d('clokio_get_form'), 'dropped before the request');
 has('actions: people by employee_code', d('clokio_set_form_actions'), 'employee_code');
 has('actions: people you cannot name are kept', d('clokio_get_form_actions'), 'People you cannot name');
-has('set_actions: people you cannot name are kept', d('clokio_set_form_actions'), 'KEPT when you write the actions back');
+has('set_actions: people you cannot name are kept', d('clokio_set_form_actions'), 'they are KEPT');
 check('no tool says people drop out', ['clokio_get_form_actions', 'clokio_set_form_actions'].some((n) => /DROPS|drop out/.test(d(n))), false);
 has('questions: answers the structure only', d('clokio_update_project_form_questions'), 'never its answers or files');
 has('update_project_form: null name resets', d('clokio_update_project_form'), 'null sets it back');
 has('get_form_actions: a client person is not taken', d('clokio_get_form_actions'), 'not taken by the actions');
 has('set_form_actions: a client person is not taken', d('clokio_set_form_actions'), 'not taken by the actions');
 // Server review 3: nameable = PUT would take them; a client person is refused per index; kept people count toward caps and the email.
-has('get_form_actions: nameable means the PUT takes them', d('clokio_get_form_actions'), 'nameable: true means writing that person back is accepted');
+has('get_form_actions: nameable means sending them is accepted, stored or not', d('clokio_get_form_actions'), 'nameable: true means sending that person is accepted, stored or not');
 has('get_form_actions: a recipient who lost the forms is kept', d('clokio_get_form_actions'), 'a recipient who can no longer see the project\'s forms');
 has('set_form_actions: a client person is a 422 on its index', d('clokio_set_form_actions'), '422 on its own index');
 has('set_form_actions: kept people count toward the caps', d('clokio_set_form_actions'), 'Kept people count toward the 20 / 50 caps');
 has('set_form_actions: only a reachable kept recipient counts for the email', d('clokio_set_form_actions'), 'Choose who gets the email.');
 check('no tool calls a client person a 422 on the list', ['clokio_get_form_actions', 'clokio_set_form_actions'].some((n) => d(n).includes('a 422 on the list')), false);
+// Server review 4: a person you send is judged as sent, never kept; a new assignee add is the rule; codes match as the database does.
+has('set_form_actions: kept only unless you send them', d('clokio_set_form_actions'), 'KEPT unless you send them');
+has('set_form_actions: a person sent is judged like anyone sent', d('clokio_set_form_actions'), 'a person you send is judged like anyone you send');
+has('get_form_actions: an assignee must be addable as new', d('clokio_get_form_actions'), 'may add as a new assignee');
+has('set_form_actions: codes match case and accents insensitive', d('clokio_set_form_actions'), 'case, accents and surrounding spaces are ignored');
+check('no tool says people are kept whatever you send', ['clokio_get_form_actions', 'clokio_set_form_actions'].some((n) => d(n).includes('whatever you send')), false);
 check('every tool says nothing is sent to a customer', NAMES.every((n) => d(n).includes('sends anything to a customer')), true);
 has('get_form_actions: statuses and title_questions at the top level', d('clokio_get_form_actions'), 'team_email: {enabled, employee_codes, recipients}, statuses, title_questions}');
 check('get_form_actions: statuses not inside task', d('clokio_get_form_actions').includes('assignees, statuses'), false);
