@@ -94,6 +94,15 @@ const run = await runTools({
     ['clokio_update_form', { id: 5, name: 'Info', kind: 'one_to_one', schema: infoSchema, base_version: 4 }], // 53 info round trip
     ['clokio_get_project_form', { id: 10 }], // 54 long text
     ['clokio_set_form_actions', { id: 7, task: { enabled: false, status: null, assignee_codes: [], title_question: null }, team_email: { enabled: false, employee_codes: [] } }], // 55 nulls
+    // final review: the server's limits, refused locally
+    ['clokio_create_form', { name: 'n'.repeat(151), kind: 'one_to_one', schema }], // 56 name over 150
+    ['clokio_update_form', { id: 5, name: 'x', kind: 'one_to_one', schema, base_version: 0 }], // 57 base_version 0
+    ['clokio_set_form_actions', { id: 7, task: { enabled: false, assignee_codes: Array.from({ length: 21 }, (_, i) => `C${i}`) }, team_email: { enabled: false, employee_codes: [] } }], // 58 21 assignees
+    ['clokio_set_form_actions', { id: 7, task: { enabled: false, assignee_codes: [] }, team_email: { enabled: true, employee_codes: Array.from({ length: 51 }, (_, i) => `C${i}`) } }], // 59 51 recipients
+    ['clokio_add_form_to_project', { project_id: 42, form_id: 5, name: 'n'.repeat(151) }], // 60 name over 150
+    ['clokio_update_project_form', { id: 7, name: 'n'.repeat(151) }], // 61 name over 150
+    ['clokio_update_project_form_questions', { id: 7, schema: copy, base_version: 0 }], // 62 base_version 0
+    ['clokio_create_form', { name: 'n'.repeat(150), kind: 'one_to_one', schema }], // 63 name of exactly 150: sent
   ],
   respond: (hit) => {
     if (hit.method === 'PUT' && hit.path === '/forms/6') return { status: 409, json: { status: 'error', code: 'VERSION_CONFLICT', message: 'This form was changed since you read it. Read it again and resend.', version: 5 } };
@@ -187,7 +196,7 @@ has('add to project answers with the key', run.text(14), 'add-key-0001');
 has('add to project shows the link', run.text(14), 'https://app.clokio.io/f/new');
 
 // refused before a request
-const refused = [29, 30, 31, 32, 33, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49];
+const refused = [29, 30, 31, 32, 33, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 56, 57, 58, 59, 60, 61, 62];
 check('bad arguments are errors', refused.map((i) => run.errored(i)).every(Boolean), true);
 check('no request was made for a refused call', refused.filter((i) => run.out[i] === undefined).length, 0);
 const sent = (n) => h.filter((x) => x.method === 'PUT' && x.path === '/forms/instances/7/schema').length;
@@ -195,7 +204,8 @@ check('only the one good questions edit went out', sent(), 1);
 check('a project copy without a question key is named', /key/i.test(run.text(29)), true);
 check('a project copy without a section key is named', /key/i.test(run.text(30)), true);
 check('update without the default flag: the extra key is not sent', h.some((x) => x.method === 'PUT' && x.path === '/forms/5' && 'is_default_for_new_projects' in (x.body ?? {})), false);
-check('total requests = the valid calls (0-28, the stripped #34, and the three server-word calls)', h.length, 29 + 1 + 3 + 3);
+check('total requests = the valid calls (0-28, the stripped #34, the server-word calls 50-55 and #63)', h.length, 29 + 1 + 3 + 3 + 1);
+check('a name of exactly 150 is sent', h.some((x) => x.method === 'POST' && x.path === '/forms' && x.body?.name?.length === 150), true);
 
 // round 1 fixes
 check('info question with an empty label and an option without a value are sent as-is', (({ method, path, search, body }) => [method, path, search, body])(h.find((x) => x.method === 'PUT' && x.path === '/forms/5' && x.body?.name === 'Info') ?? {}), ['PUT', '/forms/5', '', { name: 'Info', kind: 'one_to_one', schema: infoSchema, base_version: 4 }]);
@@ -227,6 +237,14 @@ has('unknown arguments are said to be dropped', d('clokio_get_form'), 'dropped b
 has('actions: people by employee_code', d('clokio_set_form_actions'), 'employee_code');
 has('actions: people without a code drop out', d('clokio_get_form_actions'), 'DROPS them');
 check('every tool says nothing is sent to a customer', NAMES.every((n) => d(n).includes('sends anything to a customer')), true);
+has('get_form_actions: statuses and title_questions at the top level', d('clokio_get_form_actions'), 'team_email: {enabled, employee_codes, recipients}, statuses, title_questions}');
+check('get_form_actions: statuses not inside task', d('clokio_get_form_actions').includes('assignees, statuses'), false);
+has('retry: a single or a submission', d('clokio_retry_form_action'), 'a SUBMISSION of an open form');
+has('retry: an entry answers 422', d('clokio_retry_form_action'), 'Only an action that failed can be retried.');
+has('add to project: listing templates needs forms.manage', d('clokio_add_form_to_project'), 'forms.manage');
+has('add to project: by form_id the project right is enough', d('clokio_add_form_to_project'), 'needs only the right to manage the project');
+has('archive: a submission is refused', d('clokio_archive_project_form'), 'A submission of an open form is refused (422)');
+has('schema shape: sections and nothing else', d('clokio_create_form'), 'sections (a list) and nothing else');
 check('no em dash in any description', NAMES.some((n) => d(n).includes(String.fromCharCode(0x2014))), false);
 has('get_project_form: untrusted words', d('clokio_get_project_form'), '<untrusted_customer_content>');
 has('download: save_path', d('clokio_download_form_file'), 'save_path');
