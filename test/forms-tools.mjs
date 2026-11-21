@@ -246,6 +246,8 @@ has('set_actions: people you cannot name are kept', d('clokio_set_form_actions')
 check('no tool says people drop out', ['clokio_get_form_actions', 'clokio_set_form_actions'].some((n) => /DROPS|drop out/.test(d(n))), false);
 has('questions: answers the structure only', d('clokio_update_project_form_questions'), 'never its answers or files');
 has('update_project_form: null name resets', d('clokio_update_project_form'), 'null sets it back');
+has('get_form_actions: a client person is not taken', d('clokio_get_form_actions'), 'not taken by the actions');
+has('set_form_actions: a client person is not taken', d('clokio_set_form_actions'), 'not taken by the actions');
 check('every tool says nothing is sent to a customer', NAMES.every((n) => d(n).includes('sends anything to a customer')), true);
 has('get_form_actions: statuses and title_questions at the top level', d('clokio_get_form_actions'), 'team_email: {enabled, employee_codes, recipients}, statuses, title_questions}');
 check('get_form_actions: statuses not inside task', d('clokio_get_form_actions').includes('assignees, statuses'), false);
