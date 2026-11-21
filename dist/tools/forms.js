@@ -18,6 +18,9 @@ const LINK = ' link_url (the client\'s public link, a credential) is in an answe
 const FORM_SCHEMA_SHAPE = 'schema is {sections: [{key, title, subtitle, icon, questions: [{key, type, label, hint, placeholder, required, options?, items?}]}]}; ' +
     'type is short_text, long_text, number, email, phone, url, date, single_choice, multi_choice (options [{value, label}] needed), yes_no, colors, file or info (items: text lines, takes no answer). ' +
     'The schema object holds sections (a list) and nothing else: the server refuses a missing sections list or any other top-level key (422 on schema). ';
+/** The archived filter of the project forms list, as the server spells it (nothing for the default). */
+const ARCHIVED_QUERY = { exclude: undefined, only: '1', include: 'include' };
+const ENTRY_PROGRESS = 'An open form\'s entry holds no answers itself, so its progress is 0/0: progress is per submission (clokio_list_form_submissions). ';
 const id = (what) => z.number().int().positive().describe(what);
 const formId = id('The form template id (clokio_list_forms)');
 const instanceId = id('The form-on-a-project id (clokio_list_project_forms)');
@@ -126,13 +129,13 @@ export function registerFormTools(server, config) {
     registerTool(server, config, {
         name: 'clokio_list_forms',
         description: 'The organisation\'s form TEMPLATES (the /forms page), by name; archived: true lists the archived ones instead (each with archived_at). ' +
-            'Rows: {id, name, kind, language, is_default, questions_count, projects_count, version, updated_at}; no schema in the list (clokio_get_form).' + NEEDS,
+            'Rows: {id, name, kind, language, is_default, questions_count, projects_count, version, updated_at}; questions_count counts the questions that take an answer (information blocks are not counted); no schema in the list (clokio_get_form).' + NEEDS,
         schema: { archived: z.boolean().optional().describe('true: the archived templates') },
         handler: (args, cfg) => request(cfg, '/forms', { query: { archived: args.archived === undefined ? undefined : args.archived ? '1' : '0' } }),
     });
     registerTool(server, config, {
         name: 'clokio_get_form',
-        description: 'One form template whole: the row plus description, email_subject, email_message and schema. Read it with this before clokio_update_form: version is what you send back as base_version. ' +
+        description: 'One form template whole: the row (questions_count does not count information blocks) plus description, email_subject, email_message and schema. Read it with this before clokio_update_form: version is what you send back as base_version. ' +
             FORM_SCHEMA_SHAPE + NOT_ON_PROJECTS + NEEDS,
         schema: { id: formId },
         handler: (args, cfg) => request(cfg, `/forms/${seg(args.id)}`),
@@ -181,9 +184,16 @@ export function registerFormTools(server, config) {
     registerTool(server, config, {
         name: 'clokio_duplicate_form',
         mutates: true,
-        description: 'Copy a form template as "<name> (copy)", never the default. Answers the new template (201). There is no Idempotency-Key here: list the templates before retrying after a timeout.' + NEEDS,
-        schema: { id: formId },
-        handler: (args, cfg) => request(cfg, `/forms/${seg(args.id)}/duplicate`, { method: 'POST' }),
+        description: 'Copy a form template, never as the default: named name when you give one, else "<name> (copy)". Answers the new template (201). ' + RETRY_SAFE + NEEDS,
+        schema: {
+            id: formId,
+            name: z.string().min(1).max(NAME_MAX).optional().describe('The copy\'s name; default "<name> (copy)"'),
+            idempotency_key: createKey.describe('Reuse the key of an earlier call only to retry THAT call; omit for a new copy'),
+        },
+        handler: (args, cfg) => {
+            const { id: source, idempotency_key, ...fields } = args;
+            return crmCreate(cfg, `/forms/${seg(source)}/duplicate`, fields, { key: idempotency_key, label: 'Form', idOf: (res) => res?.id, render: (r) => JSON.stringify(r, null, 2) });
+        },
     });
     registerTool(server, config, {
         name: 'clokio_archive_form',
@@ -209,17 +219,22 @@ export function registerFormTools(server, config) {
     // ---- Forms on a project ----
     registerTool(server, config, {
         name: 'clokio_list_project_forms',
-        description: 'The forms on a project, oldest first (archived ones left out). Each is {id, name, language, progress, link_enabled, last_sent_at, last_client_answer_at, client_done_at, form_url, role, kind, parent_instance_id, submitted_at, submissions_count}. ' +
+        description: 'The forms on a project, oldest first. archived: exclude (default) leaves the archived ones out, only lists just the archived ones, include lists both; ' +
+            'an archived project form can then be restored with clokio_restore_project_form. Each is {id, name, language, progress, link_enabled, last_sent_at, last_client_answer_at, client_done_at, form_url, role, kind, parent_instance_id, submitted_at, submissions_count, archived_at} ' +
+            '(archived_at is null on a live row; an archived row has no link_url). ' +
             'role single is a one to one form; entry is an open form holding the link (list its submissions with clokio_list_form_submissions); submissions are not listed here. ' +
-            'Read one whole (schema, answers, files) with clokio_get_project_form.' + WRAPPED + NEEDS,
-        schema: { project_id: projectId },
-        handler: async (args, cfg) => renderForm(await request(cfg, `/projects/${seg(args.project_id)}/forms`)),
+            ENTRY_PROGRESS + 'Read one whole (schema, answers, files) with clokio_get_project_form.' + WRAPPED + NEEDS,
+        schema: {
+            project_id: projectId,
+            archived: z.enum(['exclude', 'only', 'include']).optional().describe('Default exclude (live forms only); only: the archived ones; include: both'),
+        },
+        handler: async (args, cfg) => renderForm(await request(cfg, `/projects/${seg(args.project_id)}/forms`, { query: { archived: ARCHIVED_QUERY[args.archived ?? 'exclude'] } })),
     });
     registerTool(server, config, {
         name: 'clokio_get_project_form',
         description: 'One form on a project (a single, an open form\'s entry, or a submission by its id): the row of clokio_list_project_forms plus schema (the questions as the copy has them), schema_version (the base_version for clokio_update_project_form_questions), ' +
             'answers (keyed by question key: {value, display, answered_by {type client, name} | {type employee, employee_code}, answered_at}) and files (keyed by question key: [{id, name, size_bytes, mime_type, download_path}]; read one with clokio_download_form_file). ' +
-            'A file question has no answer of its own: its answer entry is the newest file\'s who and when.' + LINK + WRAPPED + NEEDS,
+            'A file question has no answer of its own: its answer entry is the newest file\'s who and when. ' + ENTRY_PROGRESS.trimEnd() + LINK + WRAPPED + NEEDS,
         schema: { id: instanceId },
         handler: async (args, cfg) => renderForm(await request(cfg, `/forms/instances/${seg(args.id)}`)),
     });
@@ -227,13 +242,16 @@ export function registerFormTools(server, config) {
         name: 'clokio_add_form_to_project',
         mutates: true,
         description: 'Add a form template to a project. A one to one form becomes a copy with its own link (its questions as they are NOW: later template edits never reach it); an open form becomes the entry that holds the link. ' +
-            'name is optional (the template\'s name by default). The link starts ON and the answer carries link_url; nothing is sent to the client: emailing the link stays a person\'s click on the Forms tab. ' +
+            'name is optional (the template\'s name by default). The link starts ON and the answer carries link_url; link_enabled: false adds it with the link OFF, to prepare a form before a person reviews it (switch it on later with clokio_update_project_form). ' +
+            'Nothing is sent to the client: emailing the link stays a person\'s click on the Forms tab. ' +
+            'An archived template must be restored first (clokio_restore_form): adding one is a 422 on form_id. ' +
             'form_id is a template id: listing templates (clokio_list_forms) needs the person\'s forms.manage permission, but adding one by form_id needs only the right to manage the project\'s forms. ' +
             RETRY_SAFE + 'Answers the form (201).' + LINK + NEEDS,
         schema: {
             project_id: projectId,
             form_id: formId,
             name: z.string().min(1).max(NAME_MAX).optional().describe('Name on the project; default: the template\'s'),
+            link_enabled: z.boolean().optional().describe('Default true; false: the client\'s link starts off'),
             idempotency_key: createKey.describe('Reuse the key of an earlier call only to retry THAT call; omit for a new form on the project'),
         },
         handler: (args, cfg) => {
@@ -345,7 +363,7 @@ export function registerFormTools(server, config) {
     registerTool(server, config, {
         name: 'clokio_list_form_submissions',
         description: 'The live submissions of an open form (the ENTRY id, role entry), newest first, paged: {data: [{id, name, submitted_at, progress}], meta: {current_page, last_page, per_page, total}}. ' +
-            'name is how the Forms tab names the row (what the person typed, else their first short text and email answers), or null. Read one submission\'s answers and files by its id with clokio_get_project_form. ' +
+            'progress is per submission (the entry itself holds no answers, so its own progress is 0/0). name is how the Forms tab names the row (what the person typed, else their first short text and email answers), or null. Read one submission\'s answers and files by its id with clokio_get_project_form. ' +
             'A single, a submission or an archived entry is 404.' + WRAPPED + NEEDS,
         schema: {
             id: instanceId.describe('The ENTRY id (role entry) from clokio_list_project_forms'),

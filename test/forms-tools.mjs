@@ -107,8 +107,23 @@ const run = await runTools({
     ['clokio_set_form_actions', { id: 7, task: { enabled: false, assignee_codes: ['00012', { employee_code: '00002', organization_id: 313 }] }, team_email: { enabled: false, employee_codes: [] } }], // 64 object reference: sent
     ['clokio_update_project_form', { id: 7, name: null }], // 65 null name: sent
     ['clokio_set_form_actions', { id: 7, task: { enabled: false, assignee_codes: [{ employee_code: '00002' }] }, team_email: { enabled: false, employee_codes: [] } }], // 66 object without organization_id: refused
+    // 0.39.0 follow-ups
+    ['clokio_list_project_forms', { project_id: 43, archived: 'exclude' }], // 67 the default sends nothing
+    ['clokio_list_project_forms', { project_id: 43, archived: 'only' }], // 68 archived=1
+    ['clokio_list_project_forms', { project_id: 43, archived: 'include' }], // 69 archived=include
+    ['clokio_list_project_forms', { project_id: 43, archived: 'yes' }], // 70 refused
+    ['clokio_add_form_to_project', { project_id: 44, form_id: 5, link_enabled: false }], // 71 link off
+    ['clokio_add_form_to_project', { project_id: 44, form_id: 5, link_enabled: 'no' }], // 72 refused
+    ['clokio_add_form_to_project', { project_id: 45, form_id: 6 }], // 73 archived template: the 422 passes through
+    ['clokio_duplicate_form', { id: 5, name: 'Go-live B', idempotency_key: 'dup-key-0001' }], // 74 name and key
+    ['clokio_duplicate_form', { id: 5, name: 'n'.repeat(151) }], // 75 refused
+    ['clokio_duplicate_form', { id: 5, idempotency_key: 'short' }], // 76 refused
+    ['clokio_duplicate_form', { id: 5, idempotency_key: 'dup-key-0002' }], // 77 replayed
   ],
   respond: (hit) => {
+    if (hit.method === 'POST' && hit.path === '/projects/45/forms') return { status: 422, json: { status: 'error', message: 'The given data was invalid.', errors: { form_id: ['This form is archived. Restore it first (POST /forms/{id}/restore).'] } } };
+    if (hit.method === 'POST' && hit.path === '/forms/5/duplicate' && hit.idempotencyKey === 'dup-key-0002') return { status: 201, headers: { 'Idempotency-Replayed': 'true' }, json: { status: 'success', message: 'ok', data: { id: 15, name: 'Go-live (copy)' } } };
+    if (hit.method === 'POST' && hit.path === '/forms/5/duplicate') return ok({ id: 14, name: hit.body?.name ?? 'Go-live (copy)' }, 201);
     if (hit.method === 'PUT' && hit.path === '/forms/6') return { status: 409, json: { status: 'error', code: 'VERSION_CONFLICT', message: 'This form was changed since you read it. Read it again and resend.', version: 5 } };
     if (hit.path === '/forms/99') return { status: 403, json: { status: 'error', message: 'Managing form templates needs the forms.manage permission.', data: {} } };
     if (hit.path === '/projects/404/forms') return { status: 404, json: { status: 'error', message: 'Not found.', data: {} } };
@@ -153,7 +168,7 @@ check('get', req(3), ['GET', '/forms/5', '', null]);
 check('create: the fields and the supplied key', [req(4), h[4]?.idempotencyKey], [['POST', '/forms', '', { name: 'Go-live', kind: 'one_to_one', schema, description: 'x', is_default_for_new_projects: true }], 'form-key-0001']);
 check('create: default mcp- key', /^mcp-[0-9a-f-]{36}$/.test(h[5]?.idempotencyKey ?? ''), true);
 check('update: whole form, null kept, base_version', req(6), ['PUT', '/forms/5', '', { name: 'Go-live 2', kind: 'one_to_one', schema, base_version: 3, email_subject: null }]);
-check('duplicate', [req(7), h[7]?.idempotencyKey], [['POST', '/forms/5/duplicate', '', null], null]);
+check('duplicate: no name, an empty body and a fresh key', [req(7), /^mcp-[0-9a-f-]{36}$/.test(h[7]?.idempotencyKey ?? '')], [['POST', '/forms/5/duplicate', '', {}], true]);
 check('archive', req(8), ['DELETE', '/forms/5', '', null]);
 check('restore', req(9), ['POST', '/forms/5/restore', '', null]);
 check('set default true: POST', req(10), ['POST', '/forms/5/default', '', null]);
@@ -200,7 +215,7 @@ has('add to project answers with the key', run.text(14), 'add-key-0001');
 has('add to project shows the link', run.text(14), 'https://app.clokio.io/f/new');
 
 // refused before a request
-const refused = [29, 30, 31, 32, 33, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 56, 57, 58, 59, 60, 61, 62, 66];
+const refused = [29, 30, 31, 32, 33, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 56, 57, 58, 59, 60, 61, 62, 66, 70, 72, 75, 76];
 check('bad arguments are errors', refused.map((i) => run.errored(i)).every(Boolean), true);
 check('no request was made for a refused call', refused.filter((i) => run.out[i] === undefined).length, 0);
 const sent = (n) => h.filter((x) => x.method === 'PUT' && x.path === '/forms/instances/7/schema').length;
@@ -208,7 +223,7 @@ check('only the one good questions edit went out', sent(), 1);
 check('a project copy without a question key is named', /key/i.test(run.text(29)), true);
 check('a project copy without a section key is named', /key/i.test(run.text(30)), true);
 check('update without the default flag: the extra key is not sent', h.some((x) => x.method === 'PUT' && x.path === '/forms/5' && 'is_default_for_new_projects' in (x.body ?? {})), false);
-check('total requests = the valid calls (0-28, the stripped #34, the server-word calls 50-55, #63, #64 and #65)', h.length, 29 + 1 + 3 + 3 + 1 + 2);
+check('total requests = the valid calls (0-28, the stripped #34, the server-word calls 50-55, #63, #64, #65 and the 0.39.0 calls 67-69, 71, 73, 74, 77)', h.length, 29 + 1 + 3 + 3 + 1 + 2 + 7);
 check('a shared-board person is sent as the object', h.find((x) => x.method === 'PUT' && x.path === '/forms/instances/7/actions' && Array.isArray(x.body?.task?.assignee_codes) && x.body.task.assignee_codes.length === 2)?.body?.task?.assignee_codes, ['00012', { employee_code: '00002', organization_id: 313 }]);
 check('a null name is sent as null', h.some((x) => x.method === 'PATCH' && x.path === '/forms/instances/7' && x.body && 'name' in x.body && x.body.name === null), true);
 check('a name of exactly 150 is sent', h.some((x) => x.method === 'POST' && x.path === '/forms' && x.body?.name?.length === 150), true);
@@ -273,5 +288,29 @@ has('schema shape: sections and nothing else', d('clokio_create_form'), 'section
 check('no em dash in any description', NAMES.some((n) => d(n).includes(String.fromCharCode(0x2014))), false);
 has('get_project_form: untrusted words', d('clokio_get_project_form'), '<untrusted_customer_content>');
 has('download: save_path', d('clokio_download_form_file'), 'save_path');
+
+// 0.39.0 follow-ups
+const byKey = (k) => h.find((x) => x.idempotencyKey === k);
+const lists43 = h.filter((x) => x.method === 'GET' && x.path === '/projects/43/forms').map((x) => x.search);
+check('project forms archived: exclude sends nothing, only sends 1, include sends include', lists43, ['', '?archived=1', '?archived=include']);
+check('add to project: link_enabled false is sent', h.find((x) => x.method === 'POST' && x.path === '/projects/44/forms')?.body, { form_id: 5, link_enabled: false });
+check('add to project: an archived template is an error', run.errored(73), true);
+has('add to project: the archived 422 words pass through', run.text(73), 'This form is archived. Restore it first (POST /forms/{id}/restore).');
+check('duplicate: name and the supplied key', [byKey('dup-key-0001')?.path, byKey('dup-key-0001')?.body], ['/forms/5/duplicate', { name: 'Go-live B' }]);
+has('duplicate answers with its key', run.text(74), 'dup-key-0001');
+has('duplicate: a replay says nothing new was created', run.text(77), 'replayed: nothing new was created');
+check('duplicate: the replay call sent no name', byKey('dup-key-0002')?.body, {});
+has('list project forms: restore pointer', d('clokio_list_project_forms'), 'clokio_restore_project_form');
+has('list project forms: archived_at', d('clokio_list_project_forms'), 'archived_at');
+has('add to project: link_enabled false prepares a form', d('clokio_add_form_to_project'), 'link_enabled: false');
+has('add to project: switch it on later', d('clokio_add_form_to_project'), 'clokio_update_project_form');
+has('add to project: an archived template must be restored first', d('clokio_add_form_to_project'), 'An archived template must be restored first');
+has('duplicate: retry safe', d('clokio_duplicate_form'), 'Idempotency-Key');
+check('duplicate: no longer says there is no key', d('clokio_duplicate_form').includes('There is no Idempotency-Key'), false);
+has('entry progress 0/0 on the list', d('clokio_list_project_forms'), 'its progress is 0/0');
+has('entry progress 0/0 on get', d('clokio_get_project_form'), 'its progress is 0/0');
+has('entry progress on the submissions list', d('clokio_list_form_submissions'), 'progress is per submission');
+has('questions_count leaves out information blocks (list)', d('clokio_list_forms'), 'information blocks are not counted');
+has('questions_count leaves out information blocks (get)', d('clokio_get_form'), 'does not count information blocks');
 
 done();
