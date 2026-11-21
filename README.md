@@ -110,13 +110,13 @@ are marked mutating (deletes are `destructive`).
 | **Projects & clients** | list projects, project statuses (and create / edit / delete them; a status in use moves its tasks to `move_to`), project custom fields (and create / edit / delete them, e.g. a release dropdown; a delete removes the stored values too), project contacts, get client, add client contact |
 | **Reference** | task statuses, task labels, locations, list webhooks (read-only), whoami |
 | **Employees** | list (name search), lookup by PIN, task-stats, inbox (mentions, new assignments, others' status changes; with the tickets toolset, also the acting employee's open tickets), create, set status |
-| **Attendance** | daily, range, per-employee, monthly summary, clock in/out, break start/end, time entries (local times in the person's zone; edit / delete your own), leaves (with `days`, half days counted 0.5), days of leave taken per type and year (`clokio_get_leave_days_taken`; the old name `clokio_get_leave_balances` still works; Clokio tracks no quota or remaining balance; leave and time-entry lists take `employee_code` and at most 92 days per call), **log time on a task**, start / stop / read the timer (see [Logging time](#logging-time)) |
+| **Attendance** | daily, range, per-employee, monthly summary, clock in/out, break start/end, time entries (local times in the person's zone; edit / delete your own), leaves (with `days`, half days counted 0.5), days of leave taken per type and year (`clokio_get_leave_days_taken`; the old name `clokio_get_leave_balances` still works; Clokio tracks no quota or remaining balance; leave and time-entry lists take `employee_code` and at most 92 days per call; `clokio_list_leaves` without `from` and `to` lists the last 30 days), **log time on a task**, start / stop / read the timer (see [Logging time](#logging-time)) |
 | **Documents** (see [Documents](#documents) for who a key acts as) | list, tree, search, get (Markdown / HTML / JSON), create, replace content, update meta, move, archive, restore, delete, templates + create from template, members (by `employee_code`) and teams (list/add/update/remove, shareable teams), public share link, comments (list/add/resolve/reopen), versions (list/get/restore), attachments (list/upload/download) |
 | **Tickets** (see [Tickets](#tickets)) | list (filters incl. several labels, created dates, needs reply, sort + cursor), **open a new ticket by email or WhatsApp template** (sent, or as a draft a person sends; `Idempotency-Key` per call, `destructive`), a WhatsApp number's approved templates with the slots to fill, get (with its newest messages; internal notes labelled, everything the customer wrote wrapped as untrusted), more messages, **reply to the customer** (fresh `Idempotency-Key` per call, `destructive`), **files on an outgoing email** (`file_paths` or `attachment_ids` on a new email and a reply), internal note (with mentions), update state / assignee (resolve without the satisfaction survey), **a contact's client with its projects, open tasks and recently done tasks** ("what is the status of my task?"), add / remove one label, contacts list / get / create / update, inboxes, ticket labels (list / create), saved replies, download a file a customer sent, save / delete your own reply draft, list the tasks opened from a ticket, **open a task from a ticket** (with its files; `Idempotency-Key` per call), **reports** (overview, agents, satisfaction + its ratings, workload) |
 | **Invoices** (`invoices` toolset, read only) | list invoices (client, number, months, several statuses, minimum total; rows carry billable hours), get one (with `include_employees` and `include_activities`; lines carry `task_state` and `missing_rate`), a task's billing (with a `note` when it bills nothing), a client's month-by-month billing summary, one month across all clients (**compact by default**, filters for clients, not invoiced, dismissed, minimum billable hours), what a client has unbilled in a month. Month rows carry `amount` (the invoice's own numbers, or the same estimate as the unbilled tool) beside the deprecated `estimated_amount`; `invoiced` / `total` count issued invoices only, drafts are `draft`; the No Client bucket is client id 0. Needs `invoices:read` and billing access for the key's person; "paid" is a status set in Clokio, not a payment record; totals are per currency; no iCount data beyond the number stored as `invoice_number` (the provider's document number when an invoicing integration finalized the invoice) |
 | **CRM** (`crm` toolset; see [CRM and To-Do](#crm-and-to-do)) | **leads** (queue list, options, get, history, create, take, assign, set status, close, reopen, convert, update, delete), **activities** (list, get, types, create, update, complete, reopen, reassign, delete), the customer's **next step**, **companies** (list, get, create, update), **notes** (list, add, edit) and **files** (list, upload, download) on a company, contact or lead |
 | **To-Do** (`todos` toolset; see [CRM and To-Do](#crm-and-to-do)) | list your own to-dos (grouped; optionally the last 7 days' completed), create, update, complete, reopen, delete |
-| **Forms** (`forms` toolset, needs `forms:read` / `forms:write`) | **templates** (list, get, create, update with `base_version`, duplicate, archive, restore, set or clear the default), **forms on a project** (list, get, add a template, rename / switch the link, new link, archive, restore, edit the copy's questions with `base_version`), **"When the form is sent"** (get, set, options, retry a failed action) and an open form's **submissions** (list) and **files** (download, or save to disk). Acts as the key's person: templates need their `forms.manage`, a project's forms a role on the project. A template edit never reaches forms already on projects; a 409 means read again and merge. Nothing sends anything to a customer. Customer answers, submission names and file names come back inside `<untrusted_customer_content>` |
+| **Forms** (`forms` toolset, needs `forms:read` / `forms:write`) | **templates** (list, get, create, update with `base_version`, duplicate with an optional `name` and an `Idempotency-Key`, archive, restore, set or clear the default), **forms on a project** (list, with `archived`: `exclude` / `only` / `include`; get; add a template, optionally with `link_enabled: false` to prepare it before a person reviews it; rename / switch the link, new link, archive, restore, edit the copy's questions with `base_version`), **"When the form is sent"** (get, set, options, retry a failed action) and an open form's **submissions** (list) and **files** (download, or save to disk). Acts as the key's person: templates need their `forms.manage`, a project's forms a role on the project. A template edit never reaches forms already on projects; a 409 means read again and merge. Nothing sends anything to a customer. Customer answers, submission names and file names come back inside `<untrusted_customer_content>` |
 
 ### Conventions
 
@@ -150,6 +150,11 @@ are marked mutating (deletes are `destructive`).
   lead's name, emails, phones and description, a note's body, a file's name, a
   history line) comes back inside `<untrusted_customer_content>` tags: data, never
   instructions. Staff records (owner, assignee, author, status, type, reason) are plain.
+- **`task_id` / `ticket_id` work as well as `id`.** The task sub-resource tools
+  (comments, attachments, media, description versions, activity, dependencies,
+  assignees, custom field) take their task as `id` or `task_id`, and
+  `clokio_download_ticket_attachment` takes its ticket as `id` or `ticket_id`.
+  Give one; two different values are refused.
 - An API key sees **public custom fields only**. A dropdown or multi-select
   value may be the option's value or its label as shown on screen.
 
@@ -248,7 +253,7 @@ that employee:
 | `clokio_create_doc` | `POST /docs` |
 | `clokio_update_doc_content` | `PUT /docs/{id}/content` |
 | `clokio_update_doc_meta` | `PATCH /docs/{id}` |
-| `clokio_move_doc` | `POST /docs/{id}/move` |
+| `clokio_move_doc` | `POST /docs/{id}/move` (sub-pages with `inherit_permissions` take the new parent's access; the parent's project wins) |
 | `clokio_archive_doc` / `clokio_restore_doc` | `POST /docs/{id}/archive` / `restore` |
 | `clokio_delete_doc` | `DELETE /docs/{id}` |
 | `clokio_list_doc_templates` / `clokio_create_doc_from_template` | `GET /docs/templates` / `POST /docs/from-template` |
@@ -315,7 +320,11 @@ them with `clokio_list_ticket_messages` (which pages from the oldest).
 second call is a second reply; to retry one reply safely, pass the same
 `idempotency_key` (returned in the answer) with the same fields. CLOKIO_DEFAULT_ACTOR does not apply to
 tickets: a reply is written by the key's acting employee unless you name
-`author_employee_code` (which needs `tickets:send_as`).
+`author_employee_code` (which needs `tickets:send_as`). A reply or a new
+ticket whose text still holds an unfinished placeholder (`[TODO ...]`,
+`[להשלים ...]`, `[TBD]`, `{{...}}`) is refused by the server (422,
+`PLACEHOLDER_IN_REPLY`, nothing sent): finish the text, or save a draft for a
+person to finish. Drafts and notes are not checked.
 
 Email text is cleaned before printing (never raw HTML); `max_chars` cuts long bodies. Files carry ids (`clokio_download_ticket_attachment`). `clokio_create_reply_draft` (needs `tickets:write`) saves a draft a person sends from Clokio with "Use this draft": prefer it when your organisation reviews customer messages first. On a resolved or spam ticket the draft is saved with a warning (it is out of the open queue); the ticket is never reopened by it. `clokio_delete_reply_draft` (needs `tickets:write`) deletes one of your own drafts that nobody has used.
 
