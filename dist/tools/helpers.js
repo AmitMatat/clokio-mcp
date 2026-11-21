@@ -96,3 +96,31 @@ export function calendarDate(name) {
         .regex(/^\d{4}-\d{2}-\d{2}$/, `${name} must be YYYY-MM-DD`)
         .refine(isCalendarDate, `${name} must be a real calendar date (YYYY-MM-DD)`);
 }
+export function idAliasShape(alias, what, positive = false) {
+    const base = positive ? z.number().int().positive() : z.number().int();
+    return {
+        id: base.optional().describe(`${what} (or pass it as ${alias}; give one of the two)`),
+        [alias]: base.optional().describe(`Same as id: ${what}`),
+    };
+}
+/** The id a call names through `id` or its alias; throws a clear error otherwise. */
+export function resolveIdAlias(args, alias) {
+    const a = args.id;
+    const b = args[alias];
+    if (a === undefined && b === undefined) {
+        throw new Error(`Give the ${alias.replace('_id', '')} as id or ${alias} (one of the two is required).`);
+    }
+    if (a !== undefined && b !== undefined && a !== b) {
+        throw new Error(`id (${a}) and ${alias} (${b}) name different ${alias.replace('_id', '')}s: give one of them.`);
+    }
+    return (a ?? b);
+}
+/** Wrap a handler that reads `args.id`, so `id` or the alias both reach it. */
+export function withIdAlias(alias, fn) {
+    return (args, cfg) => {
+        const id = resolveIdAlias(args, alias);
+        const rest = { ...args };
+        delete rest[alias];
+        return fn({ ...rest, id }, cfg);
+    };
+}

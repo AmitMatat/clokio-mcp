@@ -5,7 +5,7 @@ import { ClokioConfig, request, requestUpload, seg } from '../client.js';
 import { VERSION } from '../version.js';
 import { ESTIMATED_HOURS_MAX } from './tasks.js';
 import { downloadAttachment } from '../attachments.js';
-import { registerTool } from './helpers.js';
+import { idAliasShape, registerTool, withIdAlias } from './helpers.js';
 
 /**
  * Employee mode: the tools a personal X-Employee-Key can use, acting AS that
@@ -121,17 +121,17 @@ export function registerEmployeeModeTools(server: McpServer, config: ClokioConfi
     description:
       `Comment on a task the person may comment on, as them. ${ACTS} Markdown is converted to HTML. ` +
       'TO MENTION SOMEONE, write @ followed by their full name as Clokio spells it; it becomes a real mention and notifies them.',
-    schema: { id: z.number().int(), body: z.string().min(1).max(65535) },
-    handler: (args, cfg) =>
-      request(cfg, `/tasks/${seg(args.id)}/comments`, { method: 'POST', body: { body: htmlField(args.body, 'body', true) } }),
+    schema: { ...idAliasShape('task_id', 'The task id'), body: z.string().min(1).max(65535) },
+    handler: withIdAlias('task_id', (args, cfg) =>
+      request(cfg, `/tasks/${seg(args.id)}/comments`, { method: 'POST', body: { body: htmlField(args.body, 'body', true) } })),
   });
 
   registerTool(server, config, {
     name: 'clokio_upload_task_attachment',
     mutates: true,
     description: `Upload a LOCAL FILE to a task as an attachment, uploaded by the person. ${ACTS}`,
-    schema: { id: z.number().int(), file_path: z.string().describe('Path to a file on THIS machine') },
-    handler: (args, cfg) => requestUpload(cfg, `/tasks/${seg(args.id)}/attachments`, args.file_path),
+    schema: { ...idAliasShape('task_id', 'The task id'), file_path: z.string().describe('Path to a file on THIS machine') },
+    handler: withIdAlias('task_id', (args, cfg) => requestUpload(cfg, `/tasks/${seg(args.id)}/attachments`, args.file_path)),
   });
 
   registerTool(server, config, {
@@ -140,18 +140,18 @@ export function registerEmployeeModeTools(server: McpServer, config: ClokioConfi
       'Download one attachment of a task the person can see. With save_path, writes it to disk; otherwise text, ' +
       'PDF text, ZIP entries or an image come back inline. Attachment ids are in clokio_get_task.',
     schema: {
-      id: z.number().int().describe('The task id'),
+      ...idAliasShape('task_id', 'The task id'),
       attachment_id: z.number().int(),
       file_name: z.string().optional().describe('Drives type detection (text/PDF/zip/image)'),
       save_path: z.string().optional(),
       overwrite: z.boolean().optional(),
     },
-    handler: (args, cfg) =>
+    handler: withIdAlias('task_id', (args, cfg) =>
       downloadAttachment(cfg, args.id, args.attachment_id, {
         fileName: args.file_name,
         savePath: args.save_path,
         overwrite: args.overwrite,
-      }),
+      })),
   });
 
   registerTool(server, config, {
@@ -159,15 +159,15 @@ export function registerEmployeeModeTools(server: McpServer, config: ClokioConfi
     mutates: true,
     description: `Record a work session of the person on a task (a timer entry between two instants). ${ACTS}`,
     schema: {
-      id: z.number().int(),
+      ...idAliasShape('task_id', 'The task id'),
       started_at: z.string().describe('ISO-8601 with offset'),
       ended_at: z.string().describe('ISO-8601 with offset, after started_at'),
       description: z.string().max(255).optional(),
     },
-    handler: (args, cfg) => {
+    handler: withIdAlias('task_id', (args, cfg) => {
       const { id, ...body } = args;
       return request(cfg, `/tasks/${seg(id)}/time`, { method: 'POST', body: strip(body) });
-    },
+    }),
   });
 }
 

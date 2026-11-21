@@ -137,3 +137,48 @@ export function calendarDate(name: string) {
     .regex(/^\d{4}-\d{2}-\d{2}$/, `${name} must be YYYY-MM-DD`)
     .refine(isCalendarDate, `${name} must be a real calendar date (YYYY-MM-DD)`);
 }
+
+/**
+ * 0.39.0: a tool that takes its task (or ticket) as `id` also accepts the
+ * name a model reaches for first, `task_id` (or `ticket_id`). Either one is
+ * accepted and exactly one is required; both given and different is an
+ * error. `id` keeps working (backward compatible).
+ *
+ * `idAliasShape` is the schema fragment; `withIdAlias` wraps a handler so it
+ * still reads `args.id`, resolved before the handler runs.
+ */
+export type IdAlias = 'task_id' | 'ticket_id';
+
+export function idAliasShape<K extends IdAlias>(alias: K, what: string, positive = false) {
+  const base = positive ? z.number().int().positive() : z.number().int();
+  return {
+    id: base.optional().describe(`${what} (or pass it as ${alias}; give one of the two)`),
+    [alias]: base.optional().describe(`Same as id: ${what}`),
+  } as { id: z.ZodOptional<z.ZodNumber> } & { [P in K]: z.ZodOptional<z.ZodNumber> };
+}
+
+/** The id a call names through `id` or its alias; throws a clear error otherwise. */
+export function resolveIdAlias(args: Record<string, unknown>, alias: IdAlias): number {
+  const a = args.id as number | undefined;
+  const b = args[alias] as number | undefined;
+  if (a === undefined && b === undefined) {
+    throw new Error(`Give the ${alias.replace('_id', '')} as id or ${alias} (one of the two is required).`);
+  }
+  if (a !== undefined && b !== undefined && a !== b) {
+    throw new Error(`id (${a}) and ${alias} (${b}) name different ${alias.replace('_id', '')}s: give one of them.`);
+  }
+  return (a ?? b) as number;
+}
+
+/** Wrap a handler that reads `args.id`, so `id` or the alias both reach it. */
+export function withIdAlias<A extends Record<string, unknown>, R>(
+  alias: IdAlias,
+  fn: (args: Omit<A, 'id'> & { id: number }, cfg: ClokioConfig) => R,
+): (args: A, cfg: ClokioConfig) => R {
+  return (args, cfg) => {
+    const id = resolveIdAlias(args, alias);
+    const rest: Record<string, unknown> = { ...args };
+    delete rest[alias];
+    return fn({ ...(rest as Omit<A, 'id'>), id }, cfg);
+  };
+}
