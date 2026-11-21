@@ -220,7 +220,7 @@ export function registerFormTools(server, config) {
     registerTool(server, config, {
         name: 'clokio_list_project_forms',
         description: 'The forms on a project, oldest first. archived: exclude (default) leaves the archived ones out, only lists just the archived ones, include lists both; ' +
-            'an archived project form can then be restored with clokio_restore_project_form. Each is {id, name, language, progress, link_enabled, last_sent_at, last_client_answer_at, client_done_at, form_url, role, kind, parent_instance_id, submitted_at, submissions_count, archived_at} ' +
+            'an archived project form can be read (read only, no link) with clokio_get_project_form and restored with clokio_restore_project_form. Each is {id, name, language, progress, link_enabled, last_sent_at, last_client_answer_at, client_done_at, form_url, role, kind, parent_instance_id, submitted_at, submissions_count, archived_at} ' +
             '(archived_at is null on a live row; an archived row has no link_url). ' +
             'role single is a one to one form; entry is an open form holding the link (list its submissions with clokio_list_form_submissions); submissions are not listed here. ' +
             ENTRY_PROGRESS + 'Read one whole (schema, answers, files) with clokio_get_project_form.' + WRAPPED + NEEDS,
@@ -242,7 +242,7 @@ export function registerFormTools(server, config) {
         name: 'clokio_add_form_to_project',
         mutates: true,
         description: 'Add a form template to a project. A one to one form becomes a copy with its own link (its questions as they are NOW: later template edits never reach it); an open form becomes the entry that holds the link. ' +
-            'name is optional (the template\'s name by default). The link starts ON and the answer carries link_url; link_enabled: false adds it with the link OFF, to prepare a form before a person reviews it (switch it on later with clokio_update_project_form). ' +
+            'name is optional (the template\'s name by default). The link starts ON and the answer carries link_url; link_enabled: false adds it with the link OFF, to prepare a form before a person reviews it (switch it on later with clokio_update_project_form). The link_url opens only while link_enabled is true, so do not share it before the link is switched on. ' +
             'Nothing is sent to the client: emailing the link stays a person\'s click on the Forms tab. ' +
             'An archived template must be restored first (clokio_restore_form): adding one is a 422 on form_id. ' +
             'form_id is a template id: listing templates (clokio_list_forms) needs the person\'s forms.manage permission, but adding one by form_id needs only the right to manage the project\'s forms. ' +
