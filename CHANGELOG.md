@@ -1,14 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.40.0
 
-New custom field type `employee` (one person). **Backend dependency:** the Clokio backend with branch `feature/employee-field`. Version not bumped.
+New custom field type `employee` (one person). **Backend dependency:** the Clokio backend released 2026-11-23 (employee custom fields).
 
 - `clokio_create_project_custom_field` / `clokio_update_project_custom_field`: `type` accepts `employee` (takes no options).
 - A task, company or support-contact value is written as an employee code (find codes with `clokio_list_employees`; an id is refused) and read back as `{employee_code, name}`. The value schemas are unchanged; the descriptions of the task, company and contact tools say so.
 - Tests extended: `test/board-structure-027.mjs`, `test/custom-fields-5874.mjs`, `test/crm-customers-tools.mjs`.
 
-Multi-select company fields. **Backend dependency:** the Clokio backend with the `multi_select` company custom field type.
+Multi-select company fields. **Backend dependency:** the Clokio backend released 2026-11-23 (multi-select company fields, `receives_invoices`).
 
 - `clokio_create_company` / `clokio_update_company`: a `custom_fields` value may now be a list of strings (option values or labels; `[]` or null clears). Reads return a list of option values.
 - `clokio_add_client_contact`: new optional `receives_invoices` (default true, sent only when given). `false` links the person without making them an invoice recipient.

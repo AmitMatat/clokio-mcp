@@ -157,6 +157,8 @@ are marked mutating (deletes are `destructive`).
   Give one; two different values are refused.
 - An API key sees **public custom fields only**. A dropdown or multi-select
   value may be the option's value or its label as shown on screen.
+  A company multi-select takes a list. An **employee** field is written as an
+  employee code and read back as `{employee_code, name}`.
 
 ## CRM and To-Do
 
