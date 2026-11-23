@@ -58,12 +58,14 @@ const run = await runTools({
     ['clokio_list_crm_notes', { customer_type: 'vendor', customer_id: 3 }], // 26
     ['clokio_list_crm_files', { customer_type: 'company', customer_id: 3, limit: 101 }], // 27
     ['clokio_create_company', { name: 'x', idempotency_key: 'short' }], // 28
-    ['clokio_create_company', { name: 'x', custom_fields: { a: ['no'] } }], // 29
+    ['clokio_create_company', { name: 'x', custom_fields: { a: { b: 1 } } }], // 29
     // server answers passed through (R16)
     ['clokio_create_company', { name: 'Nope' }], // 30 403
     ['clokio_list_companies', { activity: 'none' }], // 31 422 CRM off
     ['clokio_update_crm_note', { id: 70, body: 'x' }], // 32 403 author
     ['clokio_update_crm_note', { id: 5 }], // 33 no body: goes out as {}, the server answers
+    ['clokio_create_company', { name: 'Multi', custom_fields: { tags: ['a', 'b'], owner: '00055' } }], // 34 multi-select list
+    ['clokio_update_company', { id: 3, custom_fields: { tags: [], other: null } }], // 35 empty list clears
   ],
   respond: (hit) => {
     if (hit.path === '/crm/companies' && hit.method === 'POST' && hit.body?.name === 'Nope') {
@@ -143,17 +145,20 @@ check('download save_path writes a file', run.text(19).includes('saved_to') && r
 for (const [i, label] of [
   [20, 'body and body_html together'], [22, 'an edit with both'], [23, 'a colour that is not #rrggbb'],
   [24, 'an unknown status'], [25, 'an unknown sort'], [26, 'an unknown customer_type'], [27, 'limit 101'],
-  [28, 'a short idempotency_key'], [29, 'a custom field value that is an array'],
+  [28, 'a short idempotency_key'], [29, 'a custom field value that is an object'],
 ]) {
   check(`${label} is refused locally`, run.errored(i), true);
 }
 const nReq = h.length;
-check('the refused calls sent nothing (19 calls, the signed hop, 6 server-bound = 26 requests; the empty-body add goes to the server, R16)', nReq, 26);
+check('the refused calls sent nothing (19 calls, the signed hop, 6 server-bound + 2 multi-select = 28 requests; the empty-body add goes to the server, R16)', nReq, 28);
 check('add note with neither body nor body_html goes out as {} and the server answers', h.find((x) => x.method === 'POST' && x.path === '/crm/companies/3/notes' && JSON.stringify(x.body) === '{}') !== undefined, true);
 
 check('a 403 comes through', [run.errored(30), run.text(30).includes('cannot change this customer')], [true, true]);
 check('the CRM-off 422 comes through', [run.errored(31), run.text(31).includes('HTTP 422') && run.text(31).includes('activity filter needs the CRM module')], [true, true]);
 check('the author rule comes through', [run.errored(32), run.text(32).includes('Only the author can change this note.')], [true, true]);
+
+check('multi-select: a string array goes through unchanged', h.find((x) => x.body?.name === 'Multi')?.body?.custom_fields, { tags: ['a', 'b'], owner: '00055' });
+check('multi-select: an empty array and null go through', h.find((x) => x.method === 'PATCH' && x.body?.custom_fields?.tags)?.body?.custom_fields, { tags: [], other: null });
 
 // wrapping (R16, Review Focus 3)
 const list = run.text(0);
@@ -221,6 +226,7 @@ has('list_crm_files says a company shows its leads\' files only while CRM is on 
 check('list_crm_notes no longer says its leads\' notes are always included', (t('clokio_list_crm_notes')?.description ?? '').includes("its leads' included"), false);
 has('add note says mentions are not supported', t('clokio_add_crm_note')?.description, 'API mentions are not a supported feature');
 has('upload says there is no Idempotency-Key', t('clokio_upload_crm_file')?.description, 'NO Idempotency-Key');
+has('company custom_fields description says multi-select takes a list', t('clokio_update_company')?.inputSchema?.properties?.custom_fields?.description, 'multi-select');
 has('company fields: an Employee field takes a code', t('clokio_create_company')?.inputSchema?.properties?.custom_fields?.description, 'employee_code');
 has('create company names the Idempotency-Key', t('clokio_create_company')?.description, 'Idempotency-Key');
 check('no delete tool for notes or files', Object.keys(run.tools).filter((n) => /delete_crm_(note|file)/.test(n)), []);

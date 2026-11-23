@@ -8,6 +8,11 @@ New custom field type `employee` (one person). **Backend dependency:** the Cloki
 - A task, company or support-contact value is written as an employee code (find codes with `clokio_list_employees`; an id is refused) and read back as `{employee_code, name}`. The value schemas are unchanged; the descriptions of the task, company and contact tools say so.
 - Tests extended: `test/board-structure-027.mjs`, `test/custom-fields-5874.mjs`, `test/crm-customers-tools.mjs`.
 
+Multi-select company fields. **Backend dependency:** the Clokio backend with the `multi_select` company custom field type.
+
+- `clokio_create_company` / `clokio_update_company`: a `custom_fields` value may now be a list of strings (option values or labels; `[]` or null clears). Reads return a list of option values.
+- `clokio_add_client_contact`: new optional `receives_invoices` (default true, sent only when given). `false` links the person without making them an invoice recipient.
+
 ## 0.39.0
 
 Follow-ups to the forms toolset and a few smaller fixes. **Backend dependency:** the Clokio backend with branch `feature/forms-api-followups` for the new forms parameters (`archived` on a project's forms list, `link_enabled` on add, `name` and the `Idempotency-Key` on duplicate), the placeholder refusal on ticket replies and the optional leaves range. On an older server the new forms parameters can be refused (422 naming the unknown field) or ignored, and `clokio_list_leaves` without `from` / `to` is refused (give both).

@@ -278,16 +278,18 @@ export function registerProjectTools(server, config) {
     registerTool(server, config, {
         name: 'clokio_add_client_contact',
         mutates: true,
-        description: 'Add a contact to a client. Every field is optional, but supply at least a name or an email.',
+        description: 'Add a contact to a client. Every field is optional, but supply at least a name or an email. ' +
+            'receives_invoices (default true): false links the person without making them an invoice recipient.',
         schema: {
             client_id: z.number().int(),
             name: z.string().max(255).optional(),
             email: z.string().max(255).optional(),
             phone: z.string().max(50).optional(),
+            receives_invoices: z.boolean().optional().describe('Default true. false links the person without making them an invoice recipient'),
         },
         handler: (args, cfg) => request(cfg, `/clients/${args.client_id}/contacts`, {
             method: 'POST',
-            body: { name: args.name, email: args.email, phone: args.phone },
+            body: { name: args.name, email: args.email, phone: args.phone, receives_invoices: args.receives_invoices },
         }),
     });
     // ── Reference / vocabulary lookups ──

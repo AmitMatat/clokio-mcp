@@ -50,10 +50,10 @@ const companyFields = {
   website: z.string().max(255).nullable().optional().describe('An http or https address with a real host'),
   company_number: z.string().max(50).nullable().optional().describe('Letters, digits, spaces and . / - only'),
   custom_fields: z
-    .record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()]))
+    .record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.array(z.string()), z.null()]))
     .nullable()
     .optional()
-    .describe('Company fields by field KEY (clokio_get_company lists the organisation\'s keys): {key: value}; an Employee field takes an employee_code (clokio_list_employees finds codes) and reads back as {employee_code, name}. On an edit only the keys named change; null or "" clears one'),
+    .describe('Company fields by field KEY (clokio_get_company lists the organisation\'s keys): {key: value}; an Employee field takes an employee_code (clokio_list_employees finds codes) and reads back as {employee_code, name}; a multi-select field takes a list of option values or labels (e.g. ["a","b"]; [] or null clears) and reads back as a list of option values. On an edit only the keys named change; null or "" clears one'),
 };
 
 const noteBody = {
