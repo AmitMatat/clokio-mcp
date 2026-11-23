@@ -64,6 +64,7 @@ const run = await runTools({
     ['clokio_set_task_assignees', { id: 7, employee_codes: ['00080'], mode: 'add', actor_employee_code: '00055' }], // 18
     ['clokio_create_project_custom_field', { project_id: 3, name: 'Owner', type: 'employee' }], // 19 employee, no options
     ['clokio_create_project_custom_field', { project_id: 3, name: 'Owner', type: 'employee', options: [{ value: 'x' }] }], // 20 refused
+    ['clokio_update_project_custom_field', { project_id: 3, field_key: 'owner', type: 'employee' }], // 21
   ],
   respond: (hit) => (hit.path.endsWith('/activities') ? { json: { status: 'success', data: [], meta: { next_cursor: null } } } : OK),
 });
@@ -100,8 +101,9 @@ check('an estimate over 9999.99 errors before any request', run.errored(16), tru
 check('summary grouping', run.hits[10]?.query, { group_by_custom_field: 'release' });
 check('set assignees credits the actor', run.hits[11]?.body, { employee_codes: ['00080'], mode: 'add', actor_employee_code: '00055' });
 check('employee field: created with no options', [run.errored(19), run.hits.find((h) => h.body?.name === 'Owner')?.body], [false, { name: 'Owner', type: 'employee' }]);
+check('update field: type employee is sent', run.hits.find((h) => h.method === 'PATCH' && h.body?.type === 'employee')?.body, { type: 'employee' });
 check('employee field with options errors locally', run.errored(20), true);
-check('exactly thirteen requests went out', run.hits.length, 13);
+check('exactly fourteen requests went out', run.hits.length, 14);
 
 // ── the descriptions say what an agent needs ───────────────────────────
 const tool = (n) => run.tools[n];

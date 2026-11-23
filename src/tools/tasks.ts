@@ -38,7 +38,7 @@ export const ESTIMATED_HOURS_MAX = 9999.99;
  */
 const customFieldValue = z
   .union([z.string(), z.number(), z.boolean(), z.array(z.string()), z.null()])
-  .describe('The value; a dropdown option by its value or its label; an employee field an employee_code; null clears');
+  .describe('The value; a dropdown option by its value or its label; an employee field an employee_code (reads back as {employee_code, name}); null clears');
 
 /** field_key -> value, at least one and at most 50 fields (the server's cap). */
 const customFieldsMap = z
@@ -506,7 +506,7 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
             'that project is refused naming it. Per type: dropdown = the option value or its label (a label ' +
             'two options share is refused asking for the value); multi-select = the task\'s list CONTAINS that ' +
             'option; checkbox = true (ticked) or false (not ticked, an unanswered checkbox included); text, ' +
-            'url and email = exact match, ignoring case; employee = an employee_code, or is_empty; number and date (YYYY-MM-DD) = exact.'
+            'url and email = exact match, ignoring case; employee = `is` with an employee_code, or is_empty; number and date (YYYY-MM-DD) = exact.'
         ),
       open: z.boolean().optional().describe('true = only tasks whose status is not a "done" one'),
       recurring: z
