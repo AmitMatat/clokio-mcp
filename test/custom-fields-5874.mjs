@@ -31,6 +31,7 @@ const r = await runTools({
     ['clokio_bulk_set_task_custom_field', { ids: [1234, 1235, 1240], custom_fields: { stage: 'In build', client_po: 'PO-4471' }, actor_employee_code: '00778' }],
     ['clokio_bulk_set_task_custom_field', { ids: [1], custom_fields: {} }],
     ['clokio_bulk_set_task_custom_field', { ids: [], custom_fields: { a: 1 } }],
+    ['clokio_set_task_custom_field', { id: 9, field_key: 'owner', value: '00055' }], // 8 employee code
   ],
   respond: (hit) => (hit.path === '/tasks/bulk/custom-fields' ? OK(BULK) : OK({ id: 5 })),
 });
@@ -51,6 +52,10 @@ check('set: null is sent (clears) with the actor', r.hits[1].body, { field_key: 
 check('update: custom_fields rides in the same body', r.hits[2].body, { title: 'New', custom_fields: { stage: 'Design', client_po: 'PO-9', approved: false } });
 check('update: no custom_fields key when not given', 'custom_fields' in (r.hits[3].body ?? {}), false);
 
+// employee field: the code goes through unchanged
+check('employee: a code string is passed through unchanged', r.hits.find((h) => h.body?.field_key === 'owner')?.body, { field_key: 'owner', value: '00055' });
+has('set: the description names the employee code', r.tools.clokio_set_task_custom_field?.description, 'employee_code');
+
 // clokio_bulk_set_task_custom_field
 check('update: custom_fields alone is a change, not refused as empty', [r.errored(4), r.hits[4].path, r.hits[4].body], [false, '/tasks/8', { custom_fields: { stage: 'Design' } }]);
 check('bulk: PATCH /tasks/bulk/custom-fields', [r.hits[5].method, r.hits[5].path], ['PATCH', '/tasks/bulk/custom-fields']);
@@ -59,6 +64,6 @@ has('bulk: the partial-success answer reaches the model', r.text(5), 'field_not_
 has('bulk: the moved bucket reaches the model', r.text(5), '1241');
 check('bulk: an empty custom_fields is refused before any request', r.errored(6), true);
 check('bulk: no ids is refused before any request', r.errored(7), true);
-check('only the six valid calls reached the server', r.hits.length, 6);
+check('only the seven valid calls reached the server', r.hits.length, 7);
 
 done();

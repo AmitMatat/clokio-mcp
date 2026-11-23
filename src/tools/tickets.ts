@@ -1596,7 +1596,7 @@ export function registerTicketTools(server: McpServer, config: ClokioConfig): vo
     name: 'clokio_update_contact',
     mutates: true,
     description:
-      'Edit a support contact: name, email, phone, and defined fields as {field_key: value} (empty clears; a multi-select field takes an array of option values). ' +
+      'Edit a support contact: name, email, phone, and defined fields as {field_key: value} (empty clears; a multi-select field takes an array of option values; an Employee field takes an employee_code from clokio_list_employees and reads back as {employee_code, name}). ' +
       'Needs tickets:write and the employee\'s tickets.manage.',
     schema: {
       id: z.number().int().positive(),

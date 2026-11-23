@@ -221,6 +221,7 @@ has('list_crm_files says a company shows its leads\' files only while CRM is on 
 check('list_crm_notes no longer says its leads\' notes are always included', (t('clokio_list_crm_notes')?.description ?? '').includes("its leads' included"), false);
 has('add note says mentions are not supported', t('clokio_add_crm_note')?.description, 'API mentions are not a supported feature');
 has('upload says there is no Idempotency-Key', t('clokio_upload_crm_file')?.description, 'NO Idempotency-Key');
+has('company fields: an Employee field takes a code', t('clokio_create_company')?.inputSchema?.properties?.custom_fields?.description, 'employee_code');
 has('create company names the Idempotency-Key', t('clokio_create_company')?.description, 'Idempotency-Key');
 check('no delete tool for notes or files', Object.keys(run.tools).filter((n) => /delete_crm_(note|file)/.test(n)), []);
 check('create company requires name', (t('clokio_create_company')?.inputSchema?.required ?? []).includes('name'), true);

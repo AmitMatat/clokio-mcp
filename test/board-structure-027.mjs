@@ -62,6 +62,8 @@ const run = await runTools({
     ['clokio_bulk_update_tasks', { ids: [1], estimated_hours: 20000 }], // 16 schema refuses
     ['clokio_get_project_task_summary', { project_id: 3, group_by_custom_field: 'release' }], // 17
     ['clokio_set_task_assignees', { id: 7, employee_codes: ['00080'], mode: 'add', actor_employee_code: '00055' }], // 18
+    ['clokio_create_project_custom_field', { project_id: 3, name: 'Owner', type: 'employee' }], // 19 employee, no options
+    ['clokio_create_project_custom_field', { project_id: 3, name: 'Owner', type: 'employee', options: [{ value: 'x' }] }], // 20 refused
   ],
   respond: (hit) => (hit.path.endsWith('/activities') ? { json: { status: 'success', data: [], meta: { next_cursor: null } } } : OK),
 });
@@ -97,12 +99,15 @@ check('bulk estimate null is a change', run.hits[9]?.body, { ids: [1, 2], estima
 check('an estimate over 9999.99 errors before any request', run.errored(16), true);
 check('summary grouping', run.hits[10]?.query, { group_by_custom_field: 'release' });
 check('set assignees credits the actor', run.hits[11]?.body, { employee_codes: ['00080'], mode: 'add', actor_employee_code: '00055' });
-check('exactly twelve requests went out', run.hits.length, 12);
+check('employee field: created with no options', [run.errored(19), run.hits.find((h) => h.body?.name === 'Owner')?.body], [false, { name: 'Owner', type: 'employee' }]);
+check('employee field with options errors locally', run.errored(20), true);
+check('exactly thirteen requests went out', run.hits.length, 13);
 
 // ── the descriptions say what an agent needs ───────────────────────────
 const tool = (n) => run.tools[n];
 const prop = (n, key) => tool(n)?.inputSchema?.properties?.[key]?.description ?? '';
 has('create field explains releases', tool('clokio_create_project_custom_field')?.description, 'A release or sprint is a dropdown field');
+has('create field names the employee type', tool('clokio_create_project_custom_field')?.description, 'employee_code');
 has('create field names the scope', tool('clokio_create_project_custom_field')?.description, 'projects:write');
 has('update field says the whole list', tool('clokio_update_project_custom_field')?.description, 'WHOLE new list');
 has('update field says removing a held option is refused', tool('clokio_update_project_custom_field')?.description, 'Removing an option tasks still hold is refused');

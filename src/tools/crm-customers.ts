@@ -53,7 +53,7 @@ const companyFields = {
     .record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()]))
     .nullable()
     .optional()
-    .describe('Company fields by field KEY (clokio_get_company lists the organisation\'s keys): {key: value}. On an edit only the keys named change; null or "" clears one'),
+    .describe('Company fields by field KEY (clokio_get_company lists the organisation\'s keys): {key: value}; an Employee field takes an employee_code (clokio_list_employees finds codes) and reads back as {employee_code, name}. On an edit only the keys named change; null or "" clears one'),
 };
 
 const noteBody = {

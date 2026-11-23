@@ -72,7 +72,7 @@ export function registerProjectTools(server: McpServer, config: ClokioConfig): v
     )
     .min(1)
     .max(200);
-  const fieldType = z.enum(['text', 'number', 'date', 'dropdown', 'checkbox', 'multi_select', 'url', 'email']);
+  const fieldType = z.enum(['text', 'number', 'date', 'dropdown', 'checkbox', 'multi_select', 'url', 'email', 'employee']);
   const actorCode = z
     .string()
     .regex(/^[A-Za-z0-9_-]{1,50}$/, 'employee_code: letters, digits, _ or -')
@@ -89,8 +89,8 @@ export function registerProjectTools(server: McpServer, config: ClokioConfig): v
     mutates: true,
     description:
       'Create a custom field on a project (the board\'s columns). type is one of text, number, date, dropdown, ' +
-      'checkbox, multi_select, url, email. A dropdown or multi_select NEEDS options ({value, label?, color?}; ' +
-      'the label defaults to the value); every other type takes none. The field key is generated from the ' +
+      'checkbox, multi_select, url, email, employee. A dropdown or multi_select NEEDS options ({value, label?, color?}; ' +
+      'the label defaults to the value); every other type (employee included) takes none. An employee field holds one person: a task value is an employee_code (clokio_list_employees finds codes), read back as {employee_code, name}. The field key is generated from the ' +
       'name and never changes (it is what clokio_set_task_custom_field and the list filters take). An API ' +
       'key creates PUBLIC fields only. A release or sprint is a dropdown field: create it once, add an ' +
       'option per release with clokio_update_project_custom_field, set it on tasks with ' +

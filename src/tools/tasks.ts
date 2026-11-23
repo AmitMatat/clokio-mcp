@@ -38,7 +38,7 @@ export const ESTIMATED_HOURS_MAX = 9999.99;
  */
 const customFieldValue = z
   .union([z.string(), z.number(), z.boolean(), z.array(z.string()), z.null()])
-  .describe('The value; a dropdown option by its value or its label; null clears');
+  .describe('The value; a dropdown option by its value or its label; an employee field an employee_code; null clears');
 
 /** field_key -> value, at least one and at most 50 fields (the server's cap). */
 const customFieldsMap = z
@@ -506,7 +506,7 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
             'that project is refused naming it. Per type: dropdown = the option value or its label (a label ' +
             'two options share is refused asking for the value); multi-select = the task\'s list CONTAINS that ' +
             'option; checkbox = true (ticked) or false (not ticked, an unanswered checkbox included); text, ' +
-            'url and email = exact match, ignoring case; number and date (YYYY-MM-DD) = exact.'
+            'url and email = exact match, ignoring case; employee = an employee_code, or is_empty; number and date (YYYY-MM-DD) = exact.'
         ),
       open: z.boolean().optional().describe('true = only tasks whose status is not a "done" one'),
       recurring: z
@@ -1480,7 +1480,7 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
       'Set one custom field value on a task, identified by field_key (never field_id); list a project\'s ' +
       'keys with clokio_get_project_custom_fields. An API key sees PUBLIC fields only. A dropdown or ' +
       'multi-select value may be the option\'s stored value OR its label as shown on screen (value first, ' +
-      'then the exact label, then the label ignoring case and surrounding spaces). A label two options ' +
+      'then the exact label, then the label ignoring case and surrounding spaces). An employee field takes an employee_code string (clokio_list_employees finds codes; an id is refused), read back as {employee_code, name}. A label two options ' +
       'share is refused asking for the value; an unknown one is refused listing the options. null clears ' +
       'the value. To set several fields on one task use custom_fields on clokio_update_task; on many tasks, ' +
       'clokio_bulk_set_task_custom_field.',
