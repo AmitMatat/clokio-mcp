@@ -1,4 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { basename, extname } from 'node:path';
 import { z } from 'zod';
 import { markdownToHtml } from '../markdown.js';
 import { ClokioConfig, request, requestUpload } from '../client.js';
@@ -450,6 +451,47 @@ export function listFilterQuery(args: {
     }
   }
   return out;
+}
+
+const COMMENT_IMAGE_EXT = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif']);
+const COMMENT_VIDEO_EXT = new Set(['mp4', 'webm', 'mov']);
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/**
+ * Upload one file for a comment and answer the HTML that shows it there
+ * (task #7616), mirroring the web comment box: an image or video goes to
+ * /tasks/{id}/media and is shown inline; anything else becomes a task
+ * attachment linked as "📎 name" to its people-facing url. A server without
+ * `url` on the upload answer gets the same web route built from the id.
+ */
+export async function commentFileBlock(
+  cfg: ClokioConfig,
+  taskId: number,
+  filePath: string,
+  uploadedBy?: string,
+): Promise<string> {
+  const name = basename(filePath);
+  const ext = extname(name).slice(1).toLowerCase();
+  if (COMMENT_IMAGE_EXT.has(ext) || COMMENT_VIDEO_EXT.has(ext)) {
+    const media = await requestUpload<{ url?: string }>(cfg, `/tasks/${taskId}/media`, filePath);
+    if (!media?.url) throw new Error(`The upload of ${name} answered no url.`);
+    const src = escapeHtml(media.url);
+    return COMMENT_VIDEO_EXT.has(ext)
+      ? `<p><video src="${src}" controls></video></p>`
+      : `<p><img src="${src}" alt="${escapeHtml(name)}"></p>`;
+  }
+  const att = await requestUpload<{ id?: number; file_name?: string; url?: string }>(
+    cfg,
+    `/tasks/${taskId}/attachments`,
+    filePath,
+    { uploaded_by_employee_code: uploadedBy },
+  );
+  const href = att?.url ?? (att?.id != null ? `/tasks/attachments/${att.id}/download` : null);
+  if (!href) throw new Error(`The upload of ${name} answered no attachment id.`);
+  return `<p><a href="${escapeHtml(href)}">📎 ${escapeHtml(att.file_name ?? name)}</a></p>`;
 }
 
 export function registerTaskTools(server: McpServer, config: ClokioConfig): void {
@@ -1067,22 +1109,38 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
       '(for example "@Kiran Bahadur") in the body text - no markup needed. It becomes a real mention and ' +
       'notifies them, but only if the comment has an author (its own field, the key issuer, or ' +
       'CLOKIO_DEFAULT_ACTOR); a truly authorless comment notifies nobody. A name that matches no one stays ' +
-      'as plain text, so check the spelling first.',
+      'as plain text, so check the spelling first. ' +
+      'TO PUT FILES IN THE COMMENT, pass file_paths (files on this machine): an image or video is shown inline, ' +
+      'any other file (PDF, zip, spreadsheet) becomes a 📎 link inside the comment and is also added to the ' +
+      'task\'s attachments - the same result as dropping the file into the comment box on the web.',
     schema: {
       ...idAliasShape('task_id', 'The task id'),
       body: z.string().max(65535),
       author_employee_code: employeeCode.optional().describe('Credit someone OTHER than the key owner; omit to use the key issuer / CLOKIO_DEFAULT_ACTOR'),
       notify: z.boolean().optional().describe('Send notifications to watchers (default: the API decides)'),
+      file_paths: z
+        .array(z.string().min(1))
+        .max(10)
+        .optional()
+        .describe('Files on THIS machine to place in the comment, in order, after the text (task #7616)'),
     },
-    handler: withIdAlias('task_id', (args, cfg) =>
-      request(cfg, `/tasks/${args.id}/comments`, {
+    handler: withIdAlias('task_id', async (args, cfg) => {
+      // Every file is uploaded BEFORE the comment is posted, so a file that
+      // fails stops the comment instead of posting it without the file.
+      const blocks: string[] = [];
+      for (const filePath of args.file_paths ?? []) {
+        blocks.push(await commentFileBlock(cfg, args.id, filePath, args.author_employee_code ?? cfg.defaultActor));
+      }
+      const text = markdownToHtml(args.body);
+      return request(cfg, `/tasks/${args.id}/comments`, {
         method: 'POST',
         body: {
-          body: markdownToHtml(args.body),
+          body: blocks.length ? text + blocks.join('') : text,
           author_employee_code: args.author_employee_code ?? cfg.defaultActor,
           notify: args.notify,
         },
-      })),
+      });
+    }),
   });
 
   registerTool(server, config, {
@@ -1382,10 +1440,10 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
     description:
       'Upload a LOCAL FILE to a task as an attachment - a log, a spreadsheet, a PDF. Give the path to ' +
       'a file on this machine; it is read and sent. Allowed types include images, PDF, Office docs, txt/csv/' +
-      'md/json, code diffs, zip and video, up to 200 MB. The uploader is the key issuer unless you set ' +
-      'uploaded_by_employee_code. NOTE: an attachment is a file in the task\'s file list - its download_path ' +
-      'only loads WITH an API key, so it can NOT be shown inline in a comment. For an image or video the ' +
-      'reader should SEE, use clokio_upload_task_media instead.',
+      'md/json, code diffs, zip and video, up to 94 MB. The uploader is the key issuer unless you set ' +
+      'uploaded_by_employee_code. The answer\'s download_path loads only WITH an API key; its url is the link ' +
+      'for PEOPLE (a signed-in colleague opens it). To put the file INSIDE a comment, prefer ' +
+      'clokio_add_task_comment with file_paths, which uploads and links it in one step.',
     schema: {
       ...idAliasShape('task_id', 'The task id'),
       file_path: z.string().describe('Path to a file on THIS machine'),
