@@ -20,7 +20,7 @@
 // onmouseover, reproduced in review). Clokio's server sanitizer strips such
 // attributes anyway, but this package is consumed outside Clokio's web
 // surfaces too, and it must not emit injectable HTML in the first place.
-const escapeHtml = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+export const escapeHtml = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 // The EXACT shape the backend's upload answers with (tasks/org-{n}/{n}/media/
 // {file}) - anchored, no slash or dot-segment room. A bare startsWith
 // allowlist let `/tasks/media/../../anything` through, and the browser
@@ -28,7 +28,9 @@ const escapeHtml = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace
 // same-origin GET with the logged-in reader's session cookie (caught in
 // review). Anything under /tasks/media/ that is not this shape stays text.
 const MEDIA_PATH = /^\/tasks\/media\/tasks\/org-\d+\/\d+\/media\/[^/\s)]+$/;
-const VIDEO_EXT = /\.(mp4|webm|mov)$/i;
+export const VIDEO_EXT = /\.(mp4|webm|mov)$/i;
+/** Images the backend's media upload takes (POST /tasks/{id}/media). */
+export const IMAGE_EXT = /\.(jpe?g|png|gif|webp|heic|heif)$/i;
 function inline(text) {
     // The stash protects finished HTML from the LATER rules: inline code first
     // (so its contents are never styled or linked), then each generated

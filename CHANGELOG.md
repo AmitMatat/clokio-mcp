@@ -4,9 +4,9 @@
 
 Files inside a task comment (task #7616).
 
-- `clokio_add_task_comment` takes `file_paths` (up to 10 files on this machine): an image or video is uploaded as task media and shown inline; any other file is uploaded as a task attachment and linked in the comment as "📎 name". Everything is uploaded before the comment is posted, so a failed upload posts nothing.
+- `clokio_add_task_comment` takes `file_paths` (up to 10 files on this machine): an image or video is uploaded as task media and shown inline; any other file is uploaded as a task attachment and linked in the comment as "📎 name". Every file is checked first (exists, readable, under 94 MB; a video over 50 MB goes as a link) and the body's room for them, so a bad file or an over-long body refuses the call before anything is uploaded. If an upload still fails midway, no comment is posted and the error names the files already uploaded to the task. The link is absolute (the app opens links with launchUrl); an upload is credited to the key's default actor, never to `author_employee_code`.
 - `clokio_upload_task_attachment`: the description names the answer's `url` (the link for people) and the 94 MB limit, and points at `file_paths`.
-- Works against the current backend (the link is built from the attachment id); the backend change of the same task adds `url` to the upload answer, which is preferred when present.
+- Works against the current backend (the link is built from the attachment id on `CLOKIO_BASE_URL`); the backend change of the same task adds an absolute `url` to the upload answer, which is preferred when present.
 - Test: `test/comment-files-7616.mjs`.
 
 ## 0.40.0

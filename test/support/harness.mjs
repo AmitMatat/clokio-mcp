@@ -24,6 +24,8 @@ export function checker() {
 
 export async function runTools({ toolsets, calls, respond, env: envOverride }) {
   const hits = [];
+  // Which tools/call a request belongs to: the calls run one at a time.
+  let current = -1;
   const srv = createServer((req, res) => {
     const chunks = [];
     req.on('data', (c) => chunks.push(c));
@@ -41,6 +43,7 @@ export async function runTools({ toolsets, calls, respond, env: envOverride }) {
         key: req.headers['x-api-key'] ?? null,
         employeeKey: req.headers['x-employee-key'] ?? null,
         idempotencyKey: req.headers['idempotency-key'] ?? null,
+        callIndex: current,
       };
       hits.push(hit);
       const out = respond?.(hit) ?? { status: 200, json: { status: 'success', message: 'ok', data: {} } };
@@ -91,6 +94,7 @@ export async function runTools({ toolsets, calls, respond, env: envOverride }) {
   });
   for (const line of lines) {
     const id = JSON.parse(line).id;
+    current = id >= 100 ? id - 100 : -1;
     child.stdin.write(line + '\n');
     if (id === 2 || id >= 100) {
       const t0 = Date.now();

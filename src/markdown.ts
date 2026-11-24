@@ -21,7 +21,7 @@
 // onmouseover, reproduced in review). Clokio's server sanitizer strips such
 // attributes anyway, but this package is consumed outside Clokio's web
 // surfaces too, and it must not emit injectable HTML in the first place.
-const escapeHtml = (s: string): string =>
+export const escapeHtml = (s: string): string =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 // The EXACT shape the backend's upload answers with (tasks/org-{n}/{n}/media/
@@ -32,7 +32,9 @@ const escapeHtml = (s: string): string =>
 // review). Anything under /tasks/media/ that is not this shape stays text.
 const MEDIA_PATH = /^\/tasks\/media\/tasks\/org-\d+\/\d+\/media\/[^/\s)]+$/;
 
-const VIDEO_EXT = /\.(mp4|webm|mov)$/i;
+export const VIDEO_EXT = /\.(mp4|webm|mov)$/i;
+/** Images the backend's media upload takes (POST /tasks/{id}/media). */
+export const IMAGE_EXT = /\.(jpe?g|png|gif|webp|heic|heif)$/i;
 
 function inline(text: string): string {
   // The stash protects finished HTML from the LATER rules: inline code first

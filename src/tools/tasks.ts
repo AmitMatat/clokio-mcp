@@ -1,7 +1,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { basename, extname } from 'node:path';
+import { basename } from 'node:path';
+import { stat } from 'node:fs/promises';
 import { z } from 'zod';
-import { markdownToHtml } from '../markdown.js';
+import { markdownToHtml, escapeHtml, IMAGE_EXT, VIDEO_EXT } from '../markdown.js';
 import { ClokioConfig, request, requestUpload } from '../client.js';
 import { idAliasShape, registerTool, withIdAlias } from './helpers.js';
 import {
@@ -453,45 +454,81 @@ export function listFilterQuery(args: {
   return out;
 }
 
-const COMMENT_IMAGE_EXT = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif']);
-const COMMENT_VIDEO_EXT = new Set(['mp4', 'webm', 'mov']);
+/** The backend's caps: inline media (POST /tasks/{id}/media) and attachments. */
+const MEDIA_MAX_BYTES = 50 * 1024 * 1024;
+const ATTACHMENT_MAX_BYTES = 94 * 1024 * 1024;
+/** A comment body's limit on the server, and room kept per file block. */
+const COMMENT_MAX_CHARS = 65535;
+const FILE_BLOCK_CHARS = 400;
 
-function escapeHtml(text: string): string {
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+interface CommentFile {
+  path: string;
+  name: string;
+  inline: 'image' | 'video' | null;
 }
 
 /**
- * Upload one file for a comment and answer the HTML that shows it there
- * (task #7616), mirroring the web comment box: an image or video goes to
- * /tasks/{id}/media and is shown inline; anything else becomes a task
- * attachment linked as "📎 name" to its people-facing url. A server without
- * `url` on the upload answer gets the same web route built from the id.
+ * Every file of a comment checked BEFORE anything is uploaded (task #7616
+ * review): a missing or too-large file refuses the whole call while nothing
+ * is on the task yet. A video over the media cap goes as an attachment link.
  */
-export async function commentFileBlock(
-  cfg: ClokioConfig,
-  taskId: number,
-  filePath: string,
-  uploadedBy?: string,
-): Promise<string> {
-  const name = basename(filePath);
-  const ext = extname(name).slice(1).toLowerCase();
-  if (COMMENT_IMAGE_EXT.has(ext) || COMMENT_VIDEO_EXT.has(ext)) {
-    const media = await requestUpload<{ url?: string }>(cfg, `/tasks/${taskId}/media`, filePath);
-    if (!media?.url) throw new Error(`The upload of ${name} answered no url.`);
+export async function planCommentFiles(paths: string[]): Promise<CommentFile[]> {
+  const out: CommentFile[] = [];
+  const problems: string[] = [];
+  for (const path of paths) {
+    const name = basename(path);
+    let size: number;
+    try {
+      const s = await stat(path);
+      if (!s.isFile()) throw new Error('not a file');
+      size = s.size;
+    } catch {
+      problems.push(`${name}: cannot read ${path}`);
+      continue;
+    }
+    if (size > ATTACHMENT_MAX_BYTES) {
+      problems.push(`${name}: larger than 94 MB`);
+      continue;
+    }
+    const inline = IMAGE_EXT.test(name) && size <= MEDIA_MAX_BYTES ? 'image'
+      : VIDEO_EXT.test(name) && size <= MEDIA_MAX_BYTES ? 'video'
+      : null;
+    out.push({ path, name, inline });
+  }
+  if (problems.length) {
+    throw new Error(`Nothing was uploaded or posted. Fix these files first: ${problems.join('; ')}.`);
+  }
+  return out;
+}
+
+/**
+ * Upload one checked file and answer the HTML that shows it in the comment,
+ * mirroring the web comment box: an image or video (within the media cap)
+ * goes to /tasks/{id}/media and is shown inline, a video as a block of its
+ * own (never inside a paragraph, which the web editor cannot hold); anything
+ * else becomes a task attachment linked as "📎 name" to its people-facing,
+ * absolute url. An older server without `url` gets the same web route on
+ * this server's base URL. The upload is credited to the key's default actor,
+ * not to the comment's author: a code outside the organisation would refuse it.
+ */
+export async function commentFileBlock(cfg: ClokioConfig, taskId: number, file: CommentFile): Promise<string> {
+  if (file.inline) {
+    const media = await requestUpload<{ url?: string }>(cfg, `/tasks/${taskId}/media`, file.path);
+    if (!media?.url) throw new Error(`The upload of ${file.name} answered no url.`);
     const src = escapeHtml(media.url);
-    return COMMENT_VIDEO_EXT.has(ext)
-      ? `<p><video src="${src}" controls></video></p>`
-      : `<p><img src="${src}" alt="${escapeHtml(name)}"></p>`;
+    return file.inline === 'video'
+      ? `<video src="${src}" controls></video>`
+      : `<p><img src="${src}" alt="${escapeHtml(file.name)}"></p>`;
   }
   const att = await requestUpload<{ id?: number; file_name?: string; url?: string }>(
     cfg,
     `/tasks/${taskId}/attachments`,
-    filePath,
-    { uploaded_by_employee_code: uploadedBy },
+    file.path,
+    { uploaded_by_employee_code: cfg.defaultActor },
   );
-  const href = att?.url ?? (att?.id != null ? `/tasks/attachments/${att.id}/download` : null);
-  if (!href) throw new Error(`The upload of ${name} answered no attachment id.`);
-  return `<p><a href="${escapeHtml(href)}">📎 ${escapeHtml(att.file_name ?? name)}</a></p>`;
+  const href = att?.url ?? (att?.id != null ? `${cfg.baseUrl}/tasks/attachments/${att.id}/download` : null);
+  if (!href) throw new Error(`The upload of ${file.name} answered no attachment id.`);
+  return `<p><a href="${escapeHtml(href)}">📎 ${escapeHtml(att.file_name ?? file.name)}</a></p>`;
 }
 
 export function registerTaskTools(server: McpServer, config: ClokioConfig): void {
@@ -1112,7 +1149,8 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
       'as plain text, so check the spelling first. ' +
       'TO PUT FILES IN THE COMMENT, pass file_paths (files on this machine): an image or video is shown inline, ' +
       'any other file (PDF, zip, spreadsheet) becomes a 📎 link inside the comment and is also added to the ' +
-      'task\'s attachments - the same result as dropping the file into the comment box on the web.',
+      'task\'s attachments - the same result as dropping the file into the comment box on the web. Each file up to 94 MB; ' +
+      'a video over 50 MB is linked rather than shown inline. Files are checked before anything is uploaded.',
     schema: {
       ...idAliasShape('task_id', 'The task id'),
       body: z.string().max(65535),
@@ -1125,13 +1163,25 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
         .describe('Files on THIS machine to place in the comment, in order, after the text (task #7616)'),
     },
     handler: withIdAlias('task_id', async (args, cfg) => {
-      // Every file is uploaded BEFORE the comment is posted, so a file that
-      // fails stops the comment instead of posting it without the file.
-      const blocks: string[] = [];
-      for (const filePath of args.file_paths ?? []) {
-        blocks.push(await commentFileBlock(cfg, args.id, filePath, args.author_employee_code ?? cfg.defaultActor));
-      }
+      // Every file is checked first (exists, readable, within the caps) and
+      // the body's room for them, so a bad file or an over-long body refuses
+      // the call before anything reaches the task. Uploads then run one at a
+      // time (each file is read into memory whole); if an upload still fails
+      // midway, the files already uploaded stay on the task and the error says so.
       const text = markdownToHtml(args.body);
+      const files = await planCommentFiles(args.file_paths ?? []);
+      if (text.length + files.length * FILE_BLOCK_CHARS > COMMENT_MAX_CHARS) {
+        throw new Error(`The comment with its ${files.length} file(s) would pass the ${COMMENT_MAX_CHARS}-character limit; shorten the text. Nothing was uploaded.`);
+      }
+      const blocks: string[] = [];
+      for (const [i, file] of files.entries()) {
+        try {
+          blocks.push(await commentFileBlock(cfg, args.id, file));
+        } catch (e) {
+          const done = files.slice(0, i).map((f) => f.name);
+          throw new Error(`${(e as Error).message}${done.length ? ` Already uploaded to the task (no comment was posted): ${done.join(', ')}.` : ''}`);
+        }
+      }
       return request(cfg, `/tasks/${args.id}/comments`, {
         method: 'POST',
         body: {
