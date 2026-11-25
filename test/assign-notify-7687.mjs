@@ -15,6 +15,9 @@ const run = await runTools({
     ['clokio_create_task', { project_id: 9, title: 'Loud', assignee_employee_codes: ['00080'] }],
     ['clokio_update_task', { id: 1, assignee_employee_codes: ['00080'], notify: false }],
     ['clokio_update_task', { id: 1, title: 'Renamed' }],
+    ['clokio_update_task', { id: 1, notify: false }],
+    ['clokio_update_task', { id: 1, title: 'Only a title', notify: false }],
+    ['clokio_create_task', { project_id: 9, title: 'Nobody', notify: false }],
   ],
   respond: (hit) => (hit.method === 'POST' ? { status: 201, json: { status: 'success', data: { id: 5 } } } : undefined),
 });
@@ -27,6 +30,10 @@ check('create: notify false is sent', body(2).notify, false);
 check('create: notify is not sent when omitted', 'notify' in body(3), false);
 check('update: notify false is sent', body(4).notify, false);
 check('update: notify is not sent when omitted', 'notify' in body(5), false);
+
+check('update: notify alone is not a change (refused, nothing sent)', [run.errored(6), run.hits.filter((h) => h.callIndex === 6).length], [true, 0]);
+check('update: notify without assignees is not sent (an older server refuses unknown keys)', 'notify' in body(7), false);
+check('create: notify without assignees is not sent', 'notify' in body(8), false);
 
 const desc = run.tools.clokio_set_task_assignees?.description ?? '';
 check('the tool no longer says the API sends no notification', desc.includes('sends the assignee no notification'), false);

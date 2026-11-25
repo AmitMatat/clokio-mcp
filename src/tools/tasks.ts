@@ -175,14 +175,13 @@ function refuseIrrelevant(r: RecurrenceInput, allowed: Array<'days_of_week' | 'd
   }
 }
 
-/** Serialize the structured object into the scheduler's rule grammar. */
-
 /** Task #7687: the API tells the people an assignee change adds or removes, as the web does. */
 const NOTIFY_ASSIGNEES_NOTE =
   'The people added are notified ("X assigned you a task") and the people removed too, as in the app, ' +
   'credited to the acting employee; nobody is told about their own change. Pass notify: false to keep this change silent ' +
   '(bulk moves, imports). Omit it for the default (notify).';
 
+/** Serialize the structured object into the scheduler's rule grammar. */
 export function recurrenceToRule(r: RecurrenceInput): string {
   const every = r.every ?? 1;
 
@@ -888,7 +887,8 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
           estimated_hours: args.estimated_hours,
           parent_task_id: args.parent_task_id,
           assignee_employee_codes: args.assignee_employee_codes,
-          ...(args.notify === false ? { notify: false } : {}),
+          // Only beside assignees: it is about telling them.
+          ...(args.notify === false && args.assignee_employee_codes !== undefined ? { notify: false } : {}),
           label_names: args.label_names,
           created_by_employee_code: args.created_by_employee_code ?? cfg.defaultActor,
           ...(args.recurrence
@@ -1051,7 +1051,9 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
       ] as const) {
         if (args[key] !== undefined) body[key] = args[key];
       }
-      if (args.notify === false) body.notify = false;
+      // Only beside an assignee change: alone it changes nothing (the guard
+      // below refuses that), and an older server refuses the unknown key.
+      if (args.notify === false && args.assignee_employee_codes !== undefined) body.notify = false;
       if (args.assignee_mode !== undefined && args.assignee_employee_codes === undefined) {
         throw new Error('assignee_mode needs assignee_employee_codes.');
       }
