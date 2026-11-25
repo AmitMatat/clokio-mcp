@@ -17,6 +17,10 @@ writeFileSync(pdf, '%PDF-1.4 x');
 writeFileSync(png, 'png');
 writeFileSync(mov, 'mov');
 writeFileSync(zip, 'zip');
+const rar = join(dir, 'backup.rar');
+writeFileSync(rar, 'rar');
+const broken = join(dir, 'broken.pdf');
+writeFileSync(broken, 'x');
 const bigVideo = join(dir, 'long-demo.mp4');
 writeFileSync(bigVideo, '');
 truncateSync(bigVideo, 51 * 1024 * 1024);
@@ -33,6 +37,8 @@ const run = await runTools({
     ['clokio_add_task_comment', { id: 7616, body: 'Big video', file_paths: [bigVideo] }],
     ['clokio_add_task_comment', { id: 7616, body: 'Credited', author_employee_code: '00099', file_paths: [pdf] }],
     ['clokio_add_task_comment', { id: 7616, body: 'x'.repeat(65400), file_paths: [pdf] }],
+    ['clokio_add_task_comment', { id: 7616, body: 'A type the server refuses', file_paths: [png, pdf, rar] }],
+    ['clokio_add_task_comment', { id: 7616, body: 'Fails midway', file_paths: [png, pdf, broken] }],
   ],
   respond: (hit) => {
     if (hit.path === '/tasks/7616/media') {
@@ -41,6 +47,7 @@ const run = await runTools({
     }
     if (hit.path === '/tasks/7616/attachments') {
       const name = /filename="([^"]+)"/.exec(hit.body.multipart)?.[1];
+      if (name === 'broken.pdf') return { status: 500, json: { status: 'error', message: 'Server error' } };
       const id = ++attId;
       // The zip answers like a server without `url` (before #7616).
       const data = name === 'old-server.zip' ? { id, file_name: name } : { id, file_name: name, url: `https://app.example.test/tasks/attachments/${id}/download` };
@@ -71,6 +78,9 @@ check('a video over 50 MB goes as an attachment link, not inline media', bigHits
 const credited = run.hits.find((h) => h.callIndex === 6 && h.path === '/tasks/7616/attachments');
 check('the upload is not credited to the comment author (a code outside the organisation would fail it)', credited?.body?.multipart?.includes('00099'), false);
 check('a body that would pass the comment limit with its files is refused before any upload', [run.errored(7), uploadsBefore(7)], [true, 0]);
+check('a file type the server refuses is refused before ANY upload', [run.errored(8), uploadsBefore(8)], [true, 0]);
+has('the refusal names the refused file', run.text(8), 'backup.rar');
+check('a failure midway names inline media apart from task attachments', [run.errored(9), /shot\.png \(shown inline/.test(run.text(9)), /Quote <v2>\.pdf \(task attachment/.test(run.text(9))], [true, true, true]);
 has('the tool tells the model how', run.tools.clokio_add_task_comment?.description ?? '', 'file_paths');
 
 done();

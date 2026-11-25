@@ -457,6 +457,12 @@ export function listFilterQuery(args: {
 /** The backend's caps: inline media (POST /tasks/{id}/media) and attachments. */
 const MEDIA_MAX_BYTES = 50 * 1024 * 1024;
 const ATTACHMENT_MAX_BYTES = 94 * 1024 * 1024;
+/**
+ * The attachment types the server accepts (TaskAttachmentService::UPLOAD_RULE,
+ * which the media route's images and videos are a subset of). Checked up front
+ * so a refused type stops the call before anything is uploaded.
+ */
+const ATTACHMENT_EXT = /\.(jpe?g|png|gif|webp|heic|heif|pdf|docx?|xlsx?|pptx?|txt|csv|zip|html?|json|diff|patch|md|js|mp4|webm|mov)$/i;
 /** A comment body's limit on the server, and room kept per file block. */
 const COMMENT_MAX_CHARS = 65535;
 const FILE_BLOCK_CHARS = 400;
@@ -484,6 +490,10 @@ export async function planCommentFiles(paths: string[]): Promise<CommentFile[]> 
       size = s.size;
     } catch {
       problems.push(`${name}: cannot read ${path}`);
+      continue;
+    }
+    if (!ATTACHMENT_EXT.test(name)) {
+      problems.push(`${name}: this file type cannot be attached to a task`);
       continue;
     }
     if (size > ATTACHMENT_MAX_BYTES) {
@@ -1148,9 +1158,9 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
       'CLOKIO_DEFAULT_ACTOR); a truly authorless comment notifies nobody. A name that matches no one stays ' +
       'as plain text, so check the spelling first. ' +
       'TO PUT FILES IN THE COMMENT, pass file_paths (files on this machine): an image or video is shown inline, ' +
-      'any other file (PDF, zip, spreadsheet) becomes a 📎 link inside the comment and is also added to the ' +
+      'a document (PDF, Office, text, csv, zip, md, json, html) becomes a 📎 link inside the comment and is also added to the ' +
       'task\'s attachments - the same result as dropping the file into the comment box on the web. Each file up to 94 MB; ' +
-      'a video over 50 MB is linked rather than shown inline. Files are checked before anything is uploaded.',
+      'a video over 50 MB is linked rather than shown inline. Other file types (rar, 7z, svg, mp3, exe and the like) are refused. Files are checked before anything is uploaded.',
     schema: {
       ...idAliasShape('task_id', 'The task id'),
       body: z.string().max(65535),
@@ -1178,8 +1188,10 @@ export function registerTaskTools(server: McpServer, config: ClokioConfig): void
         try {
           blocks.push(await commentFileBlock(cfg, args.id, file));
         } catch (e) {
-          const done = files.slice(0, i).map((f) => f.name);
-          throw new Error(`${(e as Error).message}${done.length ? ` Already uploaded to the task (no comment was posted): ${done.join(', ')}.` : ''}`);
+          // Inline media is stored for the comment only and is not listed among
+          // the task's attachments, so say which kind each uploaded file was.
+          const done = files.slice(0, i).map((f) => `${f.name} (${f.inline ? 'shown inline, not listed among the task attachments' : 'task attachment'})`);
+          throw new Error(`${(e as Error).message}${done.length ? ` Already uploaded (no comment was posted): ${done.join(', ')}.` : ''}`);
         }
       }
       return request(cfg, `/tasks/${args.id}/comments`, {
