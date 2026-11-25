@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (0.41.0)
+## 0.41.0
 
 Files inside a task comment (task #7616).
 
