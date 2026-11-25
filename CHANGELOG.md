@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.42.0
+
+- Assigning through the API now notifies the people added and removed, as the
+  app does (server change of 2026-11-25, task #7687). `clokio_set_task_assignees`,
+  `clokio_create_task` and `clokio_update_task` take `notify` (default true);
+  `notify: false` keeps a change silent. The line "Assigning through the API
+  sends the assignee no notification" is gone from the tool description.
+  Needs the server change; an older server refuses `notify` on
+  `clokio_update_task` and ignores it elsewhere.
+
 ## 0.41.0
 
 Files inside a task comment (task #7616).

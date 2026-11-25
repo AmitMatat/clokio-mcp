@@ -144,6 +144,10 @@ function refuseIrrelevant(r, allowed) {
     }
 }
 /** Serialize the structured object into the scheduler's rule grammar. */
+/** Task #7687: the API tells the people an assignee change adds or removes, as the web does. */
+const NOTIFY_ASSIGNEES_NOTE = 'The people added are notified ("X assigned you a task") and the people removed too, as in the app, ' +
+    'credited to the acting employee; nobody is told about their own change. Pass notify: false to keep this change silent ' +
+    '(bulk moves, imports). Omit it for the default (notify).';
 export function recurrenceToRule(r) {
     const every = r.every ?? 1;
     switch (r.frequency) {
@@ -740,6 +744,7 @@ export function registerTaskTools(server, config) {
                 .max(50)
                 .optional()
                 .describe('Each a code of your organisation, or {employee_code, organization_id} for a client\'s person on a shared board'),
+            notify: z.boolean().optional().describe(NOTIFY_ASSIGNEES_NOTE),
             label_names: z
                 .array(labelName)
                 .max(20)
@@ -764,6 +769,7 @@ export function registerTaskTools(server, config) {
                     estimated_hours: args.estimated_hours,
                     parent_task_id: args.parent_task_id,
                     assignee_employee_codes: args.assignee_employee_codes,
+                    ...(args.notify === false ? { notify: false } : {}),
                     label_names: args.label_names,
                     created_by_employee_code: args.created_by_employee_code ?? cfg.defaultActor,
                     ...(args.recurrence
@@ -886,6 +892,7 @@ export function registerTaskTools(server, config) {
                 .enum(['replace', 'add', 'remove'])
                 .optional()
                 .describe('How assignee_employee_codes applies: replace (default) overwrites, add appends, remove takes off'),
+            notify: z.boolean().optional().describe(NOTIFY_ASSIGNEES_NOTE),
         },
         handler: (args, cfg) => {
             // Only keys the caller actually supplied may go in the body: PATCH
@@ -914,6 +921,8 @@ export function registerTaskTools(server, config) {
                 if (args[key] !== undefined)
                     body[key] = args[key];
             }
+            if (args.notify === false)
+                body.notify = false;
             if (args.assignee_mode !== undefined && args.assignee_employee_codes === undefined) {
                 throw new Error('assignee_mode needs assignee_employee_codes.');
             }
@@ -974,7 +983,9 @@ export function registerTaskTools(server, config) {
         description: "Change a task's assignees. mode is REQUIRED: \"add\" appends, \"replace\" overwrites the whole list, " +
             '"remove" takes those people off. People are named by employee_code (e.g. "00080"). ' +
             'Never write a client\'s person as one string like "313:00002": send the object. Adding someone ' +
-            'already assigned leaves the assignee list and the activity log unchanged. Assigning through the API sends the assignee no notification.\n\n' +
+            'already assigned leaves the assignee list and the activity log unchanged. ' +
+            NOTIFY_ASSIGNEES_NOTE +
+            '\n\n' +
             'Answers only the task id, its link and the assignees (with external_assignees for a client\'s people), not the whole task.\n\n' +
             SHARED_BOARD_NOTE,
         schema: {
@@ -986,9 +997,12 @@ export function registerTaskTools(server, config) {
                 .describe('Each a code of your organisation, or {employee_code, organization_id} for a client\'s person on a shared board'),
             mode: z.enum(['add', 'replace', 'remove']).describe('Required'),
             actor_employee_code: employeeCode.optional().describe('Who to credit in the activity log; omit to use the key issuer / CLOKIO_DEFAULT_ACTOR'),
+            notify: z.boolean().optional().describe(NOTIFY_ASSIGNEES_NOTE),
         },
         handler: withIdAlias('task_id', async (args, cfg) => {
             const body = { employee_codes: args.employee_codes, mode: args.mode };
+            if (args.notify === false)
+                body.notify = false;
             const actor = args.actor_employee_code ?? cfg.defaultActor;
             if (actor)
                 body.actor_employee_code = actor;
