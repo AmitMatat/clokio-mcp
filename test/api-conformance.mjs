@@ -232,6 +232,7 @@ const TOOL_CALLS = [
   { tool: 'clokio_ticket_report_satisfaction', method: 'get', path: '/reports/tickets/satisfaction', query: ['from', 'to', 'inbox_id', 'label', 'team_id'] },
   { tool: 'clokio_ticket_report_satisfaction_ratings', method: 'get', path: '/reports/tickets/satisfaction/ratings', query: ['from', 'to', 'inbox_id', 'label', 'team_id', 'page', 'low'] },
   { tool: 'clokio_ticket_report_workload', method: 'get', path: '/reports/tickets/workload', query: ['from', 'to', 'inbox_id', 'label', 'team_id'] },
+  { tool: 'clokio_list_calls', method: 'get', path: '/calls', query: ['from', 'to', 'direction', 'outcome', 'agent', 'inbox_id', 'q', 'per_page', 'cursor'] },
   // 0.34.0: invoices toolset (read only).
   { tool: 'clokio_list_invoices', method: 'get', path: '/invoices', query: ['client_id', 'number', 'from_month', 'to_month', 'status', 'min_total', 'per_page', 'page'] },
   { tool: 'clokio_get_invoice', method: 'get', path: '/invoices/{id}', query: ['include'] },

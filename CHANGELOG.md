@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.43.0
+
+Phone calls (Tickets > Calls). **Backend dependency:** the Clokio backend with
+`GET /api/v1/calls` (2026-11-27); an older server answers 404.
+
+- New `clokio_list_calls` (tickets toolset, read only, needs `tickets:read`):
+  the phone calls the acting employee may see, newest first, with the same
+  visibility as the Calls screen (a call with a ticket when its ticket is
+  visible; a blocked call only for someone who sees the whole queue). Filters:
+  `from` / `to` (the acting employee's time zone, default the last 7 days),
+  `direction`, `outcome`, `agent` (employee code), `inbox_id` (phone line),
+  `q` (name or number in any spelling), `per_page`, `cursor`. One line per
+  call: time, direction, outcome, talked time, the customer's number and
+  contact, the line, the agent, the ticket, recorded or not, and the AI
+  summary. Contact names and summaries are wrapped as untrusted content.
+- Test: `test/calls-log.mjs`; `test/api-conformance.mjs` and `test/toolsets.mjs` updated.
+
 ## 0.42.0
 
 - Assigning through the API now notifies the people added and removed, as the
