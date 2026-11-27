@@ -1852,7 +1852,7 @@ export function registerTicketTools(server: McpServer, config: ClokioConfig): vo
       'inbox_id (a phone line), q (the customer\'s name, or a phone number in any spelling: 054-820 1234, 0548201234 and +972548201234 match the same calls). ' +
       'Each call: time (UTC), direction, outcome, talked time (answered calls only), the customer\'s number, the contact, the line, the agent, the ticket, whether it was recorded, and the AI summary when one was made. ' +
       'For the transcript read the ticket (clokio_list_ticket_messages, call.transcript); the recording file is not available. ' +
-      'Page with the printed cursor, keeping the same filters. Invalid filters are refused (422). 404 when the organisation has no phone line.',
+      'Page with the printed cursor, keeping the same filters. An agent code or line with no calls this person can see (or one that names nobody) gives an empty list; an invalid date, direction, outcome or cursor is refused (422). At most 60 calls a minute per key. 404 when the organisation has no phone line.',
     schema: {
       from: reportDate.optional().describe('First day, YYYY-MM-DD, the acting employee\'s time zone (default 6 days before `to`)'),
       to: reportDate.optional().describe('Last day, inclusive (default today). At most 366 days in all.'),
